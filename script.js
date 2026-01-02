@@ -141,7 +141,6 @@ window.addEventListener('popstate', () => {
 
 // Handle bfcache restoration (Safari)
 window.addEventListener('pageshow', (e) => {
-    console.log('pageshow', e);
     if (e.persisted) {
         restoreSearchState();
     }
@@ -155,7 +154,6 @@ function restoreSearchState(focusInput = false) {
     const setInputValue = (value, focus) => {
         const doSet = () => {
             searchInput.value = value;
-            console.log('setInputValue', searchInput.value);
             if (focus && value) {
                 searchInput.focus();
                 const len = value.length;
@@ -170,10 +168,6 @@ function restoreSearchState(focusInput = false) {
                 if (searchInput.value !== value) doSet();
             });
         });
-        // Delayed fallback for Safari bfcache
-        setTimeout(() => {
-            if (searchInput.value !== value) doSet();
-        }, 50);
     };
 
     if (query) {
