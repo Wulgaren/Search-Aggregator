@@ -460,7 +460,6 @@ a:hover {
   margin-left: auto;
   background: rgba(251, 146, 60, 0.15);
   color: var(--commercial-accent);
-  scale: 0.8;
 }
 
 .result-item[data-source="google"] .result-source-tag {
