@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <link rel="stylesheet" href="style.css?v=10" />
+    <link rel="stylesheet" href="style.css?v=12" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -55,6 +55,38 @@
           </button>
         </div>
       </header>
+
+      <!-- Infobox (Knowledge Panel) -->
+      <aside class="infobox" id="infobox" style="display: none">
+        <div class="infobox-image-container">
+          <img class="infobox-image" id="infobox-image" src="" alt="" />
+        </div>
+        <div class="infobox-content">
+          <h2 class="infobox-title" id="infobox-title"></h2>
+          <p class="infobox-description" id="infobox-description"></p>
+          <div class="infobox-links" id="infobox-links"></div>
+          <a
+            class="infobox-source"
+            id="infobox-source"
+            href=""
+            target="_blank"
+            rel="noopener"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+            Read more on Wikipedia
+          </a>
+        </div>
+      </aside>
 
       <!-- Image Slider -->
       <section
@@ -140,6 +172,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=10"></script>
+    <script src="script.js?v=12"></script>
   </body>
 </html>

@@ -359,7 +359,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   height: 100%;
   min-height: 200px;
   gap: 0.5rem;
@@ -765,5 +765,193 @@ a:hover {
     width: 100px;
     height: 70px;
     flex-shrink: 0;
+  }
+}
+
+/* Infobox (Knowledge Panel) */
+.infobox {
+  display: flex;
+  gap: 1.25rem;
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    rgba(30, 30, 35, 1) 100%
+  );
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin: 0 auto 1.5rem;
+  max-width: 800px;
+  animation: fadeSlideIn 0.4s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.infobox::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--noncommercial-accent) 50%,
+    var(--commercial-accent) 100%
+  );
+  opacity: 0.8;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.infobox-image-container {
+  flex-shrink: 0;
+  width: 140px;
+  height: 180px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+.infobox-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.infobox-image:hover {
+  transform: scale(1.05);
+}
+
+.infobox-image.no-image {
+  display: none;
+}
+
+.infobox-image-container:has(.no-image) {
+  display: none;
+}
+
+/* Fallback for browsers without :has() support */
+.infobox.no-image-fallback .infobox-image-container {
+  display: none;
+}
+
+.infobox-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.infobox-title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin: 0;
+}
+
+.infobox-description {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.infobox-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.infobox-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.infobox-link:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.infobox-link-icon {
+  font-size: 0.85rem;
+}
+
+.infobox-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  transition: color 0.15s ease;
+}
+
+.infobox-source:hover {
+  color: var(--link-color);
+}
+
+.infobox-source svg {
+  opacity: 0.6;
+}
+
+/* Responsive infobox */
+@media (max-width: 600px) {
+  .infobox {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.25rem;
+    margin: 0 0.75rem 1rem;
+  }
+
+  .infobox-image-container {
+    width: 120px;
+    height: 150px;
+  }
+
+  .infobox-content {
+    align-items: center;
+  }
+
+  .infobox-links {
+    justify-content: center;
+  }
+
+  .infobox-source {
+    justify-content: center;
   }
 }

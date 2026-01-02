@@ -51,6 +51,14 @@ const previewInfo = document.getElementById('preview-info');
 const previewClose = document.getElementById('preview-close');
 const previewOverlay = document.getElementById('preview-overlay');
 
+// Infobox elements
+const infobox = document.getElementById('infobox');
+const infoboxImage = document.getElementById('infobox-image');
+const infoboxTitle = document.getElementById('infobox-title');
+const infoboxDescription = document.getElementById('infobox-description');
+const infoboxLinks = document.getElementById('infobox-links');
+const infoboxSource = document.getElementById('infobox-source');
+
 // State - track each source separately
 let currentQuery = '';
 let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -58,6 +66,7 @@ let googleState = { page: 1, hasMore: true, loading: false, results: [], error: 
 let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let mergedState = { loading: false };
 let imageState = { images: [], loading: false, page: 1, hasMore: true };
+let infoboxState = { data: null, loading: false };
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -130,9 +139,36 @@ window.addEventListener('popstate', () => {
     restoreSearchState();
 });
 
+// Handle bfcache restoration (Safari)
+window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+        restoreSearchState();
+    }
+});
+
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
+
+    // Safari bfcache restores form values after JS runs - use multiple strategies
+    const setInputValue = (value, focus) => {
+        const doSet = () => {
+            searchInput.value = value;
+            if (focus && value) {
+                searchInput.focus();
+                const len = value.length;
+                searchInput.setSelectionRange(len, len);
+            }
+        };
+        // Immediate attempt
+        doSet();
+        // After next frame (standard browsers)
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (searchInput.value !== value) doSet();
+            });
+        });
+    };
 
     if (query) {
         // Check for DDG bang and redirect if found
@@ -141,23 +177,15 @@ function restoreSearchState(focusInput = false) {
             return;
         }
 
-        // Fix for Safari bfcache issue - set value after a short delay
-        setTimeout(() => {
-            searchInput.value = query;
-        }, 0);
+        setInputValue(query, focusInput);
 
         document.title = `${query} - Search`;
-        if (focusInput) {
-            searchInput.focus();
-            const len = query.length;
-            searchInput.setSelectionRange(len, len);
-        }
         // Only re-search if results are empty (page was restored from bfcache)
         if (!currentQuery || currentQuery !== query) {
             performSearch(query);
         }
     } else {
-        searchInput.value = '';
+        setInputValue('', false);
         document.title = 'Search';
         resetResults();
     }
@@ -214,6 +242,7 @@ async function performSearch(query) {
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
+    infoboxState = { data: null, loading: false };
 
     // Show loading states
     showLoading(commercialResults);
@@ -222,14 +251,16 @@ async function performSearch(query) {
     commercialCount.textContent = '';
     noncommercialCount.textContent = '';
 
-    // Hide image section initially
+    // Hide image section and infobox initially
     imageSection.style.display = 'none';
+    infobox.style.display = 'none';
 
     // Fetch all sources independently - don't wait for all
     fetchSource('brave', query, 1);
     fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
     fetchImages(query);
+    fetchInfobox(query);
 }
 
 async function fetchSource(source, query, page) {
@@ -256,33 +287,23 @@ async function fetchSource(source, query, page) {
             state.error = null;
         }
 
-        // Always render when data arrives (even if one source has an error, others may have results)
-        if (source === 'marginalia') {
-            renderNoncommercialResults();
-        } else {
-            renderCommercialResults();
-        }
-
-        if (isMergedView()) {
-            renderMergedResults();
-        }
     } catch (error) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
         state.error = error.message;
-
-        // Still render to show other source results and error state
-        if (source === 'marginalia') {
-            renderNoncommercialResults();
-        } else {
-            renderCommercialResults();
-        }
-
-        if (isMergedView()) {
-            renderMergedResults();
-        }
     } finally {
         state.loading = false;
+    }
+
+    // Render after loading state is updated
+    if (source === 'marginalia') {
+        renderNoncommercialResults();
+    } else {
+        renderCommercialResults();
+    }
+
+    if (isMergedView()) {
+        renderMergedResults();
     }
 }
 
@@ -646,13 +667,22 @@ function appendImagesToSlider(newImages) {
 
     sliderTrack.insertAdjacentHTML('beforeend', html);
 
-    // Add click handlers to new images
+    // Add click and error handlers to new images
     const newImgElements = sliderTrack.querySelectorAll('.slider-image:not([data-bound])');
     newImgElements.forEach(img => {
         img.setAttribute('data-bound', 'true');
         img.addEventListener('click', () => {
             const index = parseInt(img.dataset.index);
             openImagePreview(index);
+        });
+        // Hide broken images
+        img.addEventListener('error', () => {
+            img.style.display = 'none';
+        });
+        img.addEventListener('load', () => {
+            if (img.naturalWidth === 0) {
+                img.style.display = 'none';
+            }
         });
     });
 }
@@ -670,11 +700,21 @@ function renderImageSlider() {
         >
     `).join('');
 
-    // Add click handlers
+    // Add click and error handlers
     sliderTrack.querySelectorAll('.slider-image').forEach(img => {
         img.addEventListener('click', () => {
             const index = parseInt(img.dataset.index);
             openImagePreview(index);
+        });
+        // Hide broken images
+        img.addEventListener('error', () => {
+            img.style.display = 'none';
+        });
+        // Also check for images that "load" but are actually broken (0x0)
+        img.addEventListener('load', () => {
+            if (img.naturalWidth === 0) {
+                img.style.display = 'none';
+            }
         });
     });
 }
@@ -724,6 +764,86 @@ function closeImagePreview() {
     previewImage.onload = null;
     previewImage.onerror = null;
     document.body.style.overflow = '';
+}
+
+// Infobox (Knowledge Panel) functions
+async function fetchInfobox(query) {
+    if (infoboxState.loading) return;
+    infoboxState.loading = true;
+
+    try {
+        const response = await fetch(
+            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=infobox`
+        );
+
+        if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
+
+        const data = await response.json();
+        infoboxState.data = data.infobox;
+
+        if (data.infobox) {
+            renderInfobox(data.infobox);
+        }
+    } catch (error) {
+        console.error('Error fetching infobox:', error);
+    } finally {
+        infoboxState.loading = false;
+    }
+}
+
+function renderInfobox(data) {
+    if (!data) {
+        infobox.style.display = 'none';
+        return;
+    }
+
+    // Set title
+    infoboxTitle.textContent = data.title;
+
+    // Set description
+    infoboxDescription.textContent = data.description;
+
+    // Set image with error handling for broken images
+    infobox.classList.remove('no-image-fallback');
+    if (data.image) {
+        infoboxImage.src = data.image;
+        infoboxImage.alt = data.title;
+        infoboxImage.classList.remove('no-image');
+        infoboxImage.onerror = () => {
+            infoboxImage.classList.add('no-image');
+            infobox.classList.add('no-image-fallback');
+        };
+        infoboxImage.onload = () => {
+            // Hide if image loads but is broken (0x0 dimension)
+            if (infoboxImage.naturalWidth === 0) {
+                infoboxImage.classList.add('no-image');
+                infobox.classList.add('no-image-fallback');
+            }
+        };
+    } else {
+        infoboxImage.classList.add('no-image');
+        infobox.classList.add('no-image-fallback');
+    }
+
+    // Set external links
+    infoboxLinks.innerHTML = '';
+    if (data.links && data.links.length > 0) {
+        data.links.forEach(link => {
+            const linkEl = document.createElement('a');
+            linkEl.href = link.url;
+            linkEl.target = '_blank';
+            linkEl.rel = 'noopener noreferrer';
+            linkEl.className = 'infobox-link';
+            linkEl.innerHTML = `<span class="infobox-link-icon">${link.icon}</span>${link.name}`;
+            infoboxLinks.appendChild(linkEl);
+        });
+    }
+
+    // Set Wikipedia source link
+    infoboxSource.href = data.url;
+
+    // Show the infobox
+    infobox.style.display = 'flex';
 }
 
 function attachSentinel(container, source) {
@@ -789,6 +909,7 @@ function resetResults() {
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
+    infoboxState = { data: null, loading: false };
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
@@ -797,6 +918,7 @@ function resetResults() {
     noncommercialCount.textContent = '';
     imageSection.style.display = 'none';
     sliderTrack.innerHTML = '';
+    infobox.style.display = 'none';
 }
 
 function escapeHtml(text) {

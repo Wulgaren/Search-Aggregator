@@ -28,6 +28,19 @@ export async function handler(event) {
     const searchQuery = query.trim();
     const resultsPerPage = 10;
 
+    // Handle infobox request
+    if (source === 'infobox') {
+        const infobox = await fetchWikipediaInfobox(searchQuery);
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=3600' // Cache infobox for 1 hour
+            },
+            body: JSON.stringify({ infobox })
+        };
+    }
+
     // Handle image search separately
     if (source === 'images') {
         const [braveImages, googleImages] = await Promise.allSettled([
@@ -427,5 +440,150 @@ async function fetchGoogleImages(query, page = 1) {
         })).filter(img => img.thumbnail && img.full);
     } catch (e) {
         return [];
+    }
+}
+
+// Fetch Wikipedia infobox data for a query
+async function fetchWikipediaInfobox(query) {
+    try {
+        // First, search Wikipedia for the best matching page
+        const searchUrl = new URL('https://en.wikipedia.org/w/api.php');
+        searchUrl.searchParams.set('action', 'query');
+        searchUrl.searchParams.set('format', 'json');
+        searchUrl.searchParams.set('list', 'search');
+        searchUrl.searchParams.set('srsearch', query);
+        searchUrl.searchParams.set('srlimit', 1);
+        searchUrl.searchParams.set('origin', '*');
+
+        const searchResponse = await fetch(searchUrl.toString());
+        if (!searchResponse.ok) return null;
+
+        const searchData = await searchResponse.json();
+        const searchResults = searchData.query?.search || [];
+
+        if (searchResults.length === 0) return null;
+
+        const pageTitle = searchResults[0].title;
+
+        // Now fetch full page data including extract, image, and links
+        const pageUrl = new URL('https://en.wikipedia.org/w/api.php');
+        pageUrl.searchParams.set('action', 'query');
+        pageUrl.searchParams.set('format', 'json');
+        pageUrl.searchParams.set('titles', pageTitle);
+        pageUrl.searchParams.set('prop', 'extracts|pageimages|info|extlinks|categories');
+        pageUrl.searchParams.set('exintro', 'true');
+        pageUrl.searchParams.set('explaintext', 'true');
+        pageUrl.searchParams.set('exsentences', 4);
+        pageUrl.searchParams.set('piprop', 'thumbnail|original');
+        pageUrl.searchParams.set('pithumbsize', 300);
+        pageUrl.searchParams.set('inprop', 'url');
+        pageUrl.searchParams.set('cllimit', 10);
+        pageUrl.searchParams.set('origin', '*');
+
+        const pageResponse = await fetch(pageUrl.toString());
+        if (!pageResponse.ok) return null;
+
+        const pageData = await pageResponse.json();
+        const pages = pageData.query?.pages || {};
+        const page = Object.values(pages)[0];
+
+        if (!page || page.missing) return null;
+
+        // Check if this is likely a person/entity (has useful info)
+        const extract = page.extract || '';
+        if (extract.length < 50) return null;
+
+        // Get Wikidata ID for additional links
+        let wikidataId = null;
+        let externalLinks = [];
+
+        try {
+            const wikidataUrl = new URL('https://en.wikipedia.org/w/api.php');
+            wikidataUrl.searchParams.set('action', 'query');
+            wikidataUrl.searchParams.set('format', 'json');
+            wikidataUrl.searchParams.set('titles', pageTitle);
+            wikidataUrl.searchParams.set('prop', 'pageprops');
+            wikidataUrl.searchParams.set('ppprop', 'wikibase_item');
+            wikidataUrl.searchParams.set('origin', '*');
+
+            const wikidataResponse = await fetch(wikidataUrl.toString());
+            if (wikidataResponse.ok) {
+                const wikidataData = await wikidataResponse.json();
+                const wikidataPages = wikidataData.query?.pages || {};
+                const wikidataPage = Object.values(wikidataPages)[0];
+                wikidataId = wikidataPage?.pageprops?.wikibase_item;
+            }
+
+            // If we have a Wikidata ID, fetch external links from Wikidata
+            if (wikidataId) {
+                const claimsUrl = new URL('https://www.wikidata.org/w/api.php');
+                claimsUrl.searchParams.set('action', 'wbgetentities');
+                claimsUrl.searchParams.set('format', 'json');
+                claimsUrl.searchParams.set('ids', wikidataId);
+                claimsUrl.searchParams.set('props', 'claims|sitelinks');
+                claimsUrl.searchParams.set('origin', '*');
+
+                const claimsResponse = await fetch(claimsUrl.toString());
+                if (claimsResponse.ok) {
+                    const claimsData = await claimsResponse.json();
+                    const entity = claimsData.entities?.[wikidataId];
+                    const claims = entity?.claims || {};
+
+                    // Extract useful links (social media, official website, etc.)
+                    const linkProperties = {
+                        'P856': { name: 'Official website', icon: '🌐' },
+                        'P2002': { name: 'Twitter', icon: '𝕏', urlPrefix: 'https://twitter.com/' },
+                        'P2003': { name: 'Instagram', icon: '📷', urlPrefix: 'https://instagram.com/' },
+                        'P2013': { name: 'Facebook', icon: '📘', urlPrefix: 'https://facebook.com/' },
+                        'P2397': { name: 'YouTube', icon: '▶️', urlPrefix: 'https://youtube.com/channel/' },
+                        'P4264': { name: 'LinkedIn', icon: '💼', urlPrefix: 'https://linkedin.com/in/' },
+                        'P345': { name: 'IMDb', icon: '🎬', urlPrefix: 'https://imdb.com/name/' },
+                        'P1953': { name: 'Discogs', icon: '💿', urlPrefix: 'https://discogs.com/artist/' },
+                        'P434': { name: 'MusicBrainz', icon: '🎵', urlPrefix: 'https://musicbrainz.org/artist/' },
+                        'P1902': { name: 'Spotify', icon: '🎧', urlPrefix: 'https://open.spotify.com/artist/' }
+                    };
+
+                    for (const [prop, config] of Object.entries(linkProperties)) {
+                        if (claims[prop] && claims[prop][0]?.mainsnak?.datavalue?.value) {
+                            let value = claims[prop][0].mainsnak.datavalue.value;
+                            let url;
+                            
+                            if (typeof value === 'string') {
+                                url = config.urlPrefix ? config.urlPrefix + value : value;
+                            } else {
+                                continue;
+                            }
+
+                            // Validate URL
+                            if (!url.startsWith('http')) {
+                                url = 'https://' + url;
+                            }
+
+                            externalLinks.push({
+                                name: config.name,
+                                icon: config.icon,
+                                url: url
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Wikidata fetch failed, continue without external links
+        }
+
+        return {
+            title: page.title,
+            description: extract,
+            image: page.thumbnail?.source || page.original?.source || null,
+            imageWidth: page.thumbnail?.width,
+            imageHeight: page.thumbnail?.height,
+            url: page.fullurl,
+            wikidataId,
+            links: externalLinks.slice(0, 6) // Limit to 6 links
+        };
+    } catch (e) {
+        console.error('Wikipedia infobox error:', e);
+        return null;
     }
 }
