@@ -18,6 +18,19 @@ function isMergedView() {
     return window.innerWidth <= 700;
 }
 
+// Prefetch on mousedown - fires ~100ms before click completes
+function setupPrefetching() {
+    document.getElementById('results').addEventListener('mousedown', (e) => {
+        const link = e.target.closest('.result-title a');
+        if (link?.href && e.button === 0) { // Left click only
+            const prefetch = document.createElement('link');
+            prefetch.rel = 'prefetch';
+            prefetch.href = link.href;
+            document.head.appendChild(prefetch);
+        }
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     // Check for query in URL
@@ -30,6 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Set up scroll listeners for infinite scroll
     setupInfiniteScroll();
+
+    // Set up link prefetching on hover
+    setupPrefetching();
 
     // Re-render on resize if crossing the breakpoint
     let wasMerged = isMergedView();
