@@ -16,7 +16,7 @@ export async function handler(event) {
 
     const query = event.queryStringParameters?.q;
     const page = parseInt(event.queryStringParameters?.page) || 1;
-    const source = event.queryStringParameters?.source; // 'brave', 'google', 'marginalia', or undefined (all)
+    const source = event.queryStringParameters?.source; // 'brave', 'google', 'marginalia', 'images', or undefined (all)
 
     if (!query || query.trim() === '') {
         return {
@@ -27,6 +27,46 @@ export async function handler(event) {
 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
+
+    // Handle image search separately
+    if (source === 'images') {
+        const [braveImages, googleImages] = await Promise.allSettled([
+            fetchBraveImages(searchQuery, page),
+            fetchGoogleImages(searchQuery, page)
+        ]);
+
+        // Combine and deduplicate images by URL
+        const allImages = [
+            ...(braveImages.status === 'fulfilled' ? braveImages.value : []),
+            ...(googleImages.status === 'fulfilled' ? googleImages.value : [])
+        ];
+
+        const seenUrls = new Set();
+        const deduplicatedImages = allImages.filter(img => {
+            // Normalize URL for deduplication
+            const normalizedUrl = img.full.replace(/^https?:\/\//, '').replace(/\/$/, '');
+            if (seenUrls.has(normalizedUrl)) {
+                return false;
+            }
+            seenUrls.add(normalizedUrl);
+            return true;
+        });
+
+        // Brave supports up to 3 pages (offset 0-2), Google up to 10 pages
+        const hasMore = page < 3;
+
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=300'
+            },
+            body: JSON.stringify({
+                images: deduplicatedImages,
+                hasMore
+            })
+        };
+    }
 
     // Determine which sources to fetch
     const fetchBravePromise = (!source || source === 'brave')
@@ -105,6 +145,9 @@ async function fetchBrave(query, page, resultsPerPage) {
     });
 
     if (!response.ok) {
+        if (response.status === 429) {
+            throw new Error('Rate limited - too many requests');
+        }
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || `Brave API error: ${response.status}`);
     }
@@ -291,4 +334,98 @@ async function fetchMarginalia(query, page, resultsPerPage) {
         hasMore: results.length === resultsPerPage,
         totalResults: String(data.results?.length || 0)
     };
+}
+
+async function fetchBraveImages(query, page = 1) {
+    const apiKey = process.env.BRAVE_API_KEY;
+
+    if (!apiKey) {
+        return [];
+    }
+
+    // Brave image search uses offset (0-indexed pages)
+    const offset = page - 1;
+    if (offset > 2) {
+        return []; // Brave limits to ~3 pages
+    }
+
+    const url = new URL('https://api.search.brave.com/res/v1/images/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('count', 20);
+    url.searchParams.set('offset', offset);
+
+    const response = await fetch(url.toString(), {
+        headers: {
+            'X-Subscription-Token': apiKey,
+            'Accept': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        console.error(`Brave images error: ${response.status}`);
+        return [];
+    }
+
+    const data = await response.json();
+    const results = data.results || [];
+
+    return results.map(item => ({
+        thumbnail: item.thumbnail?.src || item.properties?.url,
+        full: item.properties?.url || item.thumbnail?.src,
+        title: item.title || '',
+        sourceUrl: item.url || '',
+        width: item.properties?.width,
+        height: item.properties?.height,
+        source: 'brave'
+    })).filter(img => img.thumbnail && img.full);
+}
+
+async function fetchGoogleImages(query, page = 1) {
+    const cx = process.env.GOOGLE_CX;
+
+    if (!cx || !process.env.GOOGLE_SERVICE_ACCOUNT) {
+        return [];
+    }
+
+    // Google CSE uses 'start' parameter (1-indexed), max 10 per request
+    const startIndex = (page - 1) * 10 + 1;
+    if (startIndex > 91) {
+        return []; // Google limits to 100 results
+    }
+
+    try {
+        const accessToken = await getGoogleAccessToken();
+
+        const url = new URL('https://www.googleapis.com/customsearch/v1');
+        url.searchParams.set('cx', cx);
+        url.searchParams.set('q', query);
+        url.searchParams.set('searchType', 'image');
+        url.searchParams.set('num', 10);
+        url.searchParams.set('start', startIndex);
+
+        const response = await fetch(url.toString(), {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            return [];
+        }
+
+        const data = await response.json();
+        const items = data.items || [];
+
+        return items.map(item => ({
+            thumbnail: item.image?.thumbnailLink || item.link,
+            full: item.link,
+            title: item.title || '',
+            sourceUrl: item.image?.contextLink || '',
+            width: item.image?.width,
+            height: item.image?.height,
+            source: 'google'
+        })).filter(img => img.thumbnail && img.full);
+    } catch (e) {
+        return [];
+    }
 }
