@@ -71,8 +71,17 @@ async function fetchBrave(query, page, resultsPerPage) {
         throw new Error('Brave API key not configured');
     }
 
-    // Brave uses 'offset' for pagination (0-indexed)
-    const offset = (page - 1) * resultsPerPage;
+    // Brave's offset is page number (0-indexed), max 9
+    const offset = page - 1;
+
+    // Can't go beyond page 10
+    if (offset > 9) {
+        return {
+            results: [],
+            hasMore: false,
+            totalResults: '0'
+        };
+    }
 
     const url = new URL('https://api.search.brave.com/res/v1/web/search');
     url.searchParams.set('q', query);
@@ -101,8 +110,8 @@ async function fetchBrave(query, page, resultsPerPage) {
         snippet: item.description || ''
     }));
 
-    // Check if there are more results
-    const hasMore = webResults.length === resultsPerPage && offset + resultsPerPage < 200; // Brave limits offset to 200
+    // hasMore if we got full results and haven't hit page 10 yet
+    const hasMore = webResults.length === resultsPerPage && offset < 9;
 
     return {
         results,
