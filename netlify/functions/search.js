@@ -482,17 +482,9 @@ async function fetchGoogleImages(query, page = 1) {
 async function fetchWikipediaInfobox(query) {
     try {
         // First, search Wikipedia for the best matching page
-        const searchUrl = new URL("https://en.wikipedia.org/w/api.php");
-        searchUrl.searchParams.set("action", "opensearch");
-        searchUrl.searchParams.set("format", "json");
-        searchUrl.searchParams.set("search", query);
-        searchUrl.searchParams.set("limit", 5);
-        searchUrl.searchParams.set("origin", "*");
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&format=json&search=${encodeURIComponent(query)}&limit=5&origin=*`;
 
-        console.log(`Wikipedia search URL: ${searchUrl.toString()}`);
-        console.log(`Wikipedia search query: ${query}`);
-
-        const searchResponse = await fetch(searchUrl.toString());
+        const searchResponse = await fetch(searchUrl);
         if (!searchResponse.ok) return null;
 
         // opensearch returns [query, [titles], [descriptions], [urls]]
@@ -520,24 +512,9 @@ async function fetchWikipediaInfobox(query) {
 // Helper: try to fetch infobox data for a specific Wikipedia page title
 async function tryFetchPageInfobox(pageTitle) {
     try {
-        const pageUrl = new URL("https://en.wikipedia.org/w/api.php");
-        pageUrl.searchParams.set("action", "query");
-        pageUrl.searchParams.set("format", "json");
-        pageUrl.searchParams.set("titles", pageTitle);
-        pageUrl.searchParams.set(
-            "prop",
-            "extracts|pageimages|info|extlinks|categories",
-        );
-        pageUrl.searchParams.set("exintro", "true");
-        pageUrl.searchParams.set("explaintext", "true");
-        pageUrl.searchParams.set("exsentences", 4);
-        pageUrl.searchParams.set("piprop", "thumbnail|original");
-        pageUrl.searchParams.set("pithumbsize", 300);
-        pageUrl.searchParams.set("inprop", "url");
-        pageUrl.searchParams.set("cllimit", 10);
-        pageUrl.searchParams.set("origin", "*");
+        const pageUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=extracts|pageimages|info|extlinks|categories&exintro=true&explaintext=true&exsentences=4&piprop=thumbnail|original&pithumbsize=300&inprop=url&cllimit=10&origin=*`;
 
-        const pageResponse = await fetch(pageUrl.toString());
+        const pageResponse = await fetch(pageUrl);
         if (!pageResponse.ok) {
             console.log(`Wikipedia page fetch failed for "${pageTitle}": ${pageResponse.status}`);
             return null;
@@ -564,17 +541,9 @@ async function tryFetchPageInfobox(pageTitle) {
         const externalLinks = [];
 
         try {
-            const wikidataUrl = new URL("https://en.wikipedia.org/w/api.php");
-            wikidataUrl.searchParams.set("action", "query");
-            wikidataUrl.searchParams.set("format", "json");
-            wikidataUrl.searchParams.set("titles", pageTitle);
-            wikidataUrl.searchParams.set("prop", "pageprops");
-            wikidataUrl.searchParams.set("ppprop", "wikibase_item");
-            wikidataUrl.searchParams.set("origin", "*");
+            const wikidataUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=pageprops&ppprop=wikibase_item&origin=*`;
 
-            console.log(`Wikidata pageTitle: ${pageTitle}`);
-
-            const wikidataResponse = await fetch(wikidataUrl.toString());
+            const wikidataResponse = await fetch(wikidataUrl);
             if (wikidataResponse.ok) {
                 const wikidataData = await wikidataResponse.json();
                 const wikidataPages = wikidataData.query?.pages || {};
@@ -582,18 +551,12 @@ async function tryFetchPageInfobox(pageTitle) {
                 wikidataId = wikidataPage?.pageprops?.wikibase_item;
             }
 
-            console.log(`Wikidata ID: ${wikidataId}`);
 
             // If we have a Wikidata ID, fetch external links from Wikidata
             if (wikidataId) {
-                const claimsUrl = new URL("https://www.wikidata.org/w/api.php");
-                claimsUrl.searchParams.set("action", "wbgetentities");
-                claimsUrl.searchParams.set("format", "json");
-                claimsUrl.searchParams.set("ids", wikidataId);
-                claimsUrl.searchParams.set("props", "claims|sitelinks");
-                claimsUrl.searchParams.set("origin", "*");
+                const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&ids=${wikidataId}&props=claims|sitelinks&origin=*`;
 
-                const claimsResponse = await fetch(claimsUrl.toString());
+                const claimsResponse = await fetch(claimsUrl);
                 if (claimsResponse.ok) {
                     const claimsData = await claimsResponse.json();
                     const entity = claimsData.entities?.[wikidataId];
