@@ -353,18 +353,6 @@ a:hover {
   text-align: center;
 }
 
-.error-state.compact {
-  min-height: auto;
-  height: auto;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 8px;
-  align-items: flex-start;
-  text-align: left;
-}
-
 .error-state .error-icon {
   font-size: 1.5rem;
   margin-bottom: 0.5rem;
@@ -373,26 +361,6 @@ a:hover {
 .error-state .error-message {
   color: #ef4444;
   font-size: 0.9rem;
-}
-
-.error-state .error-detail {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.source-error {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 0.25rem;
-}
-
-.source-error:last-child {
-  margin-bottom: 0;
-}
-
-.source-error .error-source {
-  font-weight: 500;
-  color: #ef4444;
 }
 
 /* Footer */
@@ -598,7 +566,7 @@ a:hover {
 
 /* Image Slider Section */
 .image-slider-section {
-  max-width: 90 dvw;
+  max-width: 90dvw;
   margin: 0 auto 1.5rem;
   padding: 0 1.5rem;
   overflow: hidden;
@@ -662,6 +630,15 @@ a:hover {
 .slider-image:hover {
   transform: scale(1.05);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.image-loading {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
 }
 
 /* Image Preview */

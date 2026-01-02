@@ -23,7 +23,7 @@ let braveState = { page: 1, hasMore: true, loading: false, results: [], error: n
 let googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let mergedState = { loading: false };
-let imageState = { images: [], loading: false };
+let imageState = { images: [], loading: false, page: 1, hasMore: true };
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -154,7 +154,7 @@ async function performSearch(query) {
     googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
-    imageState = { images: [], loading: false };
+    imageState = { images: [], loading: false, page: 1, hasMore: true };
 
     // Show loading states
     showLoading(commercialResults);
@@ -237,18 +237,17 @@ function renderCommercialResults() {
     // Interleave Google first, then Brave (order: Google, Brave)
     const interleaved = deduplicateResults(interleaveArrays(googleState.results, braveState.results));
 
-    // Build error messages for sources that failed
-    let errorHtml = '';
+    // Log errors to console
     if (googleState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
+        console.log('Google error:', googleState.error);
     }
     if (braveState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
+        console.log('Brave error:', braveState.error);
     }
 
     if (interleaved.length === 0 && !braveState.loading && !googleState.loading) {
-        if (errorHtml) {
-            commercialResults.innerHTML = `<div class="error-state">${errorHtml}</div>`;
+        if (googleState.error || braveState.error) {
+            commercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
             commercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
         }
@@ -268,8 +267,7 @@ function renderCommercialResults() {
         </article>
     `}).join('');
 
-    // Show errors at the top if any source failed
-    commercialResults.innerHTML = (errorHtml ? `<div class="error-state compact">${errorHtml}</div>` : '') + html;
+    commercialResults.innerHTML = html;
 
     const totalResults = braveState.results.length + googleState.results.length;
     const hasMore = braveState.hasMore || googleState.hasMore;
@@ -283,24 +281,18 @@ function renderCommercialResults() {
 function renderNoncommercialResults() {
     const results = marginaliaState.results;
 
+    // Log errors to console
+    if (marginaliaState.error) {
+        console.log('Marginalia error:', marginaliaState.error);
+    }
+
     if (results.length === 0 && !marginaliaState.loading) {
         if (marginaliaState.error) {
-            noncommercialResults.innerHTML = `
-                <div class="error-state">
-                    <span class="error-icon">⚠</span>
-                    <span class="error-message">Something went wrong</span>
-                    <span class="error-detail">${escapeHtml(marginaliaState.error)}</span>
-                </div>
-            `;
+            noncommercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
             noncommercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
         }
         return;
-    }
-
-    let errorHtml = '';
-    if (marginaliaState.error) {
-        errorHtml = `<div class="error-state compact"><div class="source-error"><span class="error-source">Marginalia:</span> ${escapeHtml(marginaliaState.error)}</div></div>`;
     }
 
     const html = results.map((result, index) => `
@@ -313,7 +305,7 @@ function renderNoncommercialResults() {
         </article>
     `).join('');
 
-    noncommercialResults.innerHTML = errorHtml + html;
+    noncommercialResults.innerHTML = html;
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
 
     if (marginaliaState.hasMore) {
@@ -447,23 +439,17 @@ function renderMergedResults() {
         }
     }
 
-    // Build error messages for sources that failed (in display order)
-    let errorHtml = '';
-    if (googleState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
-    }
-    if (marginaliaState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Marginalia:</span> ${escapeHtml(marginaliaState.error)}</div>`;
-    }
-    if (braveState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
-    }
+    // Log errors to console
+    if (googleState.error) console.log('Google error:', googleState.error);
+    if (marginaliaState.error) console.log('Marginalia error:', marginaliaState.error);
+    if (braveState.error) console.log('Brave error:', braveState.error);
 
     const allLoading = braveState.loading && googleState.loading && marginaliaState.loading;
+    const hasErrors = googleState.error || marginaliaState.error || braveState.error;
 
     if (allResults.length === 0 && !allLoading) {
-        if (errorHtml) {
-            mergedResults.innerHTML = `<div class="error-state">${errorHtml}</div>`;
+        if (hasErrors) {
+            mergedResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
             mergedResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
         }
@@ -488,8 +474,7 @@ function renderMergedResults() {
         `;
     }).join('');
 
-    // Show errors at the top if any source failed
-    mergedResults.innerHTML = (errorHtml ? `<div class="error-state compact">${errorHtml}</div>` : '') + html;
+    mergedResults.innerHTML = html;
 
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
     if (hasMore) {
@@ -506,28 +491,94 @@ function getDedupeKey(url) {
     }
 }
 
-async function fetchImages(query) {
+async function fetchImages(query, page = 1) {
+    if (imageState.loading) return;
     imageState.loading = true;
 
     try {
         const response = await fetch(
-            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images`
+            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
         );
 
         if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
 
         const data = await response.json();
-        imageState.images = data.images || [];
+        const newImages = data.images || [];
+        imageState.hasMore = data.hasMore ?? false;
+        imageState.page = page;
 
-        if (imageState.images.length > 0) {
-            renderImageSlider();
-            imageSection.style.display = 'block';
+        if (page === 1) {
+            imageState.images = newImages;
+            if (newImages.length > 0) {
+                renderImageSlider();
+                imageSection.style.display = 'block';
+                setupImageSliderScroll();
+            }
+        } else {
+            // Deduplicate against existing images
+            const existingUrls = new Set(imageState.images.map(img => img.full));
+            const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.full));
+            imageState.images = [...imageState.images, ...uniqueNewImages];
+            appendImagesToSlider(uniqueNewImages);
         }
     } catch (error) {
         console.error('Error fetching images:', error);
     } finally {
         imageState.loading = false;
     }
+}
+
+function setupImageSliderScroll() {
+    sliderTrack.addEventListener('scroll', () => {
+        if (imageState.loading || !imageState.hasMore) return;
+
+        // Check if scrolled near the end (within 200px)
+        const scrollRight = sliderTrack.scrollWidth - sliderTrack.scrollLeft - sliderTrack.clientWidth;
+        if (scrollRight < 200) {
+            showImageLoadingIndicator();
+            fetchImages(currentQuery, imageState.page + 1);
+        }
+    });
+}
+
+function showImageLoadingIndicator() {
+    if (sliderTrack.querySelector('.image-loading')) return;
+    const loader = document.createElement('div');
+    loader.className = 'image-loading';
+    loader.innerHTML = '<div class="loading-spinner small"></div>';
+    sliderTrack.appendChild(loader);
+}
+
+function removeImageLoadingIndicator() {
+    const loader = sliderTrack.querySelector('.image-loading');
+    if (loader) loader.remove();
+}
+
+function appendImagesToSlider(newImages) {
+    removeImageLoadingIndicator();
+
+    const startIndex = imageState.images.length - newImages.length;
+    const html = newImages.map((img, i) => `
+        <img 
+            class="slider-image" 
+            src="${escapeHtml(img.thumbnail)}" 
+            alt="${escapeHtml(img.title)}"
+            data-index="${startIndex + i}"
+            loading="lazy"
+        >
+    `).join('');
+
+    sliderTrack.insertAdjacentHTML('beforeend', html);
+
+    // Add click handlers to new images
+    const newImgElements = sliderTrack.querySelectorAll('.slider-image:not([data-bound])');
+    newImgElements.forEach(img => {
+        img.setAttribute('data-bound', 'true');
+        img.addEventListener('click', () => {
+            const index = parseInt(img.dataset.index);
+            openImagePreview(index);
+        });
+    });
 }
 
 function renderImageSlider() {
@@ -538,6 +589,7 @@ function renderImageSlider() {
             src="${escapeHtml(img.thumbnail)}" 
             alt="${escapeHtml(img.title)}"
             data-index="${index}"
+            data-bound="true"
             loading="lazy"
         >
     `).join('');
@@ -634,7 +686,7 @@ function resetResults() {
     googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
-    imageState = { images: [], loading: false };
+    imageState = { images: [], loading: false, page: 1, hasMore: true };
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;

@@ -31,8 +31,8 @@ export async function handler(event) {
     // Handle image search separately
     if (source === 'images') {
         const [braveImages, googleImages] = await Promise.allSettled([
-            fetchBraveImages(searchQuery),
-            fetchGoogleImages(searchQuery)
+            fetchBraveImages(searchQuery, page),
+            fetchGoogleImages(searchQuery, page)
         ]);
 
         // Combine and deduplicate images by URL
@@ -52,6 +52,9 @@ export async function handler(event) {
             return true;
         });
 
+        // Brave supports up to 3 pages (offset 0-2), Google up to 10 pages
+        const hasMore = page < 3;
+
         return {
             statusCode: 200,
             headers: {
@@ -59,7 +62,8 @@ export async function handler(event) {
                 'Cache-Control': 'public, max-age=300'
             },
             body: JSON.stringify({
-                images: deduplicatedImages
+                images: deduplicatedImages,
+                hasMore
             })
         };
     }
@@ -332,16 +336,23 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     };
 }
 
-async function fetchBraveImages(query) {
+async function fetchBraveImages(query, page = 1) {
     const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
         return [];
     }
 
+    // Brave image search uses offset (0-indexed pages)
+    const offset = page - 1;
+    if (offset > 2) {
+        return []; // Brave limits to ~3 pages
+    }
+
     const url = new URL('https://api.search.brave.com/res/v1/images/search');
     url.searchParams.set('q', query);
     url.searchParams.set('count', 20);
+    url.searchParams.set('offset', offset);
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -369,11 +380,17 @@ async function fetchBraveImages(query) {
     })).filter(img => img.thumbnail && img.full);
 }
 
-async function fetchGoogleImages(query) {
+async function fetchGoogleImages(query, page = 1) {
     const cx = process.env.GOOGLE_CX;
 
     if (!cx || !process.env.GOOGLE_SERVICE_ACCOUNT) {
         return [];
+    }
+
+    // Google CSE uses 'start' parameter (1-indexed), max 10 per request
+    const startIndex = (page - 1) * 10 + 1;
+    if (startIndex > 91) {
+        return []; // Google limits to 100 results
     }
 
     try {
@@ -384,6 +401,7 @@ async function fetchGoogleImages(query) {
         url.searchParams.set('q', query);
         url.searchParams.set('searchType', 'image');
         url.searchParams.set('num', 10);
+        url.searchParams.set('start', startIndex);
 
         const response = await fetch(url.toString(), {
             headers: {
