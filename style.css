@@ -54,7 +54,7 @@ a:hover {
 .container {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
+  padding: 10px 2rem 1.5rem;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -121,7 +121,7 @@ a:hover {
 .search-btn {
   position: absolute;
   right: 0.5rem;
-  top: calc(50% - 15px);
+  top: calc(50%);
   transform: translateY(-50%);
   padding: 0.5rem;
   background: transparent;
@@ -143,8 +143,8 @@ a:hover {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 46px;
-  height: 46px;
+  width: 54px;
+  height: 54px;
   padding: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
