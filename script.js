@@ -373,8 +373,26 @@ function renderMergedResults() {
         }
     }
 
-    if (allResults.length === 0) {
-        mergedResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+    // Build error messages for sources that failed
+    let errorHtml = '';
+    if (braveState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
+    }
+    if (googleState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
+    }
+    if (marginaliaState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Marginalia:</span> ${escapeHtml(marginaliaState.error)}</div>`;
+    }
+
+    const allLoading = braveState.loading && googleState.loading && marginaliaState.loading;
+
+    if (allResults.length === 0 && !allLoading) {
+        if (errorHtml) {
+            mergedResults.innerHTML = `<div class="error-state">${errorHtml}</div>`;
+        } else {
+            mergedResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+        }
         return;
     }
 
@@ -396,7 +414,8 @@ function renderMergedResults() {
         `;
     }).join('');
 
-    mergedResults.innerHTML = html;
+    // Show errors at the top if any source failed
+    mergedResults.innerHTML = (errorHtml ? `<div class="error-state compact">${errorHtml}</div>` : '') + html;
 
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
     if (hasMore) {
