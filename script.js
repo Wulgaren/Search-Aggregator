@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const query = urlParams.get('q');
     if (query) {
         searchInput.value = query;
+        searchInput.focus();
         // Move cursor to end of input
         const len = searchInput.value.length;
         searchInput.setSelectionRange(len, len);
