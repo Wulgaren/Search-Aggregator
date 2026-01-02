@@ -140,23 +140,22 @@ window.addEventListener('pageshow', (event) => {
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
-    console.log('query', query ?? "no query");
-    console.log('current query', currentQuery ?? "no current query");
-    console.log('searchInput', searchInput);
 
     if (query) {
         // Check for DDG bang and redirect if found
         if (detectBang(query)) {
-            console.log('detected bang');
             handleBangRedirect(query);
             return;
         }
-        searchInput.value = query;
-        console.log('searchInput value', searchInput.value);
+
+        setTimeout(() => {
+            searchInput.value = query;
+        }, 0);
+
         document.title = `${query} - Search`;
         if (focusInput) {
             searchInput.focus();
-            const len = searchInput.value.length;
+            const len = query.length;
             searchInput.setSelectionRange(len, len);
         }
         // Only re-search if results are empty (page was restored from bfcache)
@@ -166,13 +165,10 @@ function restoreSearchState(focusInput = false) {
     } else {
         searchInput.value = '';
         document.title = 'Search';
-        console.log('searchInput value no', searchInput.value);
-
         resetResults();
     }
-    console.log('searchInput value final', searchInput.value);
-
 }
+
 function setupInfiniteScroll() {
     const observerOptions = { root: null, rootMargin: '100px', threshold: 0 };
 
