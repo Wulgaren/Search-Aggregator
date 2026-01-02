@@ -11,13 +11,6 @@ const chatgptBtn = document.getElementById('chatgpt-btn');
 // Image elements
 const imageSection = document.getElementById('image-section');
 const sliderTrack = document.getElementById('slider-track');
-const sliderPrev = document.getElementById('slider-prev');
-const sliderNext = document.getElementById('slider-next');
-const viewAllBtn = document.getElementById('view-all-images');
-const imageModal = document.getElementById('image-modal');
-const modalGrid = document.getElementById('modal-grid');
-const modalClose = document.getElementById('modal-close');
-const modalOverlay = document.getElementById('modal-overlay');
 const imagePreview = document.getElementById('image-preview');
 const previewImage = document.getElementById('preview-image');
 const previewInfo = document.getElementById('preview-info');
@@ -85,35 +78,15 @@ chatgptBtn.addEventListener('click', () => {
     }
 });
 
-// Image slider controls
-sliderPrev.addEventListener('click', () => {
-    sliderTrack.scrollBy({ left: -300, behavior: 'smooth' });
-});
-
-sliderNext.addEventListener('click', () => {
-    sliderTrack.scrollBy({ left: 300, behavior: 'smooth' });
-});
-
-// View all images button
-viewAllBtn.addEventListener('click', () => {
-    openImageModal();
-});
-
-// Modal close handlers
-modalClose.addEventListener('click', closeImageModal);
-modalOverlay.addEventListener('click', closeImageModal);
-
 // Preview close handlers
 previewClose.addEventListener('click', closeImagePreview);
 previewOverlay.addEventListener('click', closeImagePreview);
 
-// ESC key to close modals
+// ESC key to close preview
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if (imagePreview.classList.contains('active')) {
             closeImagePreview();
-        } else if (imageModal.classList.contains('active')) {
-            closeImageModal();
         }
     }
 });
@@ -238,7 +211,7 @@ async function fetchSource(source, query, page) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
         state.error = error.message;
-        
+
         // Still render to show other source results and error state
         if (source === 'marginalia') {
             renderNoncommercialResults();
@@ -559,7 +532,7 @@ async function fetchImages(query) {
 
 function renderImageSlider() {
     const images = imageState.images;
-    sliderTrack.innerHTML = images.slice(0, 20).map((img, index) => `
+    sliderTrack.innerHTML = images.map((img, index) => `
         <img 
             class="slider-image" 
             src="${escapeHtml(img.thumbnail)}" 
@@ -576,32 +549,6 @@ function renderImageSlider() {
             openImagePreview(index);
         });
     });
-}
-
-function openImageModal() {
-    const images = imageState.images;
-    modalGrid.innerHTML = images.map((img, index) => `
-        <div class="modal-image-container" data-index="${index}">
-            <img src="${escapeHtml(img.thumbnail)}" alt="${escapeHtml(img.title)}" loading="lazy">
-            <span class="modal-image-source">${img.source}</span>
-        </div>
-    `).join('');
-
-    // Add click handlers
-    modalGrid.querySelectorAll('.modal-image-container').forEach(container => {
-        container.addEventListener('click', () => {
-            const index = parseInt(container.dataset.index);
-            openImagePreview(index);
-        });
-    });
-
-    imageModal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-}
-
-function closeImageModal() {
-    imageModal.classList.remove('active');
-    document.body.style.overflow = '';
 }
 
 function openImagePreview(index) {
@@ -622,9 +569,7 @@ function openImagePreview(index) {
 function closeImagePreview() {
     imagePreview.classList.remove('active');
     previewImage.src = '';
-    if (!imageModal.classList.contains('active')) {
-        document.body.style.overflow = '';
-    }
+    document.body.style.overflow = '';
 }
 
 function attachSentinel(container, source) {
@@ -710,21 +655,21 @@ function escapeHtml(text) {
 // Sanitize HTML - allow only safe tags for snippets
 function sanitizeSnippet(html) {
     if (!html) return '';
-    
+
     // Create a temporary element to parse HTML
     const temp = document.createElement('div');
     temp.innerHTML = html;
-    
+
     // Walk through all elements and remove unsafe ones
     const allowedTags = ['b', 'strong', 'i', 'em', 'br', 'span', 'mark'];
-    
+
     function sanitizeNode(node) {
         const children = Array.from(node.childNodes);
-        
+
         for (const child of children) {
             if (child.nodeType === Node.ELEMENT_NODE) {
                 const tagName = child.tagName.toLowerCase();
-                
+
                 if (!allowedTags.includes(tagName)) {
                     // Replace element with its text content
                     const text = document.createTextNode(child.textContent);
@@ -743,9 +688,15 @@ function sanitizeSnippet(html) {
             }
         }
     }
-    
+
     sanitizeNode(temp);
-    return temp.innerHTML;
+
+    // Format ellipsis separators - split on " ... " patterns and wrap each segment
+    let result = temp.innerHTML;
+    // Match patterns like " ... " or "... " at start or " ..." at end
+    result = result.replace(/\s*\.{3}\s*/g, '<span class="snippet-separator">···</span>');
+
+    return result;
 }
 
 function getDomain(url) {

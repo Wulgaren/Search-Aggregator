@@ -35,6 +35,23 @@ export async function handler(event) {
             fetchGoogleImages(searchQuery)
         ]);
 
+        // Combine and deduplicate images by URL
+        const allImages = [
+            ...(braveImages.status === 'fulfilled' ? braveImages.value : []),
+            ...(googleImages.status === 'fulfilled' ? googleImages.value : [])
+        ];
+
+        const seenUrls = new Set();
+        const deduplicatedImages = allImages.filter(img => {
+            // Normalize URL for deduplication
+            const normalizedUrl = img.full.replace(/^https?:\/\//, '').replace(/\/$/, '');
+            if (seenUrls.has(normalizedUrl)) {
+                return false;
+            }
+            seenUrls.add(normalizedUrl);
+            return true;
+        });
+
         return {
             statusCode: 200,
             headers: {
@@ -42,10 +59,7 @@ export async function handler(event) {
                 'Cache-Control': 'public, max-age=300'
             },
             body: JSON.stringify({
-                images: [
-                    ...(braveImages.status === 'fulfilled' ? braveImages.value : []),
-                    ...(googleImages.status === 'fulfilled' ? googleImages.value : [])
-                ]
+                images: deduplicatedImages
             })
         };
     }
