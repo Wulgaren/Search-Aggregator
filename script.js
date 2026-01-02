@@ -137,19 +137,12 @@ window.addEventListener('pageshow', (event) => {
     }
 });
 
-// Additional fallback for Safari - restore when window regains focus
-window.addEventListener('focus', () => {
-    // Only restore if input is empty but URL has query (Safari bfcache issue)
-    const urlParams = new URLSearchParams(window.location.search);
-    const query = urlParams.get('q');
-    if (query && searchInput.value !== query) {
-        restoreSearchState();
-    }
-});
-
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
+    console.log('query', query ?? "no query");
+    console.log('query', currentQuery ?? "no current query");
+    console.log('focusInput', focusInput);
 
     if (query) {
         // Check for DDG bang and redirect if found
