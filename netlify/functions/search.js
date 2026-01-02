@@ -1,5 +1,5 @@
 // Netlify serverless function to query Brave, Google, and Marginalia
-import crypto from 'crypto';
+import crypto from "crypto";
 
 // Cache for Google access token
 let googleAccessToken = null;
@@ -7,10 +7,10 @@ let googleTokenExpiry = 0;
 
 export async function handler(event) {
     // Only allow GET requests
-    if (event.httpMethod !== 'GET') {
+    if (event.httpMethod !== "GET") {
         return {
             statusCode: 405,
-            body: JSON.stringify({ error: 'Method not allowed' })
+            body: JSON.stringify({ error: "Method not allowed" }),
         };
     }
 
@@ -18,10 +18,10 @@ export async function handler(event) {
     const page = parseInt(event.queryStringParameters?.page) || 1;
     const source = event.queryStringParameters?.source; // 'brave', 'google', 'marginalia', 'images', or undefined (all)
 
-    if (!query || query.trim() === '') {
+    if (!query || query.trim() === "") {
         return {
             statusCode: 400,
-            body: JSON.stringify({ error: 'Query parameter "q" is required' })
+            body: JSON.stringify({ error: 'Query parameter "q" is required' }),
         };
     }
 
@@ -29,35 +29,37 @@ export async function handler(event) {
     const resultsPerPage = 10;
 
     // Handle infobox request
-    if (source === 'infobox') {
+    if (source === "infobox") {
         const infobox = await fetchWikipediaInfobox(searchQuery);
         return {
             statusCode: 200,
             headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=3600' // Cache infobox for 1 hour
+                "Content-Type": "application/json",
+                "Cache-Control": "public, max-age=3600", // Cache infobox for 1 hour
             },
-            body: JSON.stringify({ infobox })
+            body: JSON.stringify({ infobox }),
         };
     }
 
     // Handle image search separately
-    if (source === 'images') {
+    if (source === "images") {
         const [braveImages, googleImages] = await Promise.allSettled([
             fetchBraveImages(searchQuery, page),
-            fetchGoogleImages(searchQuery, page)
+            fetchGoogleImages(searchQuery, page),
         ]);
 
         // Combine and deduplicate images by URL
         const allImages = [
-            ...(braveImages.status === 'fulfilled' ? braveImages.value : []),
-            ...(googleImages.status === 'fulfilled' ? googleImages.value : [])
+            ...(braveImages.status === "fulfilled" ? braveImages.value : []),
+            ...(googleImages.status === "fulfilled" ? googleImages.value : []),
         ];
 
         const seenUrls = new Set();
-        const deduplicatedImages = allImages.filter(img => {
+        const deduplicatedImages = allImages.filter((img) => {
             // Normalize URL for deduplication
-            const normalizedUrl = img.full.replace(/^https?:\/\//, '').replace(/\/$/, '');
+            const normalizedUrl = img.full
+                .replace(/^https?:\/\//, "")
+                .replace(/\/$/, "");
             if (seenUrls.has(normalizedUrl)) {
                 return false;
             }
@@ -71,63 +73,83 @@ export async function handler(event) {
         return {
             statusCode: 200,
             headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=300'
+                "Content-Type": "application/json",
+                "Cache-Control": "public, max-age=300",
             },
             body: JSON.stringify({
                 images: deduplicatedImages,
-                hasMore
-            })
+                hasMore,
+            }),
         };
     }
 
     // Determine which sources to fetch
-    const fetchBravePromise = (!source || source === 'brave')
-        ? fetchBrave(searchQuery, page, resultsPerPage)
-        : Promise.resolve(null);
+    const fetchBravePromise =
+        !source || source === "brave"
+            ? fetchBrave(searchQuery, page, resultsPerPage)
+            : Promise.resolve(null);
 
-    const fetchGooglePromise = (!source || source === 'google')
-        ? fetchGoogle(searchQuery, page, resultsPerPage)
-        : Promise.resolve(null);
+    const fetchGooglePromise =
+        !source || source === "google"
+            ? fetchGoogle(searchQuery, page, resultsPerPage)
+            : Promise.resolve(null);
 
-    const fetchMarginaliaPromise = (!source || source === 'marginalia')
-        ? fetchMarginalia(searchQuery, page, resultsPerPage)
-        : Promise.resolve(null);
+    const fetchMarginaliaPromise =
+        !source || source === "marginalia"
+            ? fetchMarginalia(searchQuery, page, resultsPerPage)
+            : Promise.resolve(null);
 
     // Fetch APIs in parallel
-    const [braveResults, googleResults, marginaliaResults] = await Promise.allSettled([
-        fetchBravePromise,
-        fetchGooglePromise,
-        fetchMarginaliaPromise
-    ]);
+    const [braveResults, googleResults, marginaliaResults] =
+        await Promise.allSettled([
+            fetchBravePromise,
+            fetchGooglePromise,
+            fetchMarginaliaPromise,
+        ]);
 
     const response = { page };
 
-    if (!source || source === 'brave') {
-        response.brave = braveResults.status === 'fulfilled' && braveResults.value
-            ? braveResults.value
-            : { error: braveResults.reason?.message || 'Failed to fetch Brave results', results: [] };
+    if (!source || source === "brave") {
+        response.brave =
+            braveResults.status === "fulfilled" && braveResults.value
+                ? braveResults.value
+                : {
+                    error:
+                        braveResults.reason?.message || "Failed to fetch Brave results",
+                    results: [],
+                };
     }
 
-    if (!source || source === 'google') {
-        response.google = googleResults.status === 'fulfilled' && googleResults.value
-            ? googleResults.value
-            : { error: googleResults.reason?.message || 'Failed to fetch Google results', results: [] };
+    if (!source || source === "google") {
+        response.google =
+            googleResults.status === "fulfilled" && googleResults.value
+                ? googleResults.value
+                : {
+                    error:
+                        googleResults.reason?.message || "Failed to fetch Google results",
+                    results: [],
+                };
     }
 
-    if (!source || source === 'marginalia') {
-        response.marginalia = marginaliaResults.status === 'fulfilled' && marginaliaResults.value
-            ? marginaliaResults.value
-            : { error: marginaliaResults.reason?.message || 'Failed to fetch Marginalia results', results: [] };
+    if (!source || source === "marginalia") {
+        response.marginalia =
+            marginaliaResults.status === "fulfilled" && marginaliaResults.value
+                ? marginaliaResults.value
+                : {
+                    error:
+                        marginaliaResults.reason?.message ||
+                        "Failed to fetch Marginalia results",
+                    results: [],
+                };
     }
 
     return {
         statusCode: 200,
         headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'public, max-age=300'
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=300",
         },
-        body: JSON.stringify(response)
+        body: JSON.stringify(response),
     };
 }
 
@@ -135,31 +157,31 @@ async function fetchBrave(query, page, resultsPerPage) {
     const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
-        throw new Error('Brave API key not configured');
+        throw new Error("Brave API key not configured");
     }
 
     // Brave's offset is page number (0-indexed), max 9
     const offset = page - 1;
 
     if (offset > 9) {
-        return { results: [], hasMore: false, totalResults: '0' };
+        return { results: [], hasMore: false, totalResults: "0" };
     }
 
-    const url = new URL('https://api.search.brave.com/res/v1/web/search');
-    url.searchParams.set('q', query);
-    url.searchParams.set('count', resultsPerPage);
-    url.searchParams.set('offset', offset);
+    const url = new URL("https://api.search.brave.com/res/v1/web/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("count", resultsPerPage);
+    url.searchParams.set("offset", offset);
 
     const response = await fetch(url.toString(), {
         headers: {
-            'X-Subscription-Token': apiKey,
-            'Accept': 'application/json'
-        }
+            "X-Subscription-Token": apiKey,
+            Accept: "application/json",
+        },
     });
 
     if (!response.ok) {
         if (response.status === 429) {
-            throw new Error('Rate limited - too many requests');
+            throw new Error("Rate limited - too many requests");
         }
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || `Brave API error: ${response.status}`);
@@ -168,18 +190,18 @@ async function fetchBrave(query, page, resultsPerPage) {
     const data = await response.json();
     const webResults = data.web?.results || [];
 
-    const results = webResults.map(item => ({
+    const results = webResults.map((item) => ({
         title: item.title,
         url: item.url,
         displayUrl: item.meta_url?.hostname || new URL(item.url).hostname,
-        snippet: item.description || '',
-        source: 'brave'
+        snippet: item.description || "",
+        source: "brave",
     }));
 
     return {
         results,
         hasMore: webResults.length === resultsPerPage && offset < 9,
-        totalResults: String(data.web?.total || results.length)
+        totalResults: String(data.web?.total || results.length),
     };
 }
 
@@ -191,40 +213,40 @@ async function getGoogleAccessToken() {
 
     const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT;
     if (!serviceAccountJson) {
-        throw new Error('Google service account not configured');
+        throw new Error("Google service account not configured");
     }
 
     let serviceAccount;
     try {
         serviceAccount = JSON.parse(serviceAccountJson);
     } catch (e) {
-        throw new Error('Invalid Google service account JSON');
+        throw new Error("Invalid Google service account JSON");
     }
 
     const { client_email, private_key } = serviceAccount;
     if (!client_email || !private_key) {
-        throw new Error('Service account missing client_email or private_key');
+        throw new Error("Service account missing client_email or private_key");
     }
 
     // Create JWT header and payload
     const now = Math.floor(Date.now() / 1000);
     const header = {
-        alg: 'RS256',
-        typ: 'JWT'
+        alg: "RS256",
+        typ: "JWT",
     };
     const payload = {
         iss: client_email,
-        scope: 'https://www.googleapis.com/auth/cse',
-        aud: 'https://oauth2.googleapis.com/token',
+        scope: "https://www.googleapis.com/auth/cse",
+        aud: "https://oauth2.googleapis.com/token",
         iat: now,
-        exp: now + 3600 // 1 hour
+        exp: now + 3600, // 1 hour
     };
 
     // Base64url encode
     const base64url = (obj) => {
         const json = JSON.stringify(obj);
-        const base64 = Buffer.from(json).toString('base64');
-        return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        const base64 = Buffer.from(json).toString("base64");
+        return base64.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     };
 
     const headerEncoded = base64url(header);
@@ -232,28 +254,34 @@ async function getGoogleAccessToken() {
     const signatureInput = `${headerEncoded}.${payloadEncoded}`;
 
     // Sign with RSA-SHA256
-    const sign = crypto.createSign('RSA-SHA256');
+    const sign = crypto.createSign("RSA-SHA256");
     sign.update(signatureInput);
-    const signature = sign.sign(private_key, 'base64')
-        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const signature = sign
+        .sign(private_key, "base64")
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
 
     const jwt = `${signatureInput}.${signature}`;
 
     // Exchange JWT for access token
-    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
     });
 
     if (!tokenResponse.ok) {
         const errorData = await tokenResponse.json().catch(() => ({}));
-        throw new Error(errorData.error_description || `Token exchange failed: ${tokenResponse.status}`);
+        throw new Error(
+            errorData.error_description ||
+            `Token exchange failed: ${tokenResponse.status}`,
+        );
     }
 
     const tokenData = await tokenResponse.json();
     googleAccessToken = tokenData.access_token;
-    googleTokenExpiry = Date.now() + (tokenData.expires_in * 1000);
+    googleTokenExpiry = Date.now() + tokenData.expires_in * 1000;
 
     return googleAccessToken;
 }
@@ -263,12 +291,12 @@ async function fetchGoogle(query, page, resultsPerPage) {
 
     if (!cx) {
         // Google CX not configured, skip silently
-        return { results: [], hasMore: false, totalResults: '0' };
+        return { results: [], hasMore: false, totalResults: "0" };
     }
 
     // Check if service account is configured
     if (!process.env.GOOGLE_SERVICE_ACCOUNT) {
-        return { results: [], hasMore: false, totalResults: '0' };
+        return { results: [], hasMore: false, totalResults: "0" };
     }
 
     // Google CSE uses 'start' parameter (1-indexed)
@@ -276,47 +304,50 @@ async function fetchGoogle(query, page, resultsPerPage) {
 
     // Google CSE limits to 100 results total
     if (startIndex > 91) {
-        return { results: [], hasMore: false, totalResults: '0' };
+        return { results: [], hasMore: false, totalResults: "0" };
     }
 
     // Get access token from service account
     const accessToken = await getGoogleAccessToken();
 
-    const url = new URL('https://www.googleapis.com/customsearch/v1');
-    url.searchParams.set('cx', cx);
-    url.searchParams.set('q', query);
-    url.searchParams.set('num', Math.min(resultsPerPage, 10)); // Google max is 10 per request
-    url.searchParams.set('start', startIndex);
+    const url = new URL("https://www.googleapis.com/customsearch/v1");
+    url.searchParams.set("cx", cx);
+    url.searchParams.set("q", query);
+    url.searchParams.set("num", Math.min(resultsPerPage, 10)); // Google max is 10 per request
+    url.searchParams.set("start", startIndex);
 
     const response = await fetch(url.toString(), {
         headers: {
-            'Authorization': `Bearer ${accessToken}`
-        }
+            Authorization: `Bearer ${accessToken}`,
+        },
     });
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `Google API error: ${response.status}`);
+        throw new Error(
+            errorData.error?.message || `Google API error: ${response.status}`,
+        );
     }
 
     const data = await response.json();
     const items = data.items || [];
 
-    const results = items.map(item => ({
+    const results = items.map((item) => ({
         title: item.title,
         url: item.link,
         displayUrl: item.displayLink,
-        snippet: item.snippet || '',
-        source: 'google'
+        snippet: item.snippet || "",
+        source: "google",
     }));
 
     const totalResults = parseInt(data.searchInformation?.totalResults) || 0;
-    const hasMore = startIndex + results.length - 1 < totalResults && startIndex < 91;
+    const hasMore =
+        startIndex + results.length - 1 < totalResults && startIndex < 91;
 
     return {
         results,
         hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
-        totalResults: String(totalResults)
+        totalResults: String(totalResults),
     };
 }
 
@@ -326,7 +357,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     const url = `https://api.marginalia.nu/public/search/${encodedQuery}?count=${resultsPerPage}&index=${offset}`;
 
     const response = await fetch(url, {
-        headers: { 'Accept': 'application/json' }
+        headers: { Accept: "application/json" },
     });
 
     if (!response.ok) {
@@ -334,18 +365,18 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     }
 
     const data = await response.json();
-    const results = (data.results || []).map(item => ({
+    const results = (data.results || []).map((item) => ({
         title: item.title || item.url,
         url: item.url,
         displayUrl: new URL(item.url).hostname,
-        snippet: item.description || '',
-        source: 'marginalia'
+        snippet: item.description || "",
+        source: "marginalia",
     }));
 
     return {
         results,
         hasMore: results.length === resultsPerPage,
-        totalResults: String(data.results?.length || 0)
+        totalResults: String(data.results?.length || 0),
     };
 }
 
@@ -362,16 +393,16 @@ async function fetchBraveImages(query, page = 1) {
         return []; // Brave limits to ~3 pages
     }
 
-    const url = new URL('https://api.search.brave.com/res/v1/images/search');
-    url.searchParams.set('q', query);
-    url.searchParams.set('count', 20);
-    url.searchParams.set('offset', offset);
+    const url = new URL("https://api.search.brave.com/res/v1/images/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("count", 20);
+    url.searchParams.set("offset", offset);
 
     const response = await fetch(url.toString(), {
         headers: {
-            'X-Subscription-Token': apiKey,
-            'Accept': 'application/json'
-        }
+            "X-Subscription-Token": apiKey,
+            Accept: "application/json",
+        },
     });
 
     if (!response.ok) {
@@ -382,15 +413,17 @@ async function fetchBraveImages(query, page = 1) {
     const data = await response.json();
     const results = data.results || [];
 
-    return results.map(item => ({
-        thumbnail: item.thumbnail?.src || item.properties?.url,
-        full: item.properties?.url || item.thumbnail?.src,
-        title: item.title || '',
-        sourceUrl: item.url || '',
-        width: item.properties?.width,
-        height: item.properties?.height,
-        source: 'brave'
-    })).filter(img => img.thumbnail && img.full);
+    return results
+        .map((item) => ({
+            thumbnail: item.thumbnail?.src || item.properties?.url,
+            full: item.properties?.url || item.thumbnail?.src,
+            title: item.title || "",
+            sourceUrl: item.url || "",
+            width: item.properties?.width,
+            height: item.properties?.height,
+            source: "brave",
+        }))
+        .filter((img) => img.thumbnail && img.full);
 }
 
 async function fetchGoogleImages(query, page = 1) {
@@ -409,17 +442,17 @@ async function fetchGoogleImages(query, page = 1) {
     try {
         const accessToken = await getGoogleAccessToken();
 
-        const url = new URL('https://www.googleapis.com/customsearch/v1');
-        url.searchParams.set('cx', cx);
-        url.searchParams.set('q', query);
-        url.searchParams.set('searchType', 'image');
-        url.searchParams.set('num', 10);
-        url.searchParams.set('start', startIndex);
+        const url = new URL("https://www.googleapis.com/customsearch/v1");
+        url.searchParams.set("cx", cx);
+        url.searchParams.set("q", query);
+        url.searchParams.set("searchType", "image");
+        url.searchParams.set("num", 10);
+        url.searchParams.set("start", startIndex);
 
         const response = await fetch(url.toString(), {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
+                Authorization: `Bearer ${accessToken}`,
+            },
         });
 
         if (!response.ok) {
@@ -429,15 +462,17 @@ async function fetchGoogleImages(query, page = 1) {
         const data = await response.json();
         const items = data.items || [];
 
-        return items.map(item => ({
-            thumbnail: item.image?.thumbnailLink || item.link,
-            full: item.link,
-            title: item.title || '',
-            sourceUrl: item.image?.contextLink || '',
-            width: item.image?.width,
-            height: item.image?.height,
-            source: 'google'
-        })).filter(img => img.thumbnail && img.full);
+        return items
+            .map((item) => ({
+                thumbnail: item.image?.thumbnailLink || item.link,
+                full: item.link,
+                title: item.title || "",
+                sourceUrl: item.image?.contextLink || "",
+                width: item.image?.width,
+                height: item.image?.height,
+                source: "google",
+            }))
+            .filter((img) => img.thumbnail && img.full);
     } catch (e) {
         return [];
     }
@@ -447,13 +482,12 @@ async function fetchGoogleImages(query, page = 1) {
 async function fetchWikipediaInfobox(query) {
     try {
         // First, search Wikipedia for the best matching page
-        const searchUrl = new URL('https://en.wikipedia.org/w/api.php');
-        searchUrl.searchParams.set('action', 'query');
-        searchUrl.searchParams.set('format', 'json');
-        searchUrl.searchParams.set('list', 'search');
-        searchUrl.searchParams.set('srsearch', query);
-        searchUrl.searchParams.set('srlimit', 1);
-        searchUrl.searchParams.set('origin', '*');
+        const searchUrl = new URL("https://en.wikipedia.org/w/api.php");
+        searchUrl.searchParams.set("action", "opensearch");
+        searchUrl.searchParams.set("format", "json");
+        searchUrl.searchParams.set("search", query);
+        searchUrl.searchParams.set("limit", 1);
+        searchUrl.searchParams.set("origin", "*");
 
         const searchResponse = await fetch(searchUrl.toString());
         if (!searchResponse.ok) return null;
@@ -466,19 +500,22 @@ async function fetchWikipediaInfobox(query) {
         const pageTitle = searchResults[0].title;
 
         // Now fetch full page data including extract, image, and links
-        const pageUrl = new URL('https://en.wikipedia.org/w/api.php');
-        pageUrl.searchParams.set('action', 'query');
-        pageUrl.searchParams.set('format', 'json');
-        pageUrl.searchParams.set('titles', pageTitle);
-        pageUrl.searchParams.set('prop', 'extracts|pageimages|info|extlinks|categories');
-        pageUrl.searchParams.set('exintro', 'true');
-        pageUrl.searchParams.set('explaintext', 'true');
-        pageUrl.searchParams.set('exsentences', 4);
-        pageUrl.searchParams.set('piprop', 'thumbnail|original');
-        pageUrl.searchParams.set('pithumbsize', 300);
-        pageUrl.searchParams.set('inprop', 'url');
-        pageUrl.searchParams.set('cllimit', 10);
-        pageUrl.searchParams.set('origin', '*');
+        const pageUrl = new URL("https://en.wikipedia.org/w/api.php");
+        pageUrl.searchParams.set("action", "query");
+        pageUrl.searchParams.set("format", "json");
+        pageUrl.searchParams.set("titles", pageTitle);
+        pageUrl.searchParams.set(
+            "prop",
+            "extracts|pageimages|info|extlinks|categories",
+        );
+        pageUrl.searchParams.set("exintro", "true");
+        pageUrl.searchParams.set("explaintext", "true");
+        pageUrl.searchParams.set("exsentences", 4);
+        pageUrl.searchParams.set("piprop", "thumbnail|original");
+        pageUrl.searchParams.set("pithumbsize", 300);
+        pageUrl.searchParams.set("inprop", "url");
+        pageUrl.searchParams.set("cllimit", 10);
+        pageUrl.searchParams.set("origin", "*");
 
         const pageResponse = await fetch(pageUrl.toString());
         if (!pageResponse.ok) return null;
@@ -490,21 +527,21 @@ async function fetchWikipediaInfobox(query) {
         if (!page || page.missing) return null;
 
         // Check if this is likely a person/entity (has useful info)
-        const extract = page.extract || '';
+        const extract = page.extract || "";
         if (extract.length < 50) return null;
 
         // Get Wikidata ID for additional links
         let wikidataId = null;
-        let externalLinks = [];
+        const externalLinks = [];
 
         try {
-            const wikidataUrl = new URL('https://en.wikipedia.org/w/api.php');
-            wikidataUrl.searchParams.set('action', 'query');
-            wikidataUrl.searchParams.set('format', 'json');
-            wikidataUrl.searchParams.set('titles', pageTitle);
-            wikidataUrl.searchParams.set('prop', 'pageprops');
-            wikidataUrl.searchParams.set('ppprop', 'wikibase_item');
-            wikidataUrl.searchParams.set('origin', '*');
+            const wikidataUrl = new URL("https://en.wikipedia.org/w/api.php");
+            wikidataUrl.searchParams.set("action", "query");
+            wikidataUrl.searchParams.set("format", "json");
+            wikidataUrl.searchParams.set("titles", pageTitle);
+            wikidataUrl.searchParams.set("prop", "pageprops");
+            wikidataUrl.searchParams.set("ppprop", "wikibase_item");
+            wikidataUrl.searchParams.set("origin", "*");
 
             const wikidataResponse = await fetch(wikidataUrl.toString());
             if (wikidataResponse.ok) {
@@ -516,12 +553,12 @@ async function fetchWikipediaInfobox(query) {
 
             // If we have a Wikidata ID, fetch external links from Wikidata
             if (wikidataId) {
-                const claimsUrl = new URL('https://www.wikidata.org/w/api.php');
-                claimsUrl.searchParams.set('action', 'wbgetentities');
-                claimsUrl.searchParams.set('format', 'json');
-                claimsUrl.searchParams.set('ids', wikidataId);
-                claimsUrl.searchParams.set('props', 'claims|sitelinks');
-                claimsUrl.searchParams.set('origin', '*');
+                const claimsUrl = new URL("https://www.wikidata.org/w/api.php");
+                claimsUrl.searchParams.set("action", "wbgetentities");
+                claimsUrl.searchParams.set("format", "json");
+                claimsUrl.searchParams.set("ids", wikidataId);
+                claimsUrl.searchParams.set("props", "claims|sitelinks");
+                claimsUrl.searchParams.set("origin", "*");
 
                 const claimsResponse = await fetch(claimsUrl.toString());
                 if (claimsResponse.ok) {
@@ -531,38 +568,74 @@ async function fetchWikipediaInfobox(query) {
 
                     // Extract useful links (social media, official website, etc.)
                     const linkProperties = {
-                        'P856': { name: 'Official website', icon: '🌐' },
-                        'P2002': { name: 'Twitter', icon: '𝕏', urlPrefix: 'https://twitter.com/' },
-                        'P2003': { name: 'Instagram', icon: '📷', urlPrefix: 'https://instagram.com/' },
-                        'P2013': { name: 'Facebook', icon: '📘', urlPrefix: 'https://facebook.com/' },
-                        'P2397': { name: 'YouTube', icon: '▶️', urlPrefix: 'https://youtube.com/channel/' },
-                        'P4264': { name: 'LinkedIn', icon: '💼', urlPrefix: 'https://linkedin.com/in/' },
-                        'P345': { name: 'IMDb', icon: '🎬', urlPrefix: 'https://imdb.com/name/' },
-                        'P1953': { name: 'Discogs', icon: '💿', urlPrefix: 'https://discogs.com/artist/' },
-                        'P434': { name: 'MusicBrainz', icon: '🎵', urlPrefix: 'https://musicbrainz.org/artist/' },
-                        'P1902': { name: 'Spotify', icon: '🎧', urlPrefix: 'https://open.spotify.com/artist/' }
+                        P856: { name: "Official website", icon: "🌐" },
+                        P2002: {
+                            name: "Twitter",
+                            icon: "𝕏",
+                            urlPrefix: "https://twitter.com/",
+                        },
+                        P2003: {
+                            name: "Instagram",
+                            icon: "📷",
+                            urlPrefix: "https://instagram.com/",
+                        },
+                        P2013: {
+                            name: "Facebook",
+                            icon: "📘",
+                            urlPrefix: "https://facebook.com/",
+                        },
+                        P2397: {
+                            name: "YouTube",
+                            icon: "▶️",
+                            urlPrefix: "https://youtube.com/channel/",
+                        },
+                        P4264: {
+                            name: "LinkedIn",
+                            icon: "💼",
+                            urlPrefix: "https://linkedin.com/in/",
+                        },
+                        P345: {
+                            name: "IMDb",
+                            icon: "🎬",
+                            urlPrefix: "https://imdb.com/name/",
+                        },
+                        P1953: {
+                            name: "Discogs",
+                            icon: "💿",
+                            urlPrefix: "https://discogs.com/artist/",
+                        },
+                        P434: {
+                            name: "MusicBrainz",
+                            icon: "🎵",
+                            urlPrefix: "https://musicbrainz.org/artist/",
+                        },
+                        P1902: {
+                            name: "Spotify",
+                            icon: "🎧",
+                            urlPrefix: "https://open.spotify.com/artist/",
+                        },
                     };
 
                     for (const [prop, config] of Object.entries(linkProperties)) {
                         if (claims[prop] && claims[prop][0]?.mainsnak?.datavalue?.value) {
-                            let value = claims[prop][0].mainsnak.datavalue.value;
+                            const value = claims[prop][0].mainsnak.datavalue.value;
                             let url;
-                            
-                            if (typeof value === 'string') {
+
+                            if (typeof value === "string") {
                                 url = config.urlPrefix ? config.urlPrefix + value : value;
                             } else {
                                 continue;
                             }
 
                             // Validate URL
-                            if (!url.startsWith('http')) {
-                                url = 'https://' + url;
+                            if (!url.startsWith("http")) {
+                                url = "https://" + url;
                             }
 
                             externalLinks.push({
                                 name: config.name,
                                 icon: config.icon,
-                                url: url
+                                url: url,
                             });
                         }
                     }
@@ -580,10 +653,10 @@ async function fetchWikipediaInfobox(query) {
             imageHeight: page.thumbnail?.height,
             url: page.fullurl,
             wikidataId,
-            links: externalLinks.slice(0, 6) // Limit to 6 links
+            links: externalLinks.slice(0, 6), // Limit to 6 links
         };
     } catch (e) {
-        console.error('Wikipedia infobox error:', e);
+        console.error("Wikipedia infobox error:", e);
         return null;
     }
 }
