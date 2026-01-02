@@ -21,6 +21,26 @@ function handleBangRedirect(query) {
     window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
 }
 
+// Prefetch link on mousedown/touchstart for faster navigation
+const prefetchedUrls = new Set();
+function prefetchLink(url) {
+    if (prefetchedUrls.has(url)) return;
+    prefetchedUrls.add(url);
+
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = url;
+    document.head.appendChild(link);
+}
+
+function attachPrefetchListeners(container) {
+    container.querySelectorAll('.result-title a').forEach(link => {
+        const url = link.href;
+        link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
+        link.addEventListener('touchstart', () => prefetchLink(url), { once: true, passive: true });
+    });
+}
+
 // Image elements
 const imageSection = document.getElementById('image-section');
 const sliderTrack = document.getElementById('slider-track');
@@ -297,13 +317,14 @@ function renderCommercialResults() {
                 <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
             </div>
             <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
+                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
             </h3>
             ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
         </article>
     `}).join('');
 
     commercialResults.innerHTML = html;
+    attachPrefetchListeners(commercialResults);
 
     const totalResults = braveState.results.length + googleState.results.length;
     const hasMore = braveState.hasMore || googleState.hasMore;
@@ -341,13 +362,14 @@ function renderNoncommercialResults() {
                 <div class="result-source-tag">Marginalia</div>
             </div>
             <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
+                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
             </h3>
             ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
         </article>
     `}).join('');
 
     noncommercialResults.innerHTML = html;
+    attachPrefetchListeners(noncommercialResults);
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
 
     if (marginaliaState.hasMore) {
@@ -513,7 +535,7 @@ function renderMergedResults() {
                     <div class="result-source">${sourceLabel}</div>
                 </div>
                 <h3 class="result-title">
-                    <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
+                    <a href="${escapeHtml(item.result.url)}">${escapeHtml(item.result.title)}</a>
                 </h3>
                 ${item.result.snippet ? `<p class="result-snippet">${sanitizeSnippet(item.result.snippet)}</p>` : ''}
             </article>
@@ -521,6 +543,7 @@ function renderMergedResults() {
     }).join('');
 
     mergedResults.innerHTML = html;
+    attachPrefetchListeners(mergedResults);
 
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
     if (hasMore) {
