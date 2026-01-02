@@ -8,12 +8,29 @@ const commercialCount = document.getElementById('commercial-count');
 const noncommercialCount = document.getElementById('noncommercial-count');
 const chatgptBtn = document.getElementById('chatgpt-btn');
 
+// Image elements
+const imageSection = document.getElementById('image-section');
+const sliderTrack = document.getElementById('slider-track');
+const sliderPrev = document.getElementById('slider-prev');
+const sliderNext = document.getElementById('slider-next');
+const viewAllBtn = document.getElementById('view-all-images');
+const imageModal = document.getElementById('image-modal');
+const modalGrid = document.getElementById('modal-grid');
+const modalClose = document.getElementById('modal-close');
+const modalOverlay = document.getElementById('modal-overlay');
+const imagePreview = document.getElementById('image-preview');
+const previewImage = document.getElementById('preview-image');
+const previewInfo = document.getElementById('preview-info');
+const previewClose = document.getElementById('preview-close');
+const previewOverlay = document.getElementById('preview-overlay');
+
 // State - track each source separately
 let currentQuery = '';
 let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let mergedState = { loading: false };
+let imageState = { images: [], loading: false };
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -65,6 +82,39 @@ chatgptBtn.addEventListener('click', () => {
     const query = searchInput.value.trim();
     if (query) {
         window.open(`https://chat.openai.com/?q=${encodeURIComponent(query)}`, '_blank');
+    }
+});
+
+// Image slider controls
+sliderPrev.addEventListener('click', () => {
+    sliderTrack.scrollBy({ left: -300, behavior: 'smooth' });
+});
+
+sliderNext.addEventListener('click', () => {
+    sliderTrack.scrollBy({ left: 300, behavior: 'smooth' });
+});
+
+// View all images button
+viewAllBtn.addEventListener('click', () => {
+    openImageModal();
+});
+
+// Modal close handlers
+modalClose.addEventListener('click', closeImageModal);
+modalOverlay.addEventListener('click', closeImageModal);
+
+// Preview close handlers
+previewClose.addEventListener('click', closeImagePreview);
+previewOverlay.addEventListener('click', closeImagePreview);
+
+// ESC key to close modals
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        if (imagePreview.classList.contains('active')) {
+            closeImagePreview();
+        } else if (imageModal.classList.contains('active')) {
+            closeImageModal();
+        }
     }
 });
 
@@ -131,6 +181,7 @@ async function performSearch(query) {
     googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
+    imageState = { images: [], loading: false };
 
     // Show loading states
     showLoading(commercialResults);
@@ -139,10 +190,14 @@ async function performSearch(query) {
     commercialCount.textContent = '';
     noncommercialCount.textContent = '';
 
+    // Hide image section initially
+    imageSection.style.display = 'none';
+
     // Fetch all sources independently - don't wait for all
     fetchSource('brave', query, 1);
     fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
+    fetchImages(query);
 }
 
 async function fetchSource(source, query, page) {
@@ -236,7 +291,7 @@ function renderCommercialResults() {
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
             </h3>
-            ${result.snippet ? `<p class="result-snippet">${escapeHtml(result.snippet)}</p>` : ''}
+            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
         </article>
     `}).join('');
 
@@ -281,7 +336,7 @@ function renderNoncommercialResults() {
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
             </h3>
-            ${result.snippet ? `<p class="result-snippet">${escapeHtml(result.snippet)}</p>` : ''}
+            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
         </article>
     `).join('');
 
@@ -455,7 +510,7 @@ function renderMergedResults() {
                 <h3 class="result-title">
                     <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
                 </h3>
-                ${item.result.snippet ? `<p class="result-snippet">${escapeHtml(item.result.snippet)}</p>` : ''}
+                ${item.result.snippet ? `<p class="result-snippet">${sanitizeSnippet(item.result.snippet)}</p>` : ''}
             </article>
         `;
     }).join('');
@@ -475,6 +530,100 @@ function getDedupeKey(url) {
         return parsed.hostname + parsed.pathname.replace(/\/$/, '');
     } catch {
         return url;
+    }
+}
+
+async function fetchImages(query) {
+    imageState.loading = true;
+
+    try {
+        const response = await fetch(
+            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images`
+        );
+
+        if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
+
+        const data = await response.json();
+        imageState.images = data.images || [];
+
+        if (imageState.images.length > 0) {
+            renderImageSlider();
+            imageSection.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error fetching images:', error);
+    } finally {
+        imageState.loading = false;
+    }
+}
+
+function renderImageSlider() {
+    const images = imageState.images;
+    sliderTrack.innerHTML = images.slice(0, 20).map((img, index) => `
+        <img 
+            class="slider-image" 
+            src="${escapeHtml(img.thumbnail)}" 
+            alt="${escapeHtml(img.title)}"
+            data-index="${index}"
+            loading="lazy"
+        >
+    `).join('');
+
+    // Add click handlers
+    sliderTrack.querySelectorAll('.slider-image').forEach(img => {
+        img.addEventListener('click', () => {
+            const index = parseInt(img.dataset.index);
+            openImagePreview(index);
+        });
+    });
+}
+
+function openImageModal() {
+    const images = imageState.images;
+    modalGrid.innerHTML = images.map((img, index) => `
+        <div class="modal-image-container" data-index="${index}">
+            <img src="${escapeHtml(img.thumbnail)}" alt="${escapeHtml(img.title)}" loading="lazy">
+            <span class="modal-image-source">${img.source}</span>
+        </div>
+    `).join('');
+
+    // Add click handlers
+    modalGrid.querySelectorAll('.modal-image-container').forEach(container => {
+        container.addEventListener('click', () => {
+            const index = parseInt(container.dataset.index);
+            openImagePreview(index);
+        });
+    });
+
+    imageModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImageModal() {
+    imageModal.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function openImagePreview(index) {
+    const img = imageState.images[index];
+    if (!img) return;
+
+    previewImage.src = img.full;
+    previewImage.alt = img.title;
+    previewInfo.innerHTML = `
+        <div>${escapeHtml(img.title)}</div>
+        ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">Visit page</a>` : ''}
+    `;
+
+    imagePreview.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImagePreview() {
+    imagePreview.classList.remove('active');
+    previewImage.src = '';
+    if (!imageModal.classList.contains('active')) {
+        document.body.style.overflow = '';
     }
 }
 
@@ -540,12 +689,15 @@ function resetResults() {
     googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
+    imageState = { images: [], loading: false };
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
     mergedResults.innerHTML = `<div class="empty-state"><p>Search results will appear here</p></div>`;
     commercialCount.textContent = '';
     noncommercialCount.textContent = '';
+    imageSection.style.display = 'none';
+    sliderTrack.innerHTML = '';
 }
 
 function escapeHtml(text) {
@@ -553,6 +705,47 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Sanitize HTML - allow only safe tags for snippets
+function sanitizeSnippet(html) {
+    if (!html) return '';
+    
+    // Create a temporary element to parse HTML
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    
+    // Walk through all elements and remove unsafe ones
+    const allowedTags = ['b', 'strong', 'i', 'em', 'br', 'span', 'mark'];
+    
+    function sanitizeNode(node) {
+        const children = Array.from(node.childNodes);
+        
+        for (const child of children) {
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                const tagName = child.tagName.toLowerCase();
+                
+                if (!allowedTags.includes(tagName)) {
+                    // Replace element with its text content
+                    const text = document.createTextNode(child.textContent);
+                    node.replaceChild(text, child);
+                } else {
+                    // Remove all attributes except class
+                    const attrs = Array.from(child.attributes);
+                    for (const attr of attrs) {
+                        if (attr.name !== 'class') {
+                            child.removeAttribute(attr.name);
+                        }
+                    }
+                    // Recursively sanitize children
+                    sanitizeNode(child);
+                }
+            }
+        }
+    }
+    
+    sanitizeNode(temp);
+    return temp.innerHTML;
 }
 
 function getDomain(url) {

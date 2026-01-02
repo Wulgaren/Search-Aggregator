@@ -49,6 +49,41 @@
         </button>
       </header>
 
+      <!-- Image Slider -->
+      <section class="image-slider-section" id="image-section" style="display: none;">
+        <div class="image-slider-header">
+          <h2 class="image-slider-title">Images</h2>
+          <button class="view-all-btn" id="view-all-images">View all</button>
+        </div>
+        <div class="image-slider" id="image-slider">
+          <button class="slider-nav slider-prev" id="slider-prev">‹</button>
+          <div class="slider-track" id="slider-track"></div>
+          <button class="slider-nav slider-next" id="slider-next">›</button>
+        </div>
+      </section>
+
+      <!-- Image Modal -->
+      <div class="image-modal" id="image-modal">
+        <div class="modal-overlay" id="modal-overlay"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Images</h2>
+            <button class="modal-close" id="modal-close">×</button>
+          </div>
+          <div class="modal-grid" id="modal-grid"></div>
+        </div>
+      </div>
+
+      <!-- Image Preview -->
+      <div class="image-preview" id="image-preview">
+        <div class="preview-overlay" id="preview-overlay"></div>
+        <div class="preview-content">
+          <button class="preview-close" id="preview-close">×</button>
+          <img class="preview-image" id="preview-image" src="" alt="">
+          <div class="preview-info" id="preview-info"></div>
+        </div>
+      </div>
+
       <main class="results" id="results">
         <!-- Desktop: Two columns -->
         <section class="results-column" id="commercial-column">
