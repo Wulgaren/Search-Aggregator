@@ -489,6 +489,9 @@ async function fetchWikipediaInfobox(query) {
         searchUrl.searchParams.set("limit", 5);
         searchUrl.searchParams.set("origin", "*");
 
+        console.log(`Wikipedia search URL: ${searchUrl.toString()}`);
+        console.log(`Wikipedia search query: ${query}`);
+
         const searchResponse = await fetch(searchUrl.toString());
         if (!searchResponse.ok) return null;
 
