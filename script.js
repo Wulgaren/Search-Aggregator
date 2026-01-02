@@ -144,15 +144,15 @@ function restoreSearchState(focusInput = false) {
     console.log('current query', currentQuery ?? "no current query");
     console.log('searchInput', searchInput);
 
-    debugger;
-
     if (query) {
         // Check for DDG bang and redirect if found
         if (detectBang(query)) {
+            console.log('detected bang');
             handleBangRedirect(query);
             return;
         }
         searchInput.value = query;
+        console.log('searchInput value', searchInput.value);
         document.title = `${query} - Search`;
         if (focusInput) {
             searchInput.focus();
@@ -166,8 +166,12 @@ function restoreSearchState(focusInput = false) {
     } else {
         searchInput.value = '';
         document.title = 'Search';
+        console.log('searchInput value no', searchInput.value);
+
         resetResults();
     }
+    console.log('searchInput value final', searchInput.value);
+
 }
 function setupInfiniteScroll() {
     const observerOptions = { root: null, rootMargin: '100px', threshold: 0 };
