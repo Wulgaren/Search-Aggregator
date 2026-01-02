@@ -1,86 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex, nofollow">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
     <title>Search</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-</head>
-<body>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
     <div class="container">
-        <header class="header">
-            <h1 class="logo">search<span class="logo-accent">.</span></h1>
-            <form class="search-form" id="search-form">
-                <input 
-                    type="text" 
-                    class="search-input" 
-                    id="search-input" 
-                    placeholder="Search the web..."
-                    autocomplete="off"
-                    autofocus
-                >
-                <button type="submit" class="search-btn">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="M21 21l-4.35-4.35"/>
-                    </svg>
-                </button>
-                <span class="search-hint">Press <kbd>/</kbd> to focus</span>
-            </form>
-        </header>
+      <header class="header">
+        <h1 class="logo">search<span class="logo-accent">.</span></h1>
+        <form class="search-form" id="search-form">
+          <input
+            type="text"
+            class="search-input"
+            id="search-input"
+            placeholder="Search the web..."
+            autocomplete="off"
+            autofocus
+          />
+          <button type="submit" class="search-btn">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          </button>
+          <span class="search-hint">Press <kbd>/</kbd> to focus</span>
+        </form>
+      </header>
 
-        <main class="results" id="results">
-            <!-- Desktop: Two columns -->
-            <section class="results-column" id="commercial-column">
-                <div class="column-header">
-                    <h2 class="column-title">Commercial</h2>
-                    <span class="result-count" id="commercial-count"></span>
-                </div>
-                <div class="results-list" id="commercial-results">
-                    <div class="empty-state">
-                        <p>Commercial results will appear here</p>
-                    </div>
-                </div>
-            </section>
+      <main class="results" id="results">
+        <!-- Desktop: Two columns -->
+        <section class="results-column" id="commercial-column">
+          <div class="column-header">
+            <h2 class="column-title">Commercial</h2>
+            <span class="result-count" id="commercial-count"></span>
+          </div>
+          <div class="results-list" id="commercial-results">
+            <div class="empty-state">
+              <p>Commercial results will appear here</p>
+            </div>
+          </div>
+        </section>
 
-            <section class="results-column" id="noncommercial-column">
-                <div class="column-header">
-                    <h2 class="column-title">Non-commercial</h2>
-                    <span class="result-count" id="noncommercial-count"></span>
-                </div>
-                <div class="results-list" id="noncommercial-results">
-                    <div class="empty-state">
-                        <p>Non-commercial results will appear here</p>
-                    </div>
-                </div>
-            </section>
+        <section class="results-column" id="noncommercial-column">
+          <div class="column-header">
+            <h2 class="column-title">Non-commercial</h2>
+            <span class="result-count" id="noncommercial-count"></span>
+          </div>
+          <div class="results-list" id="noncommercial-results">
+            <div class="empty-state">
+              <p>Non-commercial results will appear here</p>
+            </div>
+          </div>
+        </section>
 
-            <!-- Mobile: Merged interleaved view -->
-            <section class="results-merged" id="merged-column">
-                <div class="column-header">
-                    <h2 class="column-title">Results</h2>
-                    <div class="source-legend">
-                        <span class="legend-item legend-commercial">Commercial</span>
-                        <span class="legend-item legend-noncommercial">Non-commercial</span>
-                    </div>
-                </div>
-                <div class="results-list" id="merged-results">
-                    <div class="empty-state">
-                        <p>Search results will appear here</p>
-                    </div>
-                </div>
-            </section>
-        </main>
+        <!-- Mobile: Merged interleaved view -->
+        <section class="results-merged" id="merged-column">
+          <div class="column-header">
+            <h2 class="column-title">Results</h2>
+            <div class="source-legend">
+              <span class="legend-item legend-commercial">Commercial</span>
+              <span class="legend-item legend-noncommercial"
+                >Non-commercial</span
+              >
+            </div>
+          </div>
+          <div class="results-list" id="merged-results">
+            <div class="empty-state">
+              <p>Search results will appear here</p>
+            </div>
+          </div>
+        </section>
+      </main>
 
-        <footer class="footer">
-            <p>Powered by <a href="https://brave.com/search/" target="_blank" rel="noopener">Brave Search</a> & <a href="https://search.marginalia.nu/" target="_blank" rel="noopener">Marginalia</a></p>
-        </footer>
+      <footer class="footer">
+        <p>
+          Powered by
+          <a href="https://brave.com/search/" target="_blank" rel="noopener"
+            >Brave</a
+          >,
+          <a href="https://google.com" target="_blank" rel="noopener">Google</a>
+          &
+          <a href="https://search.marginalia.nu/" target="_blank" rel="noopener"
+            >Marginalia</a
+          >
+        </p>
+      </footer>
     </div>
 
     <script src="script.js"></script>
-</body>
+  </body>
 </html>

@@ -398,6 +398,29 @@ a:hover {
   margin-bottom: 0.25rem;
 }
 
+.result-source-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  display: inline-block;
+  background: rgba(251, 146, 60, 0.15);
+  color: var(--commercial-accent);
+}
+
+.result-item[data-source="google"] .result-source-tag {
+  background: rgba(66, 133, 244, 0.15);
+  color: #4285f4;
+}
+
+.result-item[data-source="brave"] .result-source-tag {
+  background: rgba(251, 146, 60, 0.15);
+  color: var(--commercial-accent);
+}
+
 .result-item[data-source="commercial"] .result-source {
   color: var(--commercial-accent);
 }

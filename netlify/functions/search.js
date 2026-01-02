@@ -1,4 +1,4 @@
-// Netlify serverless function to query Brave Search and Marginalia in parallel
+// Netlify serverless function to query Brave, Google, and Marginalia
 
 export async function handler(event) {
     // Only allow GET requests
@@ -11,7 +11,7 @@ export async function handler(event) {
 
     const query = event.queryStringParameters?.q;
     const page = parseInt(event.queryStringParameters?.page) || 1;
-    const source = event.queryStringParameters?.source; // 'commercial', 'noncommercial', or undefined (both)
+    const source = event.queryStringParameters?.source; // 'brave', 'google', 'marginalia', or undefined (all)
 
     if (!query || query.trim() === '') {
         return {
@@ -24,41 +24,50 @@ export async function handler(event) {
     const resultsPerPage = 10;
 
     // Determine which sources to fetch
-    const fetchCommercialPromise = (!source || source === 'commercial')
+    const fetchBravePromise = (!source || source === 'brave')
         ? fetchBrave(searchQuery, page, resultsPerPage)
         : Promise.resolve(null);
 
-    const fetchNoncommercialPromise = (!source || source === 'noncommercial')
+    const fetchGooglePromise = (!source || source === 'google')
+        ? fetchGoogle(searchQuery, page, resultsPerPage)
+        : Promise.resolve(null);
+
+    const fetchMarginaliaPromise = (!source || source === 'marginalia')
         ? fetchMarginalia(searchQuery, page, resultsPerPage)
         : Promise.resolve(null);
 
     // Fetch APIs in parallel
-    const [commercialResults, noncommercialResults] = await Promise.allSettled([
-        fetchCommercialPromise,
-        fetchNoncommercialPromise
+    const [braveResults, googleResults, marginaliaResults] = await Promise.allSettled([
+        fetchBravePromise,
+        fetchGooglePromise,
+        fetchMarginaliaPromise
     ]);
 
-    const response = {
-        page
-    };
+    const response = { page };
 
-    if (!source || source === 'commercial') {
-        response.commercial = commercialResults.status === 'fulfilled' && commercialResults.value
-            ? commercialResults.value
-            : { error: commercialResults.reason?.message || 'Failed to fetch Brave results', results: [] };
+    if (!source || source === 'brave') {
+        response.brave = braveResults.status === 'fulfilled' && braveResults.value
+            ? braveResults.value
+            : { error: braveResults.reason?.message || 'Failed to fetch Brave results', results: [] };
     }
 
-    if (!source || source === 'noncommercial') {
-        response.noncommercial = noncommercialResults.status === 'fulfilled' && noncommercialResults.value
-            ? noncommercialResults.value
-            : { error: noncommercialResults.reason?.message || 'Failed to fetch Marginalia results', results: [] };
+    if (!source || source === 'google') {
+        response.google = googleResults.status === 'fulfilled' && googleResults.value
+            ? googleResults.value
+            : { error: googleResults.reason?.message || 'Failed to fetch Google results', results: [] };
+    }
+
+    if (!source || source === 'marginalia') {
+        response.marginalia = marginaliaResults.status === 'fulfilled' && marginaliaResults.value
+            ? marginaliaResults.value
+            : { error: marginaliaResults.reason?.message || 'Failed to fetch Marginalia results', results: [] };
     }
 
     return {
         statusCode: 200,
         headers: {
             'Content-Type': 'application/json',
-            'Cache-Control': 'public, max-age=300' // Cache for 5 minutes
+            'Cache-Control': 'public, max-age=300'
         },
         body: JSON.stringify(response)
     };
@@ -74,13 +83,8 @@ async function fetchBrave(query, page, resultsPerPage) {
     // Brave's offset is page number (0-indexed), max 9
     const offset = page - 1;
 
-    // Can't go beyond page 10
     if (offset > 9) {
-        return {
-            results: [],
-            hasMore: false,
-            totalResults: '0'
-        };
+        return { results: [], hasMore: false, totalResults: '0' };
     }
 
     const url = new URL('https://api.search.brave.com/res/v1/web/search');
@@ -107,30 +111,76 @@ async function fetchBrave(query, page, resultsPerPage) {
         title: item.title,
         url: item.url,
         displayUrl: item.meta_url?.hostname || new URL(item.url).hostname,
-        snippet: item.description || ''
+        snippet: item.description || '',
+        source: 'brave'
     }));
-
-    // hasMore if we got full results and haven't hit page 10 yet
-    const hasMore = webResults.length === resultsPerPage && offset < 9;
 
     return {
         results,
-        hasMore,
+        hasMore: webResults.length === resultsPerPage && offset < 9,
         totalResults: String(data.web?.total || results.length)
     };
 }
 
+async function fetchGoogle(query, page, resultsPerPage) {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    const cx = process.env.GOOGLE_CX;
+
+    if (!apiKey || !cx) {
+        // Google not configured, skip silently
+        return { results: [], hasMore: false, totalResults: '0' };
+    }
+
+    // Google CSE uses 'start' parameter (1-indexed)
+    const startIndex = (page - 1) * resultsPerPage + 1;
+
+    // Google CSE limits to 100 results total
+    if (startIndex > 91) {
+        return { results: [], hasMore: false, totalResults: '0' };
+    }
+
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('cx', cx);
+    url.searchParams.set('q', query);
+    url.searchParams.set('num', Math.min(resultsPerPage, 10)); // Google max is 10 per request
+    url.searchParams.set('start', startIndex);
+
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `Google API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const items = data.items || [];
+
+    const results = items.map(item => ({
+        title: item.title,
+        url: item.link,
+        displayUrl: item.displayLink,
+        snippet: item.snippet || '',
+        source: 'google'
+    }));
+
+    const totalResults = parseInt(data.searchInformation?.totalResults) || 0;
+    const hasMore = startIndex + results.length - 1 < totalResults && startIndex < 91;
+
+    return {
+        results,
+        hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
+        totalResults: String(totalResults)
+    };
+}
+
 async function fetchMarginalia(query, page, resultsPerPage) {
-    // Marginalia Search API - free and open
-    // Uses 'index' for pagination (0-indexed offset)
     const offset = (page - 1) * resultsPerPage;
     const encodedQuery = encodeURIComponent(query);
     const url = `https://api.marginalia.nu/public/search/${encodedQuery}?count=${resultsPerPage}&index=${offset}`;
 
     const response = await fetch(url, {
-        headers: {
-            'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
     });
 
     if (!response.ok) {
@@ -142,7 +192,8 @@ async function fetchMarginalia(query, page, resultsPerPage) {
         title: item.title || item.url,
         url: item.url,
         displayUrl: new URL(item.url).hostname,
-        snippet: item.description || ''
+        snippet: item.description || '',
+        source: 'marginalia'
     }));
 
     return {
