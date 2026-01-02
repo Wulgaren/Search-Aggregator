@@ -569,6 +569,8 @@ async function tryFetchPageInfobox(pageTitle) {
             wikidataUrl.searchParams.set("ppprop", "wikibase_item");
             wikidataUrl.searchParams.set("origin", "*");
 
+            console.log(`Wikidata pageTitle: ${pageTitle}`);
+
             const wikidataResponse = await fetch(wikidataUrl.toString());
             if (wikidataResponse.ok) {
                 const wikidataData = await wikidataResponse.json();
@@ -576,6 +578,8 @@ async function tryFetchPageInfobox(pageTitle) {
                 const wikidataPage = Object.values(wikidataPages)[0];
                 wikidataId = wikidataPage?.pageprops?.wikibase_item;
             }
+
+            console.log(`Wikidata ID: ${wikidataId}`);
 
             // If we have a Wikidata ID, fetch external links from Wikidata
             if (wikidataId) {
