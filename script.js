@@ -9,9 +9,9 @@ const noncommercialCount = document.getElementById('noncommercial-count');
 
 // State - track each source separately
 let currentQuery = '';
-let braveState = { page: 1, hasMore: true, loading: false, results: [] };
-let googleState = { page: 1, hasMore: true, loading: false, results: [] };
-let marginaliaState = { page: 1, hasMore: true, loading: false, results: [] };
+let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+let googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let mergedState = { loading: false };
 
 // Check if we're in mobile merged view
@@ -118,9 +118,9 @@ function setupInfiniteScroll() {
 async function performSearch(query) {
     // Reset all state
     currentQuery = query;
-    braveState = { page: 1, hasMore: true, loading: false, results: [] };
-    googleState = { page: 1, hasMore: true, loading: false, results: [] };
-    marginaliaState = { page: 1, hasMore: true, loading: false, results: [] };
+    braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+    googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+    marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
 
     // Show loading states
@@ -152,29 +152,38 @@ async function fetchSource(source, query, page) {
 
         if (sourceData?.error) {
             state.hasMore = false;
-            if (source === 'marginalia') {
-                showError(noncommercialResults, sourceData.error);
-            }
+            state.error = sourceData.error;
+            console.error(`Error from ${source}:`, sourceData.error);
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
             state.results = [...state.results, ...sourceData.results];
+            state.error = null;
+        }
 
-            // Render immediately when data arrives
-            if (source === 'marginalia') {
-                renderNoncommercialResults();
-            } else {
-                renderCommercialResults();
-            }
+        // Always render when data arrives (even if one source has an error, others may have results)
+        if (source === 'marginalia') {
+            renderNoncommercialResults();
+        } else {
+            renderCommercialResults();
+        }
 
-            if (isMergedView()) {
-                renderMergedResults();
-            }
+        if (isMergedView()) {
+            renderMergedResults();
         }
     } catch (error) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
+        state.error = error.message;
+        
+        // Still render to show other source results and error state
         if (source === 'marginalia') {
-            showError(noncommercialResults, error.message);
+            renderNoncommercialResults();
+        } else {
+            renderCommercialResults();
+        }
+
+        if (isMergedView()) {
+            renderMergedResults();
         }
     } finally {
         state.loading = false;
@@ -191,8 +200,21 @@ function renderCommercialResults() {
     // Interleave Brave and Google results
     const interleaved = interleaveArrays(braveState.results, googleState.results);
 
+    // Build error messages for sources that failed
+    let errorHtml = '';
+    if (braveState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
+    }
+    if (googleState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
+    }
+
     if (interleaved.length === 0 && !braveState.loading && !googleState.loading) {
-        commercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+        if (errorHtml) {
+            commercialResults.innerHTML = `<div class="error-state">${errorHtml}</div>`;
+        } else {
+            commercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+        }
         return;
     }
 
@@ -209,7 +231,8 @@ function renderCommercialResults() {
         </article>
     `}).join('');
 
-    commercialResults.innerHTML = html;
+    // Show errors at the top if any source failed
+    commercialResults.innerHTML = (errorHtml ? `<div class="error-state compact">${errorHtml}</div>` : '') + html;
 
     const totalResults = braveState.results.length + googleState.results.length;
     const hasMore = braveState.hasMore || googleState.hasMore;
@@ -224,8 +247,23 @@ function renderNoncommercialResults() {
     const results = marginaliaState.results;
 
     if (results.length === 0 && !marginaliaState.loading) {
-        noncommercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+        if (marginaliaState.error) {
+            noncommercialResults.innerHTML = `
+                <div class="error-state">
+                    <span class="error-icon">⚠</span>
+                    <span class="error-message">Something went wrong</span>
+                    <span class="error-detail">${escapeHtml(marginaliaState.error)}</span>
+                </div>
+            `;
+        } else {
+            noncommercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+        }
         return;
+    }
+
+    let errorHtml = '';
+    if (marginaliaState.error) {
+        errorHtml = `<div class="error-state compact"><div class="source-error"><span class="error-source">Marginalia:</span> ${escapeHtml(marginaliaState.error)}</div></div>`;
     }
 
     const html = results.map((result, index) => `
@@ -238,7 +276,7 @@ function renderNoncommercialResults() {
         </article>
     `).join('');
 
-    noncommercialResults.innerHTML = html;
+    noncommercialResults.innerHTML = errorHtml + html;
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
 
     if (marginaliaState.hasMore) {
@@ -424,9 +462,9 @@ function showError(container, message) {
 
 function resetResults() {
     currentQuery = '';
-    braveState = { page: 1, hasMore: true, loading: false, results: [] };
-    googleState = { page: 1, hasMore: true, loading: false, results: [] };
-    marginaliaState = { page: 1, hasMore: true, loading: false, results: [] };
+    braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+    googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+    marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;

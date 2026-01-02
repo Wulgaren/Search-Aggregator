@@ -1,4 +1,9 @@
 // Netlify serverless function to query Brave, Google, and Marginalia
+import crypto from 'crypto';
+
+// Cache for Google access token
+let googleAccessToken = null;
+let googleTokenExpiry = 0;
 
 export async function handler(event) {
     // Only allow GET requests
@@ -122,12 +127,91 @@ async function fetchBrave(query, page, resultsPerPage) {
     };
 }
 
+async function getGoogleAccessToken() {
+    // Return cached token if still valid (with 60s buffer)
+    if (googleAccessToken && Date.now() < googleTokenExpiry - 60000) {
+        return googleAccessToken;
+    }
+
+    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT;
+    if (!serviceAccountJson) {
+        throw new Error('Google service account not configured');
+    }
+
+    let serviceAccount;
+    try {
+        serviceAccount = JSON.parse(serviceAccountJson);
+    } catch (e) {
+        throw new Error('Invalid Google service account JSON');
+    }
+
+    const { client_email, private_key } = serviceAccount;
+    if (!client_email || !private_key) {
+        throw new Error('Service account missing client_email or private_key');
+    }
+
+    // Create JWT header and payload
+    const now = Math.floor(Date.now() / 1000);
+    const header = {
+        alg: 'RS256',
+        typ: 'JWT'
+    };
+    const payload = {
+        iss: client_email,
+        scope: 'https://www.googleapis.com/auth/cse',
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600 // 1 hour
+    };
+
+    // Base64url encode
+    const base64url = (obj) => {
+        const json = JSON.stringify(obj);
+        const base64 = Buffer.from(json).toString('base64');
+        return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    };
+
+    const headerEncoded = base64url(header);
+    const payloadEncoded = base64url(payload);
+    const signatureInput = `${headerEncoded}.${payloadEncoded}`;
+
+    // Sign with RSA-SHA256
+    const sign = crypto.createSign('RSA-SHA256');
+    sign.update(signatureInput);
+    const signature = sign.sign(private_key, 'base64')
+        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+    const jwt = `${signatureInput}.${signature}`;
+
+    // Exchange JWT for access token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+    });
+
+    if (!tokenResponse.ok) {
+        const errorData = await tokenResponse.json().catch(() => ({}));
+        throw new Error(errorData.error_description || `Token exchange failed: ${tokenResponse.status}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    googleAccessToken = tokenData.access_token;
+    googleTokenExpiry = Date.now() + (tokenData.expires_in * 1000);
+
+    return googleAccessToken;
+}
+
 async function fetchGoogle(query, page, resultsPerPage) {
-    const apiKey = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
 
-    if (!apiKey || !cx) {
-        // Google not configured, skip silently
+    if (!cx) {
+        // Google CX not configured, skip silently
+        return { results: [], hasMore: false, totalResults: '0' };
+    }
+
+    // Check if service account is configured
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT) {
         return { results: [], hasMore: false, totalResults: '0' };
     }
 
@@ -139,14 +223,20 @@ async function fetchGoogle(query, page, resultsPerPage) {
         return { results: [], hasMore: false, totalResults: '0' };
     }
 
+    // Get access token from service account
+    const accessToken = await getGoogleAccessToken();
+
     const url = new URL('https://www.googleapis.com/customsearch/v1');
-    url.searchParams.set('key', apiKey);
     url.searchParams.set('cx', cx);
     url.searchParams.set('q', query);
     url.searchParams.set('num', Math.min(resultsPerPage, 10)); // Google max is 10 per request
     url.searchParams.set('start', startIndex);
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`
+        }
+    });
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
