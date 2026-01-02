@@ -144,6 +144,8 @@ function restoreSearchState(focusInput = false) {
     console.log('current query', currentQuery ?? "no current query");
     console.log('searchInput', searchInput);
 
+    debugger;
+
     if (query) {
         // Check for DDG bang and redirect if found
         if (detectBang(query)) {
