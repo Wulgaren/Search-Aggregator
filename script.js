@@ -10,9 +10,10 @@ const chatgptBtn = document.getElementById('chatgpt-btn');
 
 // DDG Bang detection - matches !bang with space before/after or at start/end
 function detectBang(query) {
-    // Pattern: !word at start, end, or surrounded by spaces
-    // Examples: "!g test", "test !g", "test !g query", "!yt video"
-    const bangPattern = /(?:^|[\s])(![\w]+)(?:[\s]|$)/;
+    // Pattern: !word at start (followed by space) or at end (preceded by space)
+    // Valid: "!g test", "test !g", "!yt video"
+    // Invalid: "test !g query" (middle)
+    const bangPattern = /(?:^![\w]+\s|\s![\w]+$)/;
     return bangPattern.test(query);
 }
 
@@ -136,11 +137,19 @@ window.addEventListener('pageshow', (event) => {
     }
 });
 
+// Additional fallback for Safari - restore when window regains focus
+window.addEventListener('focus', () => {
+    // Only restore if input is empty but URL has query (Safari bfcache issue)
+    const urlParams = new URLSearchParams(window.location.search);
+    const query = urlParams.get('q');
+    if (query && searchInput.value !== query) {
+        restoreSearchState();
+    }
+});
+
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
-    console.log('query', query);
-    console.log('query', currentQuery);
 
     if (query) {
         // Check for DDG bang and redirect if found
@@ -149,7 +158,7 @@ function restoreSearchState(focusInput = false) {
             return;
         }
         searchInput.value = query;
-        document.title = `${query} - Search`;  // <-- add this
+        document.title = `${query} - Search`;
         if (focusInput) {
             searchInput.focus();
             const len = searchInput.value.length;
@@ -161,7 +170,7 @@ function restoreSearchState(focusInput = false) {
         }
     } else {
         searchInput.value = '';
-        document.title = 'Search';  // <-- add this
+        document.title = 'Search';
         resetResults();
     }
 }
