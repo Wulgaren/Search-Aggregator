@@ -700,6 +700,7 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 0 4px 0px;
 }
 
 .preview-close:hover {
@@ -712,6 +713,22 @@ a:hover {
   max-height: 80vh;
   object-fit: contain;
   border-radius: 8px;
+  transition: opacity 0.2s ease;
+}
+
+/* Preview loading state */
+.image-preview.loading .preview-content::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .preview-info {

@@ -621,20 +621,46 @@ function openImagePreview(index) {
     const img = imageState.images[index];
     if (!img) return;
 
-    previewImage.src = img.full;
+    // Show loading state
+    imagePreview.classList.add('active', 'loading');
+    previewImage.style.opacity = '0';
     previewImage.alt = img.title;
+
+    // Store thumbnail as fallback
+    previewImage.dataset.thumbnail = img.thumbnail;
+
+    // Handle successful load
+    previewImage.onload = () => {
+        imagePreview.classList.remove('loading');
+        previewImage.style.opacity = '1';
+    };
+
+    // Handle error - fallback to thumbnail
+    previewImage.onerror = () => {
+        if (previewImage.src !== img.thumbnail) {
+            previewImage.src = img.thumbnail;
+        } else {
+            // Even thumbnail failed, just show what we have
+            imagePreview.classList.remove('loading');
+            previewImage.style.opacity = '1';
+        }
+    };
+
+    previewImage.src = img.full;
     previewInfo.innerHTML = `
         <div>${escapeHtml(img.title)}</div>
         ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">Visit page</a>` : ''}
     `;
 
-    imagePreview.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function closeImagePreview() {
-    imagePreview.classList.remove('active');
+    imagePreview.classList.remove('active', 'loading');
     previewImage.src = '';
+    previewImage.style.opacity = '';
+    previewImage.onload = null;
+    previewImage.onerror = null;
     document.body.style.overflow = '';
 }
 
