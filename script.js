@@ -3,13 +3,20 @@ const searchForm = document.getElementById('search-form');
 const searchInput = document.getElementById('search-input');
 const googleResults = document.getElementById('google-results');
 const marginaliaResults = document.getElementById('marginalia-results');
+const mergedResults = document.getElementById('merged-results');
 const googleCount = document.getElementById('google-count');
 const marginaliaCount = document.getElementById('marginalia-count');
 
 // State
 let currentQuery = '';
-let googleState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
-let marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
+let googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+let marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+let mergedState = { loading: false };
+
+// Check if we're in mobile merged view
+function isMergedView() {
+    return window.innerWidth <= 700;
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -23,6 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Set up scroll listeners for infinite scroll
     setupInfiniteScroll();
+
+    // Re-render on resize if crossing the breakpoint
+    let wasMerged = isMergedView();
+    window.addEventListener('resize', () => {
+        const nowMerged = isMergedView();
+        if (wasMerged !== nowMerged && currentQuery) {
+            if (nowMerged) {
+                renderMergedResults();
+            }
+            wasMerged = nowMerged;
+        }
+    });
 });
 
 // Keyboard shortcut: / to focus search
@@ -61,14 +80,13 @@ window.addEventListener('popstate', () => {
 });
 
 function setupInfiniteScroll() {
-    // Use Intersection Observer for each column
     const observerOptions = {
         root: null,
         rootMargin: '100px',
         threshold: 0
     };
 
-    // Create sentinel elements for each column
+    // Create sentinel elements
     const googleSentinel = document.createElement('div');
     googleSentinel.className = 'scroll-sentinel';
     googleSentinel.id = 'google-sentinel';
@@ -77,10 +95,14 @@ function setupInfiniteScroll() {
     marginaliaSentinel.className = 'scroll-sentinel';
     marginaliaSentinel.id = 'marginalia-sentinel';
 
+    const mergedSentinel = document.createElement('div');
+    mergedSentinel.className = 'scroll-sentinel';
+    mergedSentinel.id = 'merged-sentinel';
+
     // Observer for Google results
     const googleObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting && !googleState.loading && googleState.hasMore && currentQuery) {
+            if (entry.isIntersecting && !googleState.loading && googleState.hasMore && currentQuery && !isMergedView()) {
                 loadMoreResults('google');
             }
         });
@@ -89,26 +111,37 @@ function setupInfiniteScroll() {
     // Observer for Marginalia results
     const marginaliaObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting && !marginaliaState.loading && marginaliaState.hasMore && currentQuery) {
+            if (entry.isIntersecting && !marginaliaState.loading && marginaliaState.hasMore && currentQuery && !isMergedView()) {
                 loadMoreResults('marginalia');
             }
         });
     }, observerOptions);
 
+    // Observer for merged results
+    const mergedObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && !mergedState.loading && currentQuery && isMergedView()) {
+                loadMoreMergedResults();
+            }
+        });
+    }, observerOptions);
+
     // Store observers and sentinels globally
-    window.scrollObservers = { googleObserver, marginaliaObserver };
-    window.sentinels = { googleSentinel, marginaliaSentinel };
+    window.scrollObservers = { googleObserver, marginaliaObserver, mergedObserver };
+    window.sentinels = { googleSentinel, marginaliaSentinel, mergedSentinel };
 }
 
 async function performSearch(query) {
     // Reset state for new search
     currentQuery = query;
-    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
-    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
+    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    mergedState = { loading: false };
 
     // Show loading states
     showLoading(googleResults);
     showLoading(marginaliaResults);
+    showLoading(mergedResults);
     googleCount.textContent = '';
     marginaliaCount.textContent = '';
 
@@ -121,34 +154,42 @@ async function performSearch(query) {
 
         const data = await response.json();
 
-        // Render Google results
+        // Process Google results
         if (data.google?.error) {
             showError(googleResults, data.google.error);
             googleState.hasMore = false;
         } else if (data.google) {
             googleState.hasMore = data.google.hasMore;
             googleState.totalResults = data.google.results.length;
+            googleState.results = data.google.results;
             renderResults(googleResults, data.google.results, false);
             updateCount(googleCount, googleState.totalResults, googleState.hasMore);
             attachSentinel(googleResults, 'google');
         }
 
-        // Render Marginalia results
+        // Process Marginalia results
         if (data.marginalia?.error) {
             showError(marginaliaResults, data.marginalia.error);
             marginaliaState.hasMore = false;
         } else if (data.marginalia) {
             marginaliaState.hasMore = data.marginalia.hasMore;
             marginaliaState.totalResults = data.marginalia.results.length;
+            marginaliaState.results = data.marginalia.results;
             renderResults(marginaliaResults, data.marginalia.results, false);
             updateCount(marginaliaCount, marginaliaState.totalResults, marginaliaState.hasMore);
             attachSentinel(marginaliaResults, 'marginalia');
+        }
+
+        // Render merged view if in mobile
+        if (isMergedView()) {
+            renderMergedResults();
         }
 
     } catch (error) {
         console.error('Search error:', error);
         showError(googleResults, error.message);
         showError(marginaliaResults, error.message);
+        showError(mergedResults, error.message);
     }
 }
 
@@ -162,7 +203,6 @@ async function loadMoreResults(source) {
     state.loading = true;
     state.page += 1;
 
-    // Show loading indicator at bottom
     showLoadingMore(container);
 
     try {
@@ -177,7 +217,6 @@ async function loadMoreResults(source) {
         const data = await response.json();
         const sourceData = data[source];
 
-        // Remove loading indicator
         removeLoadingMore(container);
 
         if (sourceData?.error) {
@@ -185,6 +224,7 @@ async function loadMoreResults(source) {
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
             state.totalResults += sourceData.results.length;
+            state.results = [...state.results, ...sourceData.results];
 
             if (sourceData.results.length > 0) {
                 appendResults(container, sourceData.results);
@@ -205,9 +245,128 @@ async function loadMoreResults(source) {
     }
 }
 
+async function loadMoreMergedResults() {
+    // Load more from whichever source has fewer results (to keep them balanced)
+    // Or load from both if they're roughly equal
+    const googleNeedsMore = googleState.hasMore && !googleState.loading;
+    const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
+
+    if (!googleNeedsMore && !marginaliaNeedsMore) return;
+
+    mergedState.loading = true;
+    showLoadingMore(mergedResults);
+
+    const promises = [];
+
+    if (googleNeedsMore) {
+        promises.push(loadMoreForMerged('google'));
+    }
+    if (marginaliaNeedsMore) {
+        promises.push(loadMoreForMerged('marginalia'));
+    }
+
+    await Promise.all(promises);
+
+    removeLoadingMore(mergedResults);
+    renderMergedResults(true);
+    mergedState.loading = false;
+}
+
+async function loadMoreForMerged(source) {
+    const state = source === 'google' ? googleState : marginaliaState;
+
+    if (state.loading || !state.hasMore) return;
+
+    state.loading = true;
+    state.page += 1;
+
+    try {
+        const response = await fetch(
+            `/.netlify/functions/search?q=${encodeURIComponent(currentQuery)}&page=${state.page}&source=${source}`
+        );
+
+        if (!response.ok) {
+            throw new Error(`Failed to load more: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const sourceData = data[source];
+
+        if (sourceData?.error) {
+            state.hasMore = false;
+        } else if (sourceData) {
+            state.hasMore = sourceData.hasMore;
+            state.totalResults += sourceData.results.length;
+            state.results = [...state.results, ...sourceData.results];
+
+            // Update count in desktop view too
+            const countEl = source === 'google' ? googleCount : marginaliaCount;
+            updateCount(countEl, state.totalResults, state.hasMore);
+        }
+
+    } catch (error) {
+        console.error(`Error loading more ${source} results:`, error);
+        state.hasMore = false;
+    } finally {
+        state.loading = false;
+    }
+}
+
+function renderMergedResults(append = false) {
+    const interleaved = interleaveResults(googleState.results, marginaliaState.results);
+
+    if (interleaved.length === 0) {
+        mergedResults.innerHTML = `
+            <div class="empty-state">
+                <p>No results found</p>
+            </div>
+        `;
+        return;
+    }
+
+    const html = interleaved.map((item, index) => `
+        <article class="result-item" data-source="${item.source}" style="animation-delay: ${append ? 0 : index * 0.03}s">
+            <div class="result-source">${item.source === 'google' ? 'Google' : 'Marginalia'}</div>
+            <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
+            <h3 class="result-title">
+                <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
+            </h3>
+            ${item.result.snippet ? `<p class="result-snippet">${escapeHtml(item.result.snippet)}</p>` : ''}
+        </article>
+    `).join('');
+
+    mergedResults.innerHTML = html;
+
+    // Attach sentinel if there's more to load
+    if (googleState.hasMore || marginaliaState.hasMore) {
+        attachSentinel(mergedResults, 'merged');
+    }
+}
+
+function interleaveResults(googleArr, marginaliaArr) {
+    const result = [];
+    const maxLen = Math.max(googleArr.length, marginaliaArr.length);
+
+    for (let i = 0; i < maxLen; i++) {
+        if (i < googleArr.length) {
+            result.push({ source: 'google', result: googleArr[i] });
+        }
+        if (i < marginaliaArr.length) {
+            result.push({ source: 'marginalia', result: marginaliaArr[i] });
+        }
+    }
+
+    return result;
+}
+
 function attachSentinel(container, source) {
-    const sentinel = window.sentinels[source === 'google' ? 'googleSentinel' : 'marginaliaSentinel'];
-    const observer = window.scrollObservers[source === 'google' ? 'googleObserver' : 'marginaliaObserver'];
+    const sentinelKey = source === 'google' ? 'googleSentinel' :
+        source === 'marginalia' ? 'marginaliaSentinel' : 'mergedSentinel';
+    const observerKey = source === 'google' ? 'googleObserver' :
+        source === 'marginalia' ? 'marginaliaObserver' : 'mergedObserver';
+
+    const sentinel = window.sentinels[sentinelKey];
+    const observer = window.scrollObservers[observerKey];
 
     // Remove existing sentinel
     const existingSentinel = container.querySelector('.scroll-sentinel');
@@ -252,7 +411,6 @@ function renderResults(container, results, append = false) {
 }
 
 function appendResults(container, results) {
-    // Remove sentinel before appending
     const sentinel = container.querySelector('.scroll-sentinel');
     if (sentinel) sentinel.remove();
 
@@ -279,7 +437,6 @@ function showLoading(container) {
 }
 
 function showLoadingMore(container) {
-    // Remove any existing loading-more element
     removeLoadingMore(container);
 
     const loadingEl = document.createElement('div');
@@ -312,8 +469,9 @@ function showError(container, message) {
 
 function resetResults() {
     currentQuery = '';
-    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
-    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0 };
+    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    mergedState = { loading: false };
 
     googleResults.innerHTML = `
         <div class="empty-state">
@@ -323,6 +481,11 @@ function resetResults() {
     marginaliaResults.innerHTML = `
         <div class="empty-state">
             <p>Marginalia results will appear here</p>
+        </div>
+    `;
+    mergedResults.innerHTML = `
+        <div class="empty-state">
+            <p>Search results will appear here</p>
         </div>
     `;
     googleCount.textContent = '';

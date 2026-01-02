@@ -33,6 +33,7 @@
         </header>
 
         <main class="results" id="results">
+            <!-- Desktop: Two columns -->
             <section class="results-column" id="google-column">
                 <div class="column-header">
                     <h2 class="column-title">Google</h2>
@@ -53,6 +54,22 @@
                 <div class="results-list" id="marginalia-results">
                     <div class="empty-state">
                         <p>Marginalia results will appear here</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Mobile: Merged interleaved view -->
+            <section class="results-merged" id="merged-column">
+                <div class="column-header">
+                    <h2 class="column-title">Results</h2>
+                    <div class="source-legend">
+                        <span class="legend-item legend-google">Google</span>
+                        <span class="legend-item legend-marginalia">Marginalia</span>
+                    </div>
+                </div>
+                <div class="results-list" id="merged-results">
+                    <div class="empty-state">
+                        <p>Search results will appear here</p>
                     </div>
                 </div>
             </section>

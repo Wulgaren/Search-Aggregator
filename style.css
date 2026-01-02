@@ -338,6 +338,70 @@ a:hover {
     font-size: 0.8rem;
 }
 
+/* Merged View (hidden on desktop) */
+.results-merged {
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    flex-direction: column;
+    min-height: 400px;
+}
+
+.source-legend {
+    display: flex;
+    gap: 1rem;
+}
+
+.legend-item {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.legend-google {
+    color: var(--google-accent);
+    background: rgba(66, 133, 244, 0.1);
+}
+
+.legend-marginalia {
+    color: var(--marginalia-accent);
+    background: rgba(167, 139, 250, 0.1);
+}
+
+/* Source indicator on result items */
+.result-item[data-source="google"] {
+    border-left: 3px solid var(--google-accent);
+    padding-left: 1rem;
+    margin-left: -1rem;
+}
+
+.result-item[data-source="marginalia"] {
+    border-left: 3px solid var(--marginalia-accent);
+    padding-left: 1rem;
+    margin-left: -1rem;
+}
+
+.result-source {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.25rem;
+}
+
+.result-item[data-source="google"] .result-source {
+    color: var(--google-accent);
+}
+
+.result-item[data-source="marginalia"] .result-source {
+    color: var(--marginalia-accent);
+}
+
 /* Responsive */
 @media (max-width: 900px) {
     .results {
@@ -346,6 +410,21 @@ a:hover {
     
     .results-column {
         min-height: 300px;
+    }
+}
+
+@media (max-width: 700px) {
+    /* Hide columns, show merged view */
+    .results-column {
+        display: none;
+    }
+    
+    .results-merged {
+        display: flex;
+    }
+    
+    .results {
+        display: block;
     }
 }
 
@@ -363,7 +442,7 @@ a:hover {
         font-size: 1rem;
     }
     
-    .results-column {
+    .results-merged {
         padding: 1rem;
     }
     
