@@ -8,6 +8,19 @@ const commercialCount = document.getElementById('commercial-count');
 const noncommercialCount = document.getElementById('noncommercial-count');
 const chatgptBtn = document.getElementById('chatgpt-btn');
 
+// DDG Bang detection - matches !bang with space before/after or at start/end
+function detectBang(query) {
+    // Pattern: !word at start, end, or surrounded by spaces
+    // Examples: "!g test", "test !g", "test !g query", "!yt video"
+    const bangPattern = /(?:^|[\s])(![\w]+)(?:[\s]|$)/;
+    return bangPattern.test(query);
+}
+
+// Redirect to unduck.link for bang handling
+function handleBangRedirect(query) {
+    window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
+}
+
 // Image elements
 const imageSection = document.getElementById('image-section');
 const sliderTrack = document.getElementById('slider-track');
@@ -35,6 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
     if (query) {
+        // Check for DDG bang and redirect if found
+        if (detectBang(query)) {
+            handleBangRedirect(query);
+            return;
+        }
         searchInput.value = query;
         searchInput.focus();
         // Move cursor to end of input
@@ -67,6 +85,11 @@ searchForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const query = searchInput.value.trim();
     if (query) {
+        // Check for DDG bang and redirect if found
+        if (detectBang(query)) {
+            handleBangRedirect(query);
+            return;
+        }
         const url = new URL(window.location);
         url.searchParams.set('q', query);
         window.history.pushState({}, '', url);
@@ -100,6 +123,11 @@ window.addEventListener('popstate', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
     if (query) {
+        // Check for DDG bang and redirect if found
+        if (detectBang(query)) {
+            handleBangRedirect(query);
+            return;
+        }
         searchInput.value = query;
         performSearch(query);
     } else {
