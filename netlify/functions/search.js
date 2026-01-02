@@ -127,6 +127,9 @@ async function fetchBrave(query, page, resultsPerPage) {
     });
 
     if (!response.ok) {
+        if (response.status === 429) {
+            throw new Error('Rate limited - too many requests');
+        }
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || `Brave API error: ${response.status}`);
     }
@@ -334,6 +337,7 @@ async function fetchBraveImages(query) {
     });
 
     if (!response.ok) {
+        console.error(`Brave images error: ${response.status}`);
         return [];
     }
 

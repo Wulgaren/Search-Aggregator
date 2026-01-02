@@ -592,6 +592,7 @@ a:hover {
   max-width: 1400px;
   margin: 0 auto 1.5rem;
   padding: 0 1.5rem;
+  overflow: hidden;
 }
 
 .image-slider-header {
@@ -633,6 +634,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  overflow: hidden;
 }
 
 .slider-track {
@@ -644,6 +646,7 @@ a:hover {
   -ms-overflow-style: none;
   flex: 1;
   padding: 0.25rem 0;
+  min-width: 0;
 }
 
 .slider-track::-webkit-scrollbar {
@@ -874,6 +877,16 @@ a:hover {
   .image-slider-section {
     padding: 0 0.75rem;
     margin-bottom: 1rem;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
+
+  .image-slider {
+    max-width: 100%;
+  }
+
+  .slider-track {
+    max-width: 100%;
   }
 
   .slider-nav {
@@ -883,6 +896,7 @@ a:hover {
   .slider-image {
     width: 100px;
     height: 70px;
+    flex-shrink: 0;
   }
 
   .modal-grid {
