@@ -716,13 +716,20 @@ a:hover {
   transition: opacity 0.2s ease;
 }
 
+.preview-image-container {
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Preview loading state */
-.image-preview.loading .preview-content::before {
+.image-preview.loading .preview-image-container::before {
   content: "";
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: calc(50% - 16px);
+  left: calc(50% - 16px);
   width: 32px;
   height: 32px;
   border: 3px solid var(--border-color);
