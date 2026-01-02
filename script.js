@@ -153,7 +153,7 @@ function restoreSearchState(focusInput = false) {
         // Fix for Safari bfcache issue - set value after a short delay
         setTimeout(() => {
             searchInput.value = query;
-        }, 0);
+        }, 50);
 
         document.title = `${query} - Search`;
         if (focusInput) {
@@ -648,13 +648,22 @@ function appendImagesToSlider(newImages) {
 
     sliderTrack.insertAdjacentHTML('beforeend', html);
 
-    // Add click handlers to new images
+    // Add click and error handlers to new images
     const newImgElements = sliderTrack.querySelectorAll('.slider-image:not([data-bound])');
     newImgElements.forEach(img => {
         img.setAttribute('data-bound', 'true');
         img.addEventListener('click', () => {
             const index = parseInt(img.dataset.index);
             openImagePreview(index);
+        });
+        // Hide broken images
+        img.addEventListener('error', () => {
+            img.style.display = 'none';
+        });
+        img.addEventListener('load', () => {
+            if (img.naturalWidth === 0) {
+                img.style.display = 'none';
+            }
         });
     });
 }
@@ -672,11 +681,21 @@ function renderImageSlider() {
         >
     `).join('');
 
-    // Add click handlers
+    // Add click and error handlers
     sliderTrack.querySelectorAll('.slider-image').forEach(img => {
         img.addEventListener('click', () => {
             const index = parseInt(img.dataset.index);
             openImagePreview(index);
+        });
+        // Hide broken images
+        img.addEventListener('error', () => {
+            img.style.display = 'none';
+        });
+        // Also check for images that "load" but are actually broken (0x0)
+        img.addEventListener('load', () => {
+            if (img.naturalWidth === 0) {
+                img.style.display = 'none';
+            }
         });
     });
 }
@@ -765,16 +784,26 @@ function renderInfobox(data) {
     // Set description
     infoboxDescription.textContent = data.description;
 
-    // Set image
+    // Set image with error handling for broken images
+    infobox.classList.remove('no-image-fallback');
     if (data.image) {
         infoboxImage.src = data.image;
         infoboxImage.alt = data.title;
         infoboxImage.classList.remove('no-image');
         infoboxImage.onerror = () => {
             infoboxImage.classList.add('no-image');
+            infobox.classList.add('no-image-fallback');
+        };
+        infoboxImage.onload = () => {
+            // Hide if image loads but is broken (0x0 dimension)
+            if (infoboxImage.naturalWidth === 0) {
+                infoboxImage.classList.add('no-image');
+                infobox.classList.add('no-image-fallback');
+            }
         };
     } else {
         infoboxImage.classList.add('no-image');
+        infobox.classList.add('no-image-fallback');
     }
 
     // Set external links
