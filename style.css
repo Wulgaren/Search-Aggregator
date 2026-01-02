@@ -79,11 +79,21 @@ a:hover {
   color: var(--accent);
 }
 
+/* Search Row */
+.search-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
 /* Search Form */
 .search-form {
   position: relative;
+  flex: 1;
   max-width: 600px;
-  margin: 0 auto;
 }
 
 .search-input {
@@ -127,32 +137,16 @@ a:hover {
   background: var(--bg-tertiary);
 }
 
-.search-hint {
-  display: block;
-  margin-top: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.search-hint kbd {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  padding: 0.15rem 0.4rem;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-}
-
 /* ChatGPT Button */
 .chatgpt-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-  padding: 0.6rem 1rem;
-  font-family: var(--font-sans);
-  font-size: 0.85rem;
-  background: var(--bg-tertiary);
+  justify-content: center;
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-secondary);
@@ -161,7 +155,7 @@ a:hover {
 }
 
 .chatgpt-btn:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
   border-color: var(--border-hover);
   color: var(--text-primary);
 }
@@ -530,14 +524,9 @@ a:hover {
     font-size: 1rem;
   }
 
-  .search-hint {
-    display: none;
-  }
-
   .chatgpt-btn {
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.8rem;
+    width: 42px;
+    height: 42px;
   }
 
   .results-merged {
