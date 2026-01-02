@@ -496,6 +496,8 @@ async function fetchWikipediaInfobox(query) {
         const searchData = await searchResponse.json();
         const pageTitles = searchData[1] || [];
 
+        console.log(`Wikipedia opensearch for "${query}" found: ${pageTitles.join(", ") || "nothing"}`);
+
         if (pageTitles.length === 0) return null;
 
         // Try each candidate until we find one with a valid extract
@@ -504,6 +506,7 @@ async function fetchWikipediaInfobox(query) {
             if (result) return result;
         }
 
+        console.log(`Wikipedia: no valid infobox found for "${query}"`);
         return null;
     } catch (e) {
         console.error("Wikipedia infobox error:", e);
@@ -532,17 +535,26 @@ async function tryFetchPageInfobox(pageTitle) {
         pageUrl.searchParams.set("origin", "*");
 
         const pageResponse = await fetch(pageUrl.toString());
-        if (!pageResponse.ok) return null;
+        if (!pageResponse.ok) {
+            console.log(`Wikipedia page fetch failed for "${pageTitle}": ${pageResponse.status}`);
+            return null;
+        }
 
         const pageData = await pageResponse.json();
         const pages = pageData.query?.pages || {};
         const page = Object.values(pages)[0];
 
-        if (!page || page.missing) return null;
+        if (!page || page.missing) {
+            console.log(`Wikipedia page missing: "${pageTitle}"`);
+            return null;
+        }
 
         // Check if this is likely a person/entity (has useful info)
         const extract = page.extract || "";
-        if (extract.length < 50) return null; // Skip disambiguation/stub pages
+        if (extract.length < 50) {
+            console.log(`Wikipedia extract too short for "${pageTitle}": ${extract.length} chars`);
+            return null; // Skip disambiguation/stub pages
+        }
 
         // Get Wikidata ID for additional links
         let wikidataId = null;
