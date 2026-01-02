@@ -13,55 +13,9 @@ let commercialState = { page: 1, hasMore: true, loading: false, totalResults: 0,
 let noncommercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
 let mergedState = { loading: false };
 
-// Prefetch state - track which URLs we've already prefetched
-const prefetchedUrls = new Set();
-
 // Check if we're in mobile merged view
 function isMergedView() {
     return window.innerWidth <= 700;
-}
-
-// Prefetch a URL on hover
-function prefetchUrl(url) {
-    // Skip if already prefetched, same origin, or invalid
-    if (prefetchedUrls.has(url)) return;
-
-    try {
-        const urlObj = new URL(url);
-        // Only prefetch http/https URLs
-        if (!urlObj.protocol.startsWith('http')) return;
-    } catch {
-        return;
-    }
-
-    prefetchedUrls.add(url);
-
-    // Use link prefetch
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    link.as = 'document';
-    document.head.appendChild(link);
-}
-
-// Set up prefetching on hover for result links
-function setupPrefetching() {
-    const resultsContainer = document.getElementById('results');
-
-    resultsContainer.addEventListener('mouseenter', (e) => {
-        const link = e.target.closest('.result-title a');
-        if (link?.href) {
-            prefetchUrl(link.href);
-        }
-    }, true); // Use capture to catch events early
-
-    // Also prefetch on focus (for keyboard navigation)
-    resultsContainer.addEventListener('focusin', (e) => {
-        const link = e.target.closest('.result-title a');
-        if (link?.href) {
-            prefetchUrl(link.href);
-        }
-    });
 }
 
 // Initialize
@@ -76,9 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Set up scroll listeners for infinite scroll
     setupInfiniteScroll();
-
-    // Set up link prefetching on hover
-    setupPrefetching();
 
     // Re-render on resize if crossing the breakpoint
     let wasMerged = isMergedView();
