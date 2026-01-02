@@ -51,6 +51,14 @@ const previewInfo = document.getElementById('preview-info');
 const previewClose = document.getElementById('preview-close');
 const previewOverlay = document.getElementById('preview-overlay');
 
+// Infobox elements
+const infobox = document.getElementById('infobox');
+const infoboxImage = document.getElementById('infobox-image');
+const infoboxTitle = document.getElementById('infobox-title');
+const infoboxDescription = document.getElementById('infobox-description');
+const infoboxLinks = document.getElementById('infobox-links');
+const infoboxSource = document.getElementById('infobox-source');
+
 // State - track each source separately
 let currentQuery = '';
 let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -58,6 +66,7 @@ let googleState = { page: 1, hasMore: true, loading: false, results: [], error: 
 let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
 let mergedState = { loading: false };
 let imageState = { images: [], loading: false, page: 1, hasMore: true };
+let infoboxState = { data: null, loading: false };
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -214,6 +223,7 @@ async function performSearch(query) {
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
+    infoboxState = { data: null, loading: false };
 
     // Show loading states
     showLoading(commercialResults);
@@ -222,14 +232,16 @@ async function performSearch(query) {
     commercialCount.textContent = '';
     noncommercialCount.textContent = '';
 
-    // Hide image section initially
+    // Hide image section and infobox initially
     imageSection.style.display = 'none';
+    infobox.style.display = 'none';
 
     // Fetch all sources independently - don't wait for all
     fetchSource('brave', query, 1);
     fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
     fetchImages(query);
+    fetchInfobox(query);
 }
 
 async function fetchSource(source, query, page) {
@@ -726,6 +738,76 @@ function closeImagePreview() {
     document.body.style.overflow = '';
 }
 
+// Infobox (Knowledge Panel) functions
+async function fetchInfobox(query) {
+    if (infoboxState.loading) return;
+    infoboxState.loading = true;
+
+    try {
+        const response = await fetch(
+            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=infobox`
+        );
+
+        if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
+
+        const data = await response.json();
+        infoboxState.data = data.infobox;
+
+        if (data.infobox) {
+            renderInfobox(data.infobox);
+        }
+    } catch (error) {
+        console.error('Error fetching infobox:', error);
+    } finally {
+        infoboxState.loading = false;
+    }
+}
+
+function renderInfobox(data) {
+    if (!data) {
+        infobox.style.display = 'none';
+        return;
+    }
+
+    // Set title
+    infoboxTitle.textContent = data.title;
+
+    // Set description
+    infoboxDescription.textContent = data.description;
+
+    // Set image
+    if (data.image) {
+        infoboxImage.src = data.image;
+        infoboxImage.alt = data.title;
+        infoboxImage.classList.remove('no-image');
+        infoboxImage.onerror = () => {
+            infoboxImage.classList.add('no-image');
+        };
+    } else {
+        infoboxImage.classList.add('no-image');
+    }
+
+    // Set external links
+    infoboxLinks.innerHTML = '';
+    if (data.links && data.links.length > 0) {
+        data.links.forEach(link => {
+            const linkEl = document.createElement('a');
+            linkEl.href = link.url;
+            linkEl.target = '_blank';
+            linkEl.rel = 'noopener noreferrer';
+            linkEl.className = 'infobox-link';
+            linkEl.innerHTML = `<span class="infobox-link-icon">${link.icon}</span>${link.name}`;
+            infoboxLinks.appendChild(linkEl);
+        });
+    }
+
+    // Set Wikipedia source link
+    infoboxSource.href = data.url;
+
+    // Show the infobox
+    infobox.style.display = 'flex';
+}
+
 function attachSentinel(container, source) {
     const sentinelKey = source === 'commercial' ? 'commercialSentinel' :
         source === 'noncommercial' ? 'noncommercialSentinel' : 'mergedSentinel';
@@ -789,6 +871,7 @@ function resetResults() {
     marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
+    infoboxState = { data: null, loading: false };
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
@@ -797,6 +880,7 @@ function resetResults() {
     noncommercialCount.textContent = '';
     imageSection.style.display = 'none';
     sliderTrack.innerHTML = '';
+    infobox.style.display = 'none';
 }
 
 function escapeHtml(text) {
