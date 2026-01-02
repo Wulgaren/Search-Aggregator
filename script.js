@@ -6,6 +6,7 @@ const noncommercialResults = document.getElementById('noncommercial-results');
 const mergedResults = document.getElementById('merged-results');
 const commercialCount = document.getElementById('commercial-count');
 const noncommercialCount = document.getElementById('noncommercial-count');
+const chatgptBtn = document.getElementById('chatgpt-btn');
 
 // State - track each source separately
 let currentQuery = '';
@@ -56,6 +57,14 @@ searchForm.addEventListener('submit', (e) => {
         url.searchParams.set('q', query);
         window.history.pushState({}, '', url);
         performSearch(query);
+    }
+});
+
+// ChatGPT button
+chatgptBtn.addEventListener('click', () => {
+    const query = searchInput.value.trim();
+    if (query) {
+        window.open(`https://chat.openai.com/?q=${encodeURIComponent(query)}`, '_blank');
     }
 });
 
@@ -197,16 +206,16 @@ function getState(source) {
 }
 
 function renderCommercialResults() {
-    // Interleave Brave and Google results
-    const interleaved = interleaveArrays(braveState.results, googleState.results);
+    // Interleave Google first, then Brave (order: Google, Brave)
+    const interleaved = deduplicateResults(interleaveArrays(googleState.results, braveState.results));
 
     // Build error messages for sources that failed
     let errorHtml = '';
-    if (braveState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
-    }
     if (googleState.error) {
         errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
+    }
+    if (braveState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
     }
 
     if (interleaved.length === 0 && !braveState.loading && !googleState.loading) {
@@ -222,7 +231,7 @@ function renderCommercialResults() {
         const source = result.source || 'brave';
         return `
         <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-source-tag">${source === 'brave' ? 'Brave' : 'Google'}</div>
+            <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
             <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
@@ -296,6 +305,24 @@ function interleaveArrays(arr1, arr2) {
     return result;
 }
 
+// Deduplicate results based on URL domain + path (ignoring protocol and query params)
+function deduplicateResults(results) {
+    const seen = new Set();
+    return results.filter(result => {
+        try {
+            const url = new URL(result.url);
+            const key = url.hostname + url.pathname.replace(/\/$/, '');
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        } catch {
+            return true;
+        }
+    });
+}
+
 async function loadMoreCommercial() {
     const braveNeedsMore = braveState.hasMore && !braveState.loading;
     const googleNeedsMore = googleState.hasMore && !googleState.loading;
@@ -357,32 +384,51 @@ async function loadMoreMergedResults() {
 }
 
 function renderMergedResults() {
-    // Interleave commercial (Brave+Google interleaved) with Marginalia
-    const commercial = interleaveArrays(braveState.results, googleState.results);
-    const noncommercial = marginaliaState.results;
-
+    // Interleave in order: Google, Marginalia, Brave (and deduplicate)
     const allResults = [];
-    const maxLen = Math.max(commercial.length, noncommercial.length);
+    const seen = new Set();
+    const maxLen = Math.max(googleState.results.length, marginaliaState.results.length, braveState.results.length);
 
     for (let i = 0; i < maxLen; i++) {
-        if (i < commercial.length) {
-            allResults.push({ type: 'commercial', result: commercial[i] });
+        // Google first
+        if (i < googleState.results.length) {
+            const result = googleState.results[i];
+            const key = getDedupeKey(result.url);
+            if (!seen.has(key)) {
+                seen.add(key);
+                allResults.push({ type: 'commercial', result });
+            }
         }
-        if (i < noncommercial.length) {
-            allResults.push({ type: 'noncommercial', result: noncommercial[i] });
+        // Marginalia second
+        if (i < marginaliaState.results.length) {
+            const result = marginaliaState.results[i];
+            const key = getDedupeKey(result.url);
+            if (!seen.has(key)) {
+                seen.add(key);
+                allResults.push({ type: 'noncommercial', result });
+            }
+        }
+        // Brave third
+        if (i < braveState.results.length) {
+            const result = braveState.results[i];
+            const key = getDedupeKey(result.url);
+            if (!seen.has(key)) {
+                seen.add(key);
+                allResults.push({ type: 'commercial', result });
+            }
         }
     }
 
-    // Build error messages for sources that failed
+    // Build error messages for sources that failed (in display order)
     let errorHtml = '';
-    if (braveState.error) {
-        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
-    }
     if (googleState.error) {
         errorHtml += `<div class="source-error"><span class="error-source">Google:</span> ${escapeHtml(googleState.error)}</div>`;
     }
     if (marginaliaState.error) {
         errorHtml += `<div class="source-error"><span class="error-source">Marginalia:</span> ${escapeHtml(marginaliaState.error)}</div>`;
+    }
+    if (braveState.error) {
+        errorHtml += `<div class="source-error"><span class="error-source">Brave:</span> ${escapeHtml(braveState.error)}</div>`;
     }
 
     const allLoading = braveState.loading && googleState.loading && marginaliaState.loading;
@@ -398,7 +444,7 @@ function renderMergedResults() {
 
     const html = allResults.map((item, index) => {
         const sourceLabel = item.type === 'commercial'
-            ? (item.result.source === 'brave' ? 'Brave' : 'Google')
+            ? (item.result.source === 'google' ? 'Google' : 'Brave')
             : 'Marginalia';
         const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
 
@@ -420,6 +466,15 @@ function renderMergedResults() {
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
     if (hasMore) {
         attachSentinel(mergedResults, 'merged');
+    }
+}
+
+function getDedupeKey(url) {
+    try {
+        const parsed = new URL(url);
+        return parsed.hostname + parsed.pathname.replace(/\/$/, '');
+    } catch {
+        return url;
     }
 }
 
