@@ -18,8 +18,8 @@
     --accent-dim: #1d4ed8;
     --link-color: #60a5fa;
     --link-hover: #93c5fd;
-    --google-accent: #4285f4;
-    --marginalia-accent: #a78bfa;
+    --commercial-accent: #fb923c;
+    --noncommercial-accent: #a78bfa;
     --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
 }
@@ -159,12 +159,12 @@ a:hover {
     min-height: 400px;
 }
 
-#google-column {
-    border-top: 3px solid var(--google-accent);
+#commercial-column {
+    border-top: 3px solid var(--commercial-accent);
 }
 
-#marginalia-column {
-    border-top: 3px solid var(--marginalia-accent);
+#noncommercial-column {
+    border-top: 3px solid var(--noncommercial-accent);
 }
 
 .column-header {
@@ -185,12 +185,12 @@ a:hover {
     color: var(--text-secondary);
 }
 
-#google-column .column-title {
-    color: var(--google-accent);
+#commercial-column .column-title {
+    color: var(--commercial-accent);
 }
 
-#marginalia-column .column-title {
-    color: var(--marginalia-accent);
+#noncommercial-column .column-title {
+    color: var(--noncommercial-accent);
 }
 
 .result-count {
@@ -363,25 +363,25 @@ a:hover {
     border-radius: 4px;
 }
 
-.legend-google {
-    color: var(--google-accent);
-    background: rgba(66, 133, 244, 0.1);
+.legend-commercial {
+    color: var(--commercial-accent);
+    background: rgba(251, 146, 60, 0.1);
 }
 
-.legend-marginalia {
-    color: var(--marginalia-accent);
+.legend-noncommercial {
+    color: var(--noncommercial-accent);
     background: rgba(167, 139, 250, 0.1);
 }
 
 /* Source indicator on result items */
-.result-item[data-source="google"] {
-    border-left: 3px solid var(--google-accent);
+.result-item[data-source="commercial"] {
+    border-left: 3px solid var(--commercial-accent);
     padding-left: 1rem;
     margin-left: -1rem;
 }
 
-.result-item[data-source="marginalia"] {
-    border-left: 3px solid var(--marginalia-accent);
+.result-item[data-source="noncommercial"] {
+    border-left: 3px solid var(--noncommercial-accent);
     padding-left: 1rem;
     margin-left: -1rem;
 }
@@ -394,12 +394,12 @@ a:hover {
     margin-bottom: 0.25rem;
 }
 
-.result-item[data-source="google"] .result-source {
-    color: var(--google-accent);
+.result-item[data-source="commercial"] .result-source {
+    color: var(--commercial-accent);
 }
 
-.result-item[data-source="marginalia"] .result-source {
-    color: var(--marginalia-accent);
+.result-item[data-source="noncommercial"] .result-source {
+    color: var(--noncommercial-accent);
 }
 
 /* Responsive */
@@ -490,4 +490,3 @@ a:hover {
     height: 16px;
     border-width: 2px;
 }
-

@@ -1,16 +1,16 @@
 // DOM Elements
 const searchForm = document.getElementById('search-form');
 const searchInput = document.getElementById('search-input');
-const googleResults = document.getElementById('google-results');
-const marginaliaResults = document.getElementById('marginalia-results');
+const commercialResults = document.getElementById('commercial-results');
+const noncommercialResults = document.getElementById('noncommercial-results');
 const mergedResults = document.getElementById('merged-results');
-const googleCount = document.getElementById('google-count');
-const marginaliaCount = document.getElementById('marginalia-count');
+const commercialCount = document.getElementById('commercial-count');
+const noncommercialCount = document.getElementById('noncommercial-count');
 
 // State
 let currentQuery = '';
-let googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
-let marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+let commercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+let noncommercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
 let mergedState = { loading: false };
 
 // Check if we're in mobile merged view
@@ -87,32 +87,32 @@ function setupInfiniteScroll() {
     };
 
     // Create sentinel elements
-    const googleSentinel = document.createElement('div');
-    googleSentinel.className = 'scroll-sentinel';
-    googleSentinel.id = 'google-sentinel';
+    const commercialSentinel = document.createElement('div');
+    commercialSentinel.className = 'scroll-sentinel';
+    commercialSentinel.id = 'commercial-sentinel';
 
-    const marginaliaSentinel = document.createElement('div');
-    marginaliaSentinel.className = 'scroll-sentinel';
-    marginaliaSentinel.id = 'marginalia-sentinel';
+    const noncommercialSentinel = document.createElement('div');
+    noncommercialSentinel.className = 'scroll-sentinel';
+    noncommercialSentinel.id = 'noncommercial-sentinel';
 
     const mergedSentinel = document.createElement('div');
     mergedSentinel.className = 'scroll-sentinel';
     mergedSentinel.id = 'merged-sentinel';
 
-    // Observer for Google results
-    const googleObserver = new IntersectionObserver((entries) => {
+    // Observer for commercial results
+    const commercialObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting && !googleState.loading && googleState.hasMore && currentQuery && !isMergedView()) {
-                loadMoreResults('google');
+            if (entry.isIntersecting && !commercialState.loading && commercialState.hasMore && currentQuery && !isMergedView()) {
+                loadMoreResults('commercial');
             }
         });
     }, observerOptions);
 
-    // Observer for Marginalia results
-    const marginaliaObserver = new IntersectionObserver((entries) => {
+    // Observer for noncommercial results
+    const noncommercialObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting && !marginaliaState.loading && marginaliaState.hasMore && currentQuery && !isMergedView()) {
-                loadMoreResults('marginalia');
+            if (entry.isIntersecting && !noncommercialState.loading && noncommercialState.hasMore && currentQuery && !isMergedView()) {
+                loadMoreResults('noncommercial');
             }
         });
     }, observerOptions);
@@ -127,23 +127,23 @@ function setupInfiniteScroll() {
     }, observerOptions);
 
     // Store observers and sentinels globally
-    window.scrollObservers = { googleObserver, marginaliaObserver, mergedObserver };
-    window.sentinels = { googleSentinel, marginaliaSentinel, mergedSentinel };
+    window.scrollObservers = { commercialObserver, noncommercialObserver, mergedObserver };
+    window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
 }
 
 async function performSearch(query) {
     // Reset state for new search
     currentQuery = query;
-    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
-    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    commercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    noncommercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
     mergedState = { loading: false };
 
     // Show loading states
-    showLoading(googleResults);
-    showLoading(marginaliaResults);
+    showLoading(commercialResults);
+    showLoading(noncommercialResults);
     showLoading(mergedResults);
-    googleCount.textContent = '';
-    marginaliaCount.textContent = '';
+    commercialCount.textContent = '';
+    noncommercialCount.textContent = '';
 
     try {
         const response = await fetch(`/.netlify/functions/search?q=${encodeURIComponent(query)}&page=1`);
@@ -154,30 +154,30 @@ async function performSearch(query) {
 
         const data = await response.json();
 
-        // Process Google results
-        if (data.google?.error) {
-            showError(googleResults, data.google.error);
-            googleState.hasMore = false;
-        } else if (data.google) {
-            googleState.hasMore = data.google.hasMore;
-            googleState.totalResults = data.google.results.length;
-            googleState.results = data.google.results;
-            renderResults(googleResults, data.google.results, false);
-            updateCount(googleCount, googleState.totalResults, googleState.hasMore);
-            attachSentinel(googleResults, 'google');
+        // Process commercial results
+        if (data.commercial?.error) {
+            showError(commercialResults, data.commercial.error);
+            commercialState.hasMore = false;
+        } else if (data.commercial) {
+            commercialState.hasMore = data.commercial.hasMore;
+            commercialState.totalResults = data.commercial.results.length;
+            commercialState.results = data.commercial.results;
+            renderResults(commercialResults, data.commercial.results, false);
+            updateCount(commercialCount, commercialState.totalResults, commercialState.hasMore);
+            attachSentinel(commercialResults, 'commercial');
         }
 
-        // Process Marginalia results
-        if (data.marginalia?.error) {
-            showError(marginaliaResults, data.marginalia.error);
-            marginaliaState.hasMore = false;
-        } else if (data.marginalia) {
-            marginaliaState.hasMore = data.marginalia.hasMore;
-            marginaliaState.totalResults = data.marginalia.results.length;
-            marginaliaState.results = data.marginalia.results;
-            renderResults(marginaliaResults, data.marginalia.results, false);
-            updateCount(marginaliaCount, marginaliaState.totalResults, marginaliaState.hasMore);
-            attachSentinel(marginaliaResults, 'marginalia');
+        // Process noncommercial results
+        if (data.noncommercial?.error) {
+            showError(noncommercialResults, data.noncommercial.error);
+            noncommercialState.hasMore = false;
+        } else if (data.noncommercial) {
+            noncommercialState.hasMore = data.noncommercial.hasMore;
+            noncommercialState.totalResults = data.noncommercial.results.length;
+            noncommercialState.results = data.noncommercial.results;
+            renderResults(noncommercialResults, data.noncommercial.results, false);
+            updateCount(noncommercialCount, noncommercialState.totalResults, noncommercialState.hasMore);
+            attachSentinel(noncommercialResults, 'noncommercial');
         }
 
         // Render merged view if in mobile
@@ -187,16 +187,16 @@ async function performSearch(query) {
 
     } catch (error) {
         console.error('Search error:', error);
-        showError(googleResults, error.message);
-        showError(marginaliaResults, error.message);
+        showError(commercialResults, error.message);
+        showError(noncommercialResults, error.message);
         showError(mergedResults, error.message);
     }
 }
 
 async function loadMoreResults(source) {
-    const state = source === 'google' ? googleState : marginaliaState;
-    const container = source === 'google' ? googleResults : marginaliaResults;
-    const countEl = source === 'google' ? googleCount : marginaliaCount;
+    const state = source === 'commercial' ? commercialState : noncommercialState;
+    const container = source === 'commercial' ? commercialResults : noncommercialResults;
+    const countEl = source === 'commercial' ? commercialCount : noncommercialCount;
 
     if (state.loading || !state.hasMore) return;
 
@@ -247,22 +247,21 @@ async function loadMoreResults(source) {
 
 async function loadMoreMergedResults() {
     // Load more from whichever source has fewer results (to keep them balanced)
-    // Or load from both if they're roughly equal
-    const googleNeedsMore = googleState.hasMore && !googleState.loading;
-    const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
+    const commercialNeedsMore = commercialState.hasMore && !commercialState.loading;
+    const noncommercialNeedsMore = noncommercialState.hasMore && !noncommercialState.loading;
 
-    if (!googleNeedsMore && !marginaliaNeedsMore) return;
+    if (!commercialNeedsMore && !noncommercialNeedsMore) return;
 
     mergedState.loading = true;
     showLoadingMore(mergedResults);
 
     const promises = [];
 
-    if (googleNeedsMore) {
-        promises.push(loadMoreForMerged('google'));
+    if (commercialNeedsMore) {
+        promises.push(loadMoreForMerged('commercial'));
     }
-    if (marginaliaNeedsMore) {
-        promises.push(loadMoreForMerged('marginalia'));
+    if (noncommercialNeedsMore) {
+        promises.push(loadMoreForMerged('noncommercial'));
     }
 
     await Promise.all(promises);
@@ -273,7 +272,7 @@ async function loadMoreMergedResults() {
 }
 
 async function loadMoreForMerged(source) {
-    const state = source === 'google' ? googleState : marginaliaState;
+    const state = source === 'commercial' ? commercialState : noncommercialState;
 
     if (state.loading || !state.hasMore) return;
 
@@ -300,7 +299,7 @@ async function loadMoreForMerged(source) {
             state.results = [...state.results, ...sourceData.results];
 
             // Update count in desktop view too
-            const countEl = source === 'google' ? googleCount : marginaliaCount;
+            const countEl = source === 'commercial' ? commercialCount : noncommercialCount;
             updateCount(countEl, state.totalResults, state.hasMore);
         }
 
@@ -313,7 +312,7 @@ async function loadMoreForMerged(source) {
 }
 
 function renderMergedResults(append = false) {
-    const interleaved = interleaveResults(googleState.results, marginaliaState.results);
+    const interleaved = interleaveResults(commercialState.results, noncommercialState.results);
 
     if (interleaved.length === 0) {
         mergedResults.innerHTML = `
@@ -326,7 +325,7 @@ function renderMergedResults(append = false) {
 
     const html = interleaved.map((item, index) => `
         <article class="result-item" data-source="${item.source}" style="animation-delay: ${append ? 0 : index * 0.03}s">
-            <div class="result-source">${item.source === 'google' ? 'Google' : 'Marginalia'}</div>
+            <div class="result-source">${item.source === 'commercial' ? 'Commercial' : 'Non-commercial'}</div>
             <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
             <h3 class="result-title">
                 <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
@@ -338,21 +337,21 @@ function renderMergedResults(append = false) {
     mergedResults.innerHTML = html;
 
     // Attach sentinel if there's more to load
-    if (googleState.hasMore || marginaliaState.hasMore) {
+    if (commercialState.hasMore || noncommercialState.hasMore) {
         attachSentinel(mergedResults, 'merged');
     }
 }
 
-function interleaveResults(googleArr, marginaliaArr) {
+function interleaveResults(commercialArr, noncommercialArr) {
     const result = [];
-    const maxLen = Math.max(googleArr.length, marginaliaArr.length);
+    const maxLen = Math.max(commercialArr.length, noncommercialArr.length);
 
     for (let i = 0; i < maxLen; i++) {
-        if (i < googleArr.length) {
-            result.push({ source: 'google', result: googleArr[i] });
+        if (i < commercialArr.length) {
+            result.push({ source: 'commercial', result: commercialArr[i] });
         }
-        if (i < marginaliaArr.length) {
-            result.push({ source: 'marginalia', result: marginaliaArr[i] });
+        if (i < noncommercialArr.length) {
+            result.push({ source: 'noncommercial', result: noncommercialArr[i] });
         }
     }
 
@@ -360,10 +359,10 @@ function interleaveResults(googleArr, marginaliaArr) {
 }
 
 function attachSentinel(container, source) {
-    const sentinelKey = source === 'google' ? 'googleSentinel' :
-        source === 'marginalia' ? 'marginaliaSentinel' : 'mergedSentinel';
-    const observerKey = source === 'google' ? 'googleObserver' :
-        source === 'marginalia' ? 'marginaliaObserver' : 'mergedObserver';
+    const sentinelKey = source === 'commercial' ? 'commercialSentinel' :
+        source === 'noncommercial' ? 'noncommercialSentinel' : 'mergedSentinel';
+    const observerKey = source === 'commercial' ? 'commercialObserver' :
+        source === 'noncommercial' ? 'noncommercialObserver' : 'mergedObserver';
 
     const sentinel = window.sentinels[sentinelKey];
     const observer = window.scrollObservers[observerKey];
@@ -469,18 +468,18 @@ function showError(container, message) {
 
 function resetResults() {
     currentQuery = '';
-    googleState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
-    marginaliaState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    commercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
+    noncommercialState = { page: 1, hasMore: true, loading: false, totalResults: 0, results: [] };
     mergedState = { loading: false };
 
-    googleResults.innerHTML = `
+    commercialResults.innerHTML = `
         <div class="empty-state">
-            <p>Google results will appear here</p>
+            <p>Commercial results will appear here</p>
         </div>
     `;
-    marginaliaResults.innerHTML = `
+    noncommercialResults.innerHTML = `
         <div class="empty-state">
-            <p>Marginalia results will appear here</p>
+            <p>Non-commercial results will appear here</p>
         </div>
     `;
     mergedResults.innerHTML = `
@@ -488,8 +487,8 @@ function resetResults() {
             <p>Search results will appear here</p>
         </div>
     `;
-    googleCount.textContent = '';
-    marginaliaCount.textContent = '';
+    commercialCount.textContent = '';
+    noncommercialCount.textContent = '';
 }
 
 function escapeHtml(text) {
