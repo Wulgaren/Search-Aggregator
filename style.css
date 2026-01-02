@@ -525,8 +525,8 @@ a:hover {
   }
 
   .chatgpt-btn {
-    width: 42px;
-    height: 42px;
+    width: 51px;
+    height: 51px;
   }
 
   .results-merged {
@@ -753,7 +753,7 @@ a:hover {
   .image-slider-section {
     padding: 0 0.75rem;
     margin-bottom: 1rem;
-    max-width: 100vw;
+    max-width: 100%;
     box-sizing: border-box;
   }
 

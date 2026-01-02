@@ -139,6 +139,9 @@ window.addEventListener('pageshow', (event) => {
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
+    console.log('query', query);
+    console.log('query', currentQuery);
+
     if (query) {
         // Check for DDG bang and redirect if found
         if (detectBang(query)) {
