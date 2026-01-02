@@ -268,33 +268,23 @@ async function fetchSource(source, query, page) {
             state.error = null;
         }
 
-        // Always render when data arrives (even if one source has an error, others may have results)
-        if (source === 'marginalia') {
-            renderNoncommercialResults();
-        } else {
-            renderCommercialResults();
-        }
-
-        if (isMergedView()) {
-            renderMergedResults();
-        }
     } catch (error) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
         state.error = error.message;
-
-        // Still render to show other source results and error state
-        if (source === 'marginalia') {
-            renderNoncommercialResults();
-        } else {
-            renderCommercialResults();
-        }
-
-        if (isMergedView()) {
-            renderMergedResults();
-        }
     } finally {
         state.loading = false;
+    }
+
+    // Render after loading state is updated
+    if (source === 'marginalia') {
+        renderNoncommercialResults();
+    } else {
+        renderCommercialResults();
+    }
+
+    if (isMergedView()) {
+        renderMergedResults();
     }
 }
 

@@ -772,7 +772,11 @@ a:hover {
 .infobox {
   display: flex;
   gap: 1.25rem;
-  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(30, 30, 35, 1) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    rgba(30, 30, 35, 1) 100%
+  );
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 1.5rem;
@@ -784,13 +788,18 @@ a:hover {
 }
 
 .infobox::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--noncommercial-accent) 50%, var(--commercial-accent) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--noncommercial-accent) 50%,
+    var(--commercial-accent) 100%
+  );
   opacity: 0.8;
 }
 
