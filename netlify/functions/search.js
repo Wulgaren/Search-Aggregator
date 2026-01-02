@@ -486,20 +486,34 @@ async function fetchWikipediaInfobox(query) {
         searchUrl.searchParams.set("action", "opensearch");
         searchUrl.searchParams.set("format", "json");
         searchUrl.searchParams.set("search", query);
-        searchUrl.searchParams.set("limit", 1);
+        searchUrl.searchParams.set("limit", 5);
         searchUrl.searchParams.set("origin", "*");
 
         const searchResponse = await fetch(searchUrl.toString());
         if (!searchResponse.ok) return null;
 
+        // opensearch returns [query, [titles], [descriptions], [urls]]
         const searchData = await searchResponse.json();
-        const searchResults = searchData.query?.search || [];
+        const pageTitles = searchData[1] || [];
 
-        if (searchResults.length === 0) return null;
+        if (pageTitles.length === 0) return null;
 
-        const pageTitle = searchResults[0].title;
+        // Try each candidate until we find one with a valid extract
+        for (const pageTitle of pageTitles) {
+            const result = await tryFetchPageInfobox(pageTitle);
+            if (result) return result;
+        }
 
-        // Now fetch full page data including extract, image, and links
+        return null;
+    } catch (e) {
+        console.error("Wikipedia infobox error:", e);
+        return null;
+    }
+}
+
+// Helper: try to fetch infobox data for a specific Wikipedia page title
+async function tryFetchPageInfobox(pageTitle) {
+    try {
         const pageUrl = new URL("https://en.wikipedia.org/w/api.php");
         pageUrl.searchParams.set("action", "query");
         pageUrl.searchParams.set("format", "json");
@@ -528,7 +542,7 @@ async function fetchWikipediaInfobox(query) {
 
         // Check if this is likely a person/entity (has useful info)
         const extract = page.extract || "";
-        if (extract.length < 50) return null;
+        if (extract.length < 50) return null; // Skip disambiguation/stub pages
 
         // Get Wikidata ID for additional links
         let wikidataId = null;
@@ -656,7 +670,6 @@ async function fetchWikipediaInfobox(query) {
             links: externalLinks.slice(0, 6), // Limit to 6 links
         };
     } catch (e) {
-        console.error("Wikipedia infobox error:", e);
         return null;
     }
 }

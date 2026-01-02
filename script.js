@@ -101,7 +101,7 @@ searchForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const query = searchInput.value.trim();
     if (query) {
-        // Check for DDG bang and redirect if found
+        // Handle bangs before updating URL (so back button doesn't cause redirect loop)
         if (detectBang(query)) {
             handleBangRedirect(query);
             return;
@@ -109,7 +109,7 @@ searchForm.addEventListener('submit', (e) => {
         const url = new URL(window.location);
         url.searchParams.set('q', query);
         window.history.pushState({}, '', url);
-        performSearch(query);
+        restoreSearchState();
     }
 });
 
