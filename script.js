@@ -65,21 +65,7 @@ function isMergedView() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const query = urlParams.get('q');
-    if (query) {
-        // Check for DDG bang and redirect if found
-        if (detectBang(query)) {
-            handleBangRedirect(query);
-            return;
-        }
-        searchInput.value = query;
-        searchInput.focus();
-        // Move cursor to end of input
-        const len = searchInput.value.length;
-        searchInput.setSelectionRange(len, len);
-        performSearch(query);
-    }
+    restoreSearchState(true);
     setupInfiniteScroll();
 
     let wasMerged = isMergedView();
@@ -140,6 +126,17 @@ document.addEventListener('keydown', (e) => {
 
 // Handle browser back/forward
 window.addEventListener('popstate', () => {
+    restoreSearchState();
+});
+
+// Handle Safari's back-forward cache (bfcache)
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        restoreSearchState();
+    }
+});
+
+function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
     if (query) {
@@ -149,13 +146,22 @@ window.addEventListener('popstate', () => {
             return;
         }
         searchInput.value = query;
-        performSearch(query);
+        document.title = `${query} - Search`;  // <-- add this
+        if (focusInput) {
+            searchInput.focus();
+            const len = searchInput.value.length;
+            searchInput.setSelectionRange(len, len);
+        }
+        // Only re-search if results are empty (page was restored from bfcache)
+        if (!currentQuery || currentQuery !== query) {
+            performSearch(query);
+        }
     } else {
         searchInput.value = '';
+        document.title = 'Search';  // <-- add this
         resetResults();
     }
-});
-
+}
 function setupInfiniteScroll() {
     const observerOptions = { root: null, rootMargin: '100px', threshold: 0 };
 
