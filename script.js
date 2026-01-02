@@ -139,6 +139,13 @@ window.addEventListener('popstate', () => {
     restoreSearchState();
 });
 
+// Handle Safari's back-forward cache (bfcache)
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        restoreSearchState();
+    }
+});
+
 function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
@@ -153,7 +160,7 @@ function restoreSearchState(focusInput = false) {
         // Fix for Safari bfcache issue - set value after a short delay
         setTimeout(() => {
             searchInput.value = query;
-        }, 50);
+        }, 0);
 
         document.title = `${query} - Search`;
         if (focusInput) {
