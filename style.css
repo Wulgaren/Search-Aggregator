@@ -445,7 +445,8 @@ a:hover {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  margin-bottom: 0.25rem;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .result-source-tag {
@@ -453,12 +454,13 @@ a:hover {
   font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  margin-bottom: 0.25rem;
   padding: 0.15rem 0.4rem;
   border-radius: 3px;
-  display: inline-block;
+  flex-shrink: 0;
+  margin-left: auto;
   background: rgba(251, 146, 60, 0.15);
   color: var(--commercial-accent);
+  scale: 0.8;
 }
 
 .result-item[data-source="google"] .result-source-tag {
@@ -469,6 +471,11 @@ a:hover {
 .result-item[data-source="brave"] .result-source-tag {
   background: rgba(251, 146, 60, 0.15);
   color: var(--commercial-accent);
+}
+
+.result-item[data-source="marginalia"] .result-source-tag {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--noncommercial-accent);
 }
 
 .result-item[data-source="commercial"] .result-source {

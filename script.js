@@ -259,10 +259,10 @@ function renderCommercialResults() {
         const faviconUrl = getFaviconUrl(result.url);
         return `
         <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+                <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
             </div>
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
@@ -302,10 +302,11 @@ function renderNoncommercialResults() {
     const html = results.map((result, index) => {
         const faviconUrl = getFaviconUrl(result.url);
         return `
-        <article class="result-item" style="animation-delay: ${index * 0.02}s">
+        <article class="result-item" data-source="marginalia" style="animation-delay: ${index * 0.02}s">
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+                <div class="result-source-tag">Marginalia</div>
             </div>
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
@@ -474,10 +475,10 @@ function renderMergedResults() {
 
         return `
             <article class="result-item" data-source="${dataSource}" style="animation-delay: ${index * 0.02}s">
-                <div class="result-source">${sourceLabel}</div>
                 <div class="result-url-row">
                     <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                     <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
+                    <div class="result-source">${sourceLabel}</div>
                 </div>
                 <h3 class="result-title">
                     <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
