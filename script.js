@@ -150,6 +150,30 @@ function restoreSearchState(focusInput = false) {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
 
+    // Safari bfcache restores form values after JS runs - use multiple strategies
+    const setInputValue = (value, focus) => {
+        const doSet = () => {
+            searchInput.value = value;
+            if (focus && value) {
+                searchInput.focus();
+                const len = value.length;
+                searchInput.setSelectionRange(len, len);
+            }
+        };
+        // Immediate attempt
+        doSet();
+        // After next frame (standard browsers)
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (searchInput.value !== value) doSet();
+            });
+        });
+        // Delayed fallback for Safari bfcache
+        setTimeout(() => {
+            if (searchInput.value !== value) doSet();
+        }, 50);
+    };
+
     if (query) {
         // Check for DDG bang and redirect if found
         if (detectBang(query)) {
@@ -157,15 +181,7 @@ function restoreSearchState(focusInput = false) {
             return;
         }
 
-        // Use setTimeout to ensure this runs after Safari's bfcache form restoration
-        setTimeout(() => {
-            searchInput.value = query;
-            if (focusInput) {
-                searchInput.focus();
-                const len = query.length;
-                searchInput.setSelectionRange(len, len);
-            }
-        }, 0);
+        setInputValue(query, focusInput);
 
         document.title = `${query} - Search`;
         // Only re-search if results are empty (page was restored from bfcache)
@@ -173,10 +189,7 @@ function restoreSearchState(focusInput = false) {
             performSearch(query);
         }
     } else {
-        // Use setTimeout for Safari bfcache compatibility
-        setTimeout(() => {
-            searchInput.value = '';
-        }, 0);
+        setInputValue('', false);
         document.title = 'Search';
         resetResults();
     }
