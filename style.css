@@ -390,3 +390,25 @@ a:hover {
     background: var(--border-hover);
 }
 
+/* Infinite Scroll */
+.scroll-sentinel {
+    height: 1px;
+    width: 100%;
+}
+
+.loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1.5rem 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.loading-spinner.small {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+}
+
