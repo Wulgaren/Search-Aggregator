@@ -139,9 +139,9 @@ window.addEventListener('popstate', () => {
     restoreSearchState();
 });
 
-// Handle Safari's back-forward cache (bfcache)
-window.addEventListener('pageshow', (event) => {
-    if (event.persisted) {
+// Handle bfcache restoration (Safari)
+window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
         restoreSearchState();
     }
 });
@@ -157,23 +157,26 @@ function restoreSearchState(focusInput = false) {
             return;
         }
 
-        // Fix for Safari bfcache issue - set value after a short delay
+        // Use setTimeout to ensure this runs after Safari's bfcache form restoration
         setTimeout(() => {
             searchInput.value = query;
+            if (focusInput) {
+                searchInput.focus();
+                const len = query.length;
+                searchInput.setSelectionRange(len, len);
+            }
         }, 0);
 
         document.title = `${query} - Search`;
-        if (focusInput) {
-            searchInput.focus();
-            const len = query.length;
-            searchInput.setSelectionRange(len, len);
-        }
         // Only re-search if results are empty (page was restored from bfcache)
         if (!currentQuery || currentQuery !== query) {
             performSearch(query);
         }
     } else {
-        searchInput.value = '';
+        // Use setTimeout for Safari bfcache compatibility
+        setTimeout(() => {
+            searchInput.value = '';
+        }, 0);
         document.title = 'Search';
         resetResults();
     }
