@@ -256,10 +256,14 @@ function renderCommercialResults() {
 
     const html = interleaved.map((result, index) => {
         const source = result.source || 'brave';
+        const faviconUrl = getFaviconUrl(result.url);
         return `
         <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
             <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
-            <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+            <div class="result-url-row">
+                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+            </div>
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
             </h3>
@@ -295,15 +299,20 @@ function renderNoncommercialResults() {
         return;
     }
 
-    const html = results.map((result, index) => `
+    const html = results.map((result, index) => {
+        const faviconUrl = getFaviconUrl(result.url);
+        return `
         <article class="result-item" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+            <div class="result-url-row">
+                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+            </div>
             <h3 class="result-title">
                 <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener">${escapeHtml(result.title)}</a>
             </h3>
             ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
         </article>
-    `).join('');
+    `}).join('');
 
     noncommercialResults.innerHTML = html;
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
@@ -461,11 +470,15 @@ function renderMergedResults() {
             ? (item.result.source === 'google' ? 'Google' : 'Brave')
             : 'Marginalia';
         const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
+        const faviconUrl = getFaviconUrl(item.result.url);
 
         return `
             <article class="result-item" data-source="${dataSource}" style="animation-delay: ${index * 0.02}s">
                 <div class="result-source">${sourceLabel}</div>
-                <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
+                <div class="result-url-row">
+                    <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                    <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
+                </div>
                 <h3 class="result-title">
                     <a href="${escapeHtml(item.result.url)}" target="_blank" rel="noopener">${escapeHtml(item.result.title)}</a>
                 </h3>
@@ -756,5 +769,14 @@ function getDomain(url) {
         return new URL(url).hostname;
     } catch {
         return url;
+    }
+}
+
+function getFaviconUrl(url) {
+    try {
+        const domain = new URL(url).hostname;
+        return `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
+    } catch {
+        return '';
     }
 }
