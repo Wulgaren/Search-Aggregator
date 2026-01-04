@@ -259,7 +259,7 @@ async function performSearch(query) {
     fetchSource('brave', query, 1);
     fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
-    fetchImages(query);
+    fetchImages(query); // Google images load immediately, Brave images after 1s delay
     fetchInfobox(query);
 }
 
@@ -593,25 +593,68 @@ async function fetchImages(query, page = 1) {
     imageState.loading = true;
 
     try {
-        const response = await fetch(
-            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
-        );
-
-        if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
-
-        const data = await response.json();
-        const newImages = data.images || [];
-        imageState.hasMore = data.hasMore ?? false;
-        imageState.page = page;
-
         if (page === 1) {
-            imageState.images = newImages;
-            if (newImages.length > 0) {
-                renderImageSlider();
-                imageSection.style.display = 'block';
-                setupImageSliderScroll();
+            // First page: fetch Google immediately, Brave after 1s delay (avoid rate limit)
+            imageState.images = [];
+            imageState.page = 1;
+
+            // Fetch Google images immediately
+            const googleResponse = await fetch(
+                `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
+            );
+            if (googleResponse.ok) {
+                const googleData = await googleResponse.json();
+                const googleImages = googleData.images || [];
+                imageState.images = googleImages;
+                if (googleImages.length > 0) {
+                    renderImageSlider();
+                    imageSection.style.display = 'block';
+                    setupImageSliderScroll();
+                }
             }
+
+            // Fetch Brave images after 1 second delay
+            setTimeout(async () => {
+                try {
+                    const braveResponse = await fetch(
+                        `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
+                    );
+                    if (braveResponse.ok) {
+                        const braveData = await braveResponse.json();
+                        const braveImages = braveData.images || [];
+                        // Deduplicate against existing images
+                        const existingUrls = new Set(imageState.images.map(img => img.full));
+                        const uniqueBraveImages = braveImages.filter(img => !existingUrls.has(img.full));
+                        if (uniqueBraveImages.length > 0) {
+                            imageState.images = [...imageState.images, ...uniqueBraveImages];
+                            if (imageSection.style.display === 'none' && imageState.images.length > 0) {
+                                renderImageSlider();
+                                imageSection.style.display = 'block';
+                                setupImageSliderScroll();
+                            } else {
+                                appendImagesToSlider(uniqueBraveImages);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error fetching Brave images:', error);
+                }
+            }, 1000);
+
+            imageState.hasMore = true;
         } else {
+            // Subsequent pages: fetch both together (user-triggered, rate limit not an issue)
+            const response = await fetch(
+                `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
+            );
+
+            if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
+
+            const data = await response.json();
+            const newImages = data.images || [];
+            imageState.hasMore = data.hasMore ?? false;
+            imageState.page = page;
+
             // Deduplicate against existing images
             const existingUrls = new Set(imageState.images.map(img => img.full));
             const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.full));

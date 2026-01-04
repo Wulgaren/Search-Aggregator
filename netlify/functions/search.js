@@ -42,36 +42,48 @@ export async function handler(event) {
     }
 
     // Handle image search separately
+    // imageSource can be 'google', 'brave', or undefined (both)
+    const imageSource = event.queryStringParameters?.imageSource;
+
     if (source === "images") {
-        const [braveImages, googleImages] = await Promise.allSettled([
-            fetchBraveImages(searchQuery, page),
-            fetchGoogleImages(searchQuery, page),
-        ]);
+        let images = [];
+        let hasMore = true;
 
-        console.log("braveImages", braveImages);
-        console.log("googleImages", googleImages);
+        if (imageSource === "google") {
+            const googleImages = await fetchGoogleImages(searchQuery, page);
+            images = googleImages;
+            hasMore = page < 10; // Google supports up to 10 pages
+        } else if (imageSource === "brave") {
+            const braveImages = await fetchBraveImages(searchQuery, page);
+            images = braveImages;
+            hasMore = page < 3; // Brave supports up to 3 pages
+        } else {
+            // Fetch both (legacy behavior)
+            const [braveImages, googleImages] = await Promise.allSettled([
+                fetchBraveImages(searchQuery, page),
+                fetchGoogleImages(searchQuery, page),
+            ]);
 
-        // Combine and deduplicate images by URL
-        const allImages = [
-            ...(braveImages.status === "fulfilled" ? braveImages.value : []),
-            ...(googleImages.status === "fulfilled" ? googleImages.value : []),
-        ];
+            const allImages = [
+                ...(braveImages.status === "fulfilled" ? braveImages.value : []),
+                ...(googleImages.status === "fulfilled" ? googleImages.value : []),
+            ];
 
-        const seenUrls = new Set();
-        const deduplicatedImages = allImages.filter((img) => {
-            // Normalize URL for deduplication
-            const normalizedUrl = img.full
-                .replace(/^https?:\/\//, "")
-                .replace(/\/$/, "");
-            if (seenUrls.has(normalizedUrl)) {
-                return false;
-            }
-            seenUrls.add(normalizedUrl);
-            return true;
-        });
+            // Deduplicate by URL
+            const seenUrls = new Set();
+            images = allImages.filter((img) => {
+                const normalizedUrl = img.full
+                    .replace(/^https?:\/\//, "")
+                    .replace(/\/$/, "");
+                if (seenUrls.has(normalizedUrl)) {
+                    return false;
+                }
+                seenUrls.add(normalizedUrl);
+                return true;
+            });
 
-        // Brave supports up to 3 pages (offset 0-2), Google up to 10 pages
-        const hasMore = page < 3;
+            hasMore = page < 3;
+        }
 
         return {
             statusCode: 200,
@@ -80,7 +92,7 @@ export async function handler(event) {
                 "Cache-Control": "public, max-age=300",
             },
             body: JSON.stringify({
-                images: deduplicatedImages,
+                images,
                 hasMore,
             }),
         };
