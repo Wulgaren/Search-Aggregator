@@ -48,6 +48,9 @@ export async function handler(event) {
             fetchGoogleImages(searchQuery, page),
         ]);
 
+        console.log("braveImages", braveImages);
+        console.log("googleImages", googleImages);
+
         // Combine and deduplicate images by URL
         const allImages = [
             ...(braveImages.status === "fulfilled" ? braveImages.value : []),
