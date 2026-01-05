@@ -68,6 +68,11 @@ let mergedState = { loading: false };
 let imageState = { images: [], loading: false, page: 1, hasMore: true };
 let infoboxState = { data: null, loading: false };
 
+// Track rendered URLs to avoid re-rendering existing results
+let renderedCommercialUrls = new Set();
+let renderedNoncommercialUrls = new Set();
+let renderedMergedUrls = new Set();
+
 // Check if we're in mobile merged view
 function isMergedView() {
     return window.innerWidth <= 700;
@@ -243,6 +248,11 @@ async function performSearch(query) {
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
+    
+    // Reset rendered URL tracking
+    renderedCommercialUrls = new Set();
+    renderedNoncommercialUrls = new Set();
+    renderedMergedUrls = new Set();
 
     // Show loading states
     showLoading(commercialResults);
@@ -334,25 +344,56 @@ function renderCommercialResults() {
         return;
     }
 
-    const html = interleaved.map((result, index) => {
-        const source = result.source || 'brave';
-        const faviconUrl = getFaviconUrl(result.url);
-        return `
-        <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url-row">
-                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
-                <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
-            </div>
-            <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
-            </h3>
-            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
-        </article>
-    `}).join('');
+    // Filter to only unrendered results
+    const newResults = interleaved.filter(result => {
+        const key = getDedupeKey(result.url);
+        return !renderedCommercialUrls.has(key);
+    });
 
-    commercialResults.innerHTML = html;
-    attachPrefetchListeners(commercialResults);
+    // Clear loading state if present
+    if (commercialResults.querySelector('.loading')) {
+        commercialResults.innerHTML = '';
+    }
+
+    // Only render if there are new results
+    if (newResults.length > 0) {
+        const html = newResults.map((result, index) => {
+            const source = result.source || 'brave';
+            const faviconUrl = getFaviconUrl(result.url);
+            return `
+            <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
+                <div class="result-url-row">
+                    <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                    <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+                    <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
+                </div>
+                <h3 class="result-title">
+                    <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
+                </h3>
+                ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
+            </article>
+        `}).join('');
+
+        // Append instead of replacing
+        commercialResults.insertAdjacentHTML('beforeend', html);
+
+        // Track rendered URLs
+        newResults.forEach(result => {
+            renderedCommercialUrls.add(getDedupeKey(result.url));
+        });
+
+        // Attach prefetch listeners only to new elements
+        const newElements = commercialResults.querySelectorAll('.result-item:not([data-prefetch-bound])');
+        newElements.forEach(el => {
+            el.setAttribute('data-prefetch-bound', 'true');
+            const link = el.querySelector('.result-title a');
+            if (link) {
+                const url = link.href;
+                link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
+                link.addEventListener('touchstart', () => prefetchLink(url), { once: true, passive: true });
+            }
+        });
+    }
 
     const totalResults = braveState.results.length + googleState.results.length;
     const hasMore = braveState.hasMore || googleState.hasMore;
@@ -380,24 +421,56 @@ function renderNoncommercialResults() {
         return;
     }
 
-    const html = results.map((result, index) => {
-        const faviconUrl = getFaviconUrl(result.url);
-        return `
-        <article class="result-item" data-source="marginalia" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url-row">
-                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
-                <div class="result-source-tag">Marginalia</div>
-            </div>
-            <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
-            </h3>
-            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
-        </article>
-    `}).join('');
+    // Filter to only unrendered results
+    const newResults = results.filter(result => {
+        const key = getDedupeKey(result.url);
+        return !renderedNoncommercialUrls.has(key);
+    });
 
-    noncommercialResults.innerHTML = html;
-    attachPrefetchListeners(noncommercialResults);
+    // Clear loading state if present
+    if (noncommercialResults.querySelector('.loading')) {
+        noncommercialResults.innerHTML = '';
+    }
+
+    // Only render if there are new results
+    if (newResults.length > 0) {
+        const html = newResults.map((result, index) => {
+            const faviconUrl = getFaviconUrl(result.url);
+            return `
+            <article class="result-item" data-source="marginalia" style="animation-delay: ${index * 0.02}s">
+                <div class="result-url-row">
+                    <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                    <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+                    <div class="result-source-tag">Marginalia</div>
+                </div>
+                <h3 class="result-title">
+                    <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
+                </h3>
+                ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
+            </article>
+        `}).join('');
+
+        // Append instead of replacing
+        noncommercialResults.insertAdjacentHTML('beforeend', html);
+
+        // Track rendered URLs
+        newResults.forEach(result => {
+            renderedNoncommercialUrls.add(getDedupeKey(result.url));
+        });
+
+        // Attach prefetch listeners only to new elements
+        const newElements = noncommercialResults.querySelectorAll('.result-item:not([data-prefetch-bound])');
+        newElements.forEach(el => {
+            el.setAttribute('data-prefetch-bound', 'true');
+            const link = el.querySelector('.result-title a');
+            if (link) {
+                const url = link.href;
+                link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
+                link.addEventListener('touchstart', () => prefetchLink(url), { once: true, passive: true });
+            }
+        });
+    }
+
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
 
     if (marginaliaState.hasMore) {
@@ -548,30 +621,61 @@ function renderMergedResults() {
         return;
     }
 
-    const html = allResults.map((item, index) => {
-        const sourceLabel = item.type === 'commercial'
-            ? (item.result.source === 'google' ? 'Google' : 'Brave')
-            : 'Marginalia';
-        const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
-        const faviconUrl = getFaviconUrl(item.result.url);
+    // Filter to only unrendered results
+    const newResults = allResults.filter(item => {
+        const key = getDedupeKey(item.result.url);
+        return !renderedMergedUrls.has(key);
+    });
 
-        return `
-            <article class="result-item" data-source="${dataSource}" style="animation-delay: ${index * 0.02}s">
-                <div class="result-url-row">
-                    <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                    <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
-                    <div class="result-source">${sourceLabel}</div>
-                </div>
-                <h3 class="result-title">
-                    <a href="${escapeHtml(item.result.url)}">${escapeHtml(item.result.title)}</a>
-                </h3>
-                ${item.result.snippet ? `<p class="result-snippet">${sanitizeSnippet(item.result.snippet)}</p>` : ''}
-            </article>
-        `;
-    }).join('');
+    // Clear loading state if present
+    if (mergedResults.querySelector('.loading')) {
+        mergedResults.innerHTML = '';
+    }
 
-    mergedResults.innerHTML = html;
-    attachPrefetchListeners(mergedResults);
+    // Only render if there are new results
+    if (newResults.length > 0) {
+        const html = newResults.map((item, index) => {
+            const sourceLabel = item.type === 'commercial'
+                ? (item.result.source === 'google' ? 'Google' : 'Brave')
+                : 'Marginalia';
+            const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
+            const faviconUrl = getFaviconUrl(item.result.url);
+
+            return `
+                <article class="result-item" data-source="${dataSource}" style="animation-delay: ${index * 0.02}s">
+                    <div class="result-url-row">
+                        <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                        <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
+                        <div class="result-source">${sourceLabel}</div>
+                    </div>
+                    <h3 class="result-title">
+                        <a href="${escapeHtml(item.result.url)}">${escapeHtml(item.result.title)}</a>
+                    </h3>
+                    ${item.result.snippet ? `<p class="result-snippet">${sanitizeSnippet(item.result.snippet)}</p>` : ''}
+                </article>
+            `;
+        }).join('');
+
+        // Append instead of replacing
+        mergedResults.insertAdjacentHTML('beforeend', html);
+
+        // Track rendered URLs
+        newResults.forEach(item => {
+            renderedMergedUrls.add(getDedupeKey(item.result.url));
+        });
+
+        // Attach prefetch listeners only to new elements
+        const newElements = mergedResults.querySelectorAll('.result-item:not([data-prefetch-bound])');
+        newElements.forEach(el => {
+            el.setAttribute('data-prefetch-bound', 'true');
+            const link = el.querySelector('.result-title a');
+            if (link) {
+                const url = link.href;
+                link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
+                link.addEventListener('touchstart', () => prefetchLink(url), { once: true, passive: true });
+            }
+        });
+    }
 
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
     if (hasMore) {
@@ -953,6 +1057,11 @@ function resetResults() {
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
+    
+    // Reset rendered URL tracking
+    renderedCommercialUrls = new Set();
+    renderedNoncommercialUrls = new Set();
+    renderedMergedUrls = new Set();
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
