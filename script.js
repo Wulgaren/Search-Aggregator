@@ -68,6 +68,11 @@ let mergedState = { loading: false };
 let imageState = { images: [], loading: false, page: 1, hasMore: true };
 let infoboxState = { data: null, loading: false };
 
+// Track rendered URLs to prevent animation replay on re-render
+let renderedCommercialUrls = new Set();
+let renderedNoncommercialUrls = new Set();
+let renderedMergedUrls = new Set();
+
 // Check if we're in mobile merged view
 function isMergedView() {
     return window.innerWidth <= 700;
@@ -244,6 +249,11 @@ async function performSearch(query) {
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
 
+    // Reset rendered URL tracking for new search
+    renderedCommercialUrls = new Set();
+    renderedNoncommercialUrls = new Set();
+    renderedMergedUrls = new Set();
+
     // Show loading states
     showLoading(commercialResults);
     showLoading(noncommercialResults);
@@ -337,8 +347,9 @@ function renderCommercialResults() {
     const html = interleaved.map((result, index) => {
         const source = result.source || 'brave';
         const faviconUrl = getFaviconUrl(result.url);
+        const urlKey = getDedupeKey(result.url);
         return `
-        <article class="result-item" data-source="${source}" style="animation-delay: ${index * 0.02}s">
+        <article class="result-item" data-source="${source}" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
@@ -352,6 +363,17 @@ function renderCommercialResults() {
     `}).join('');
 
     commercialResults.innerHTML = html;
+
+    // Disable animation on already-rendered items, track new ones
+    commercialResults.querySelectorAll('.result-item').forEach(item => {
+        const urlKey = item.dataset.urlKey;
+        if (renderedCommercialUrls.has(urlKey)) {
+            item.classList.add('no-animate');
+        } else {
+            renderedCommercialUrls.add(urlKey);
+        }
+    });
+
     attachPrefetchListeners(commercialResults);
 
     const totalResults = braveState.results.length + googleState.results.length;
@@ -382,8 +404,9 @@ function renderNoncommercialResults() {
 
     const html = results.map((result, index) => {
         const faviconUrl = getFaviconUrl(result.url);
+        const urlKey = getDedupeKey(result.url);
         return `
-        <article class="result-item" data-source="marginalia" style="animation-delay: ${index * 0.02}s">
+        <article class="result-item" data-source="marginalia" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
@@ -397,6 +420,17 @@ function renderNoncommercialResults() {
     `}).join('');
 
     noncommercialResults.innerHTML = html;
+
+    // Disable animation on already-rendered items, track new ones
+    noncommercialResults.querySelectorAll('.result-item').forEach(item => {
+        const urlKey = item.dataset.urlKey;
+        if (renderedNoncommercialUrls.has(urlKey)) {
+            item.classList.add('no-animate');
+        } else {
+            renderedNoncommercialUrls.add(urlKey);
+        }
+    });
+
     attachPrefetchListeners(noncommercialResults);
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
 
@@ -508,7 +542,7 @@ function renderMergedResults() {
             const key = getDedupeKey(result.url);
             if (!seen.has(key)) {
                 seen.add(key);
-                allResults.push({ type: 'commercial', result });
+                allResults.push({ type: 'commercial', result, urlKey: key });
             }
         }
         // Marginalia second
@@ -517,7 +551,7 @@ function renderMergedResults() {
             const key = getDedupeKey(result.url);
             if (!seen.has(key)) {
                 seen.add(key);
-                allResults.push({ type: 'noncommercial', result });
+                allResults.push({ type: 'noncommercial', result, urlKey: key });
             }
         }
         // Brave third
@@ -526,7 +560,7 @@ function renderMergedResults() {
             const key = getDedupeKey(result.url);
             if (!seen.has(key)) {
                 seen.add(key);
-                allResults.push({ type: 'commercial', result });
+                allResults.push({ type: 'commercial', result, urlKey: key });
             }
         }
     }
@@ -556,7 +590,7 @@ function renderMergedResults() {
         const faviconUrl = getFaviconUrl(item.result.url);
 
         return `
-            <article class="result-item" data-source="${dataSource}" style="animation-delay: ${index * 0.02}s">
+            <article class="result-item" data-source="${dataSource}" data-url-key="${escapeHtml(item.urlKey)}" style="animation-delay: ${index * 0.02}s">
                 <div class="result-url-row">
                     <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                     <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
@@ -571,6 +605,17 @@ function renderMergedResults() {
     }).join('');
 
     mergedResults.innerHTML = html;
+
+    // Disable animation on already-rendered items, track new ones
+    mergedResults.querySelectorAll('.result-item').forEach(item => {
+        const urlKey = item.dataset.urlKey;
+        if (renderedMergedUrls.has(urlKey)) {
+            item.classList.add('no-animate');
+        } else {
+            renderedMergedUrls.add(urlKey);
+        }
+    });
+
     attachPrefetchListeners(mergedResults);
 
     const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
@@ -953,6 +998,11 @@ function resetResults() {
     mergedState = { loading: false };
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
+
+    // Reset rendered URL tracking
+    renderedCommercialUrls = new Set();
+    renderedNoncommercialUrls = new Set();
+    renderedMergedUrls = new Set();
 
     commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
     noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;

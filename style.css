@@ -276,6 +276,10 @@ a:hover {
   animation: fadeIn 0.3s ease;
 }
 
+.result-item.no-animate {
+  animation: none;
+}
+
 .result-item:last-child {
   border-bottom: none;
 }
