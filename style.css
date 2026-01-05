@@ -224,7 +224,7 @@ a:hover {
 
 .results-list {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 /* Empty State */
@@ -536,24 +536,6 @@ a:hover {
   .column-title {
     font-size: 0.8rem;
   }
-}
-
-/* Scrollbar */
-.results-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.results-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.results-list::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
-}
-
-.results-list::-webkit-scrollbar-thumb:hover {
-  background: var(--border-hover);
 }
 
 /* Infinite Scroll */
