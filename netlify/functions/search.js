@@ -186,6 +186,7 @@ async function fetchBrave(query, page, resultsPerPage) {
     url.searchParams.set("q", query);
     url.searchParams.set("count", resultsPerPage);
     url.searchParams.set("offset", offset);
+    url.searchParams.set("result_filter", "web,news"); // Web and news results
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -330,6 +331,7 @@ async function fetchGoogle(query, page, resultsPerPage) {
     url.searchParams.set("q", query);
     url.searchParams.set("num", Math.min(resultsPerPage, 10)); // Google max is 10 per request
     url.searchParams.set("start", startIndex);
+    url.searchParams.set("fields", "items(title,link,displayLink,snippet),searchInformation/totalResults"); // Reduce payload
 
     const response = await fetch(url.toString(), {
         headers: {
