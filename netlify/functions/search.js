@@ -662,6 +662,7 @@ async function tryFetchPageInfobox(pageTitle) {
             title: page.title,
             description: extract,
             image: page.thumbnail?.source || page.original?.source || null,
+            imageFull: page.original?.source || page.thumbnail?.source || null,
             imageWidth: page.thumbnail?.width,
             imageHeight: page.thumbnail?.height,
             url: page.fullurl,

@@ -807,8 +807,9 @@ function renderImageSlider() {
     });
 }
 
-function openImagePreview(index) {
-    const img = imageState.images[index];
+function openImagePreview(imgOrIndex) {
+    // Accept either an index (for image slider) or an image object directly
+    const img = typeof imgOrIndex === 'number' ? imageState.images[imgOrIndex] : imgOrIndex;
     if (!img) return;
 
     // Show loading state
@@ -839,7 +840,7 @@ function openImagePreview(index) {
     previewImage.src = img.full;
     previewInfo.innerHTML = `
         <div>${escapeHtml(img.title)}</div>
-        ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">Visit page</a>` : ''}
+        ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">${img.sourceLinkText || 'Visit page'}</a>` : ''}
     `;
 
     document.body.style.overflow = 'hidden';
@@ -897,15 +898,27 @@ function renderInfobox(data) {
         infoboxImage.src = data.image;
         infoboxImage.alt = data.title;
         infoboxImage.classList.remove('no-image');
+        infoboxImage.style.cursor = 'pointer';
+        infoboxImage.onclick = () => openImagePreview({
+            thumbnail: data.image,
+            full: data.imageFull || data.image,
+            title: data.title,
+            sourceUrl: data.url,
+            sourceLinkText: 'View on Wikipedia'
+        });
         infoboxImage.onerror = () => {
             infoboxImage.classList.add('no-image');
             infobox.classList.add('no-image-fallback');
+            infoboxImage.style.cursor = '';
+            infoboxImage.onclick = null;
         };
         infoboxImage.onload = () => {
             // Hide if image loads but is broken (0x0 dimension)
             if (infoboxImage.naturalWidth === 0) {
                 infoboxImage.classList.add('no-image');
                 infobox.classList.add('no-image-fallback');
+                infoboxImage.style.cursor = '';
+                infoboxImage.onclick = null;
             }
         };
     } else {
