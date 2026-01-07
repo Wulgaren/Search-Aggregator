@@ -269,6 +269,88 @@ a:hover {
   color: var(--text-muted);
 }
 
+/* Skeleton Loading (Optimistic Updates) */
+.skeleton-item {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-item:last-child {
+  border-bottom: none;
+}
+
+@keyframes skeletonPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeleton-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-favicon {
+  width: 16px;
+  height: 16px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+.skeleton-url {
+  width: 120px;
+  height: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.skeleton-tag {
+  width: 45px;
+  height: 14px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.skeleton-title {
+  width: 85%;
+  height: 18px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-snippet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.skeleton-line {
+  height: 14px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.skeleton-line:nth-child(1) {
+  width: 100%;
+}
+
+.skeleton-line:nth-child(2) {
+  width: 92%;
+}
+
+.skeleton-line:nth-child(3) {
+  width: 70%;
+}
+
+
 /* Result Item */
 .result-item {
   padding: 1rem 0;

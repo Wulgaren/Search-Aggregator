@@ -279,7 +279,7 @@ async function fetchSource(source, query, page) {
 
     try {
         const response = await fetch(
-            `/.netlify/functions/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
+            `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
         );
 
         if (!response.ok) throw new Error(`Search failed: ${response.status}`);
@@ -645,7 +645,7 @@ async function fetchImages(query, page = 1) {
 
             // Fetch Google images immediately
             const googleResponse = await fetch(
-                `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
+                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
             );
             if (googleResponse.ok) {
                 const googleData = await googleResponse.json();
@@ -662,7 +662,7 @@ async function fetchImages(query, page = 1) {
             setTimeout(async () => {
                 try {
                     const braveResponse = await fetch(
-                        `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
+                        `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
                     );
                     if (braveResponse.ok) {
                         const braveData = await braveResponse.json();
@@ -690,7 +690,7 @@ async function fetchImages(query, page = 1) {
         } else {
             // Subsequent pages: fetch both together (user-triggered, rate limit not an issue)
             const response = await fetch(
-                `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
+                `/api/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
             );
 
             if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
@@ -862,7 +862,7 @@ async function fetchInfobox(query) {
 
     try {
         const response = await fetch(
-            `/.netlify/functions/search?q=${encodeURIComponent(query)}&source=infobox`
+            `/api/search?q=${encodeURIComponent(query)}&source=infobox`
         );
 
         if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
@@ -968,12 +968,26 @@ function attachSentinel(container, source) {
 }
 
 function showLoading(container) {
-    container.innerHTML = `
-        <div class="loading">
-            <div class="loading-spinner"></div>
-            <span class="loading-text">Searching...</span>
-        </div>
-    `;
+    // Show skeleton loading for optimistic updates
+    container.innerHTML = generateSkeletonHTML(5);
+}
+
+function generateSkeletonHTML(count = 5) {
+    return Array(count).fill(0).map(() => `
+        <article class="skeleton-item">
+            <div class="skeleton-url-row">
+                <div class="skeleton-favicon"></div>
+                <div class="skeleton-url"></div>
+                <div class="skeleton-tag"></div>
+            </div>
+            <div class="skeleton-title"></div>
+            <div class="skeleton-snippet">
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+            </div>
+        </article>
+    `).join('');
 }
 
 function showLoadingMore(container) {
