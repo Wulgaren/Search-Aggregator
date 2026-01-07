@@ -230,7 +230,7 @@ a:hover {
 /* Empty State */
 .empty-state {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   height: 100%;
   min-height: 200px;
@@ -281,7 +281,8 @@ a:hover {
 }
 
 @keyframes skeletonPulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -349,7 +350,6 @@ a:hover {
 .skeleton-line:nth-child(3) {
   width: 70%;
 }
-
 
 /* Result Item */
 .result-item {

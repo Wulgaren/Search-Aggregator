@@ -326,6 +326,7 @@ function getState(source) {
 function renderCommercialResults() {
     // Interleave Google first, then Brave (order: Google, Brave)
     const interleaved = deduplicateResults(interleaveArrays(googleState.results, braveState.results));
+    const anyLoading = braveState.loading || googleState.loading;
 
     // Log errors to console
     if (googleState.error) {
@@ -335,8 +336,12 @@ function renderCommercialResults() {
         console.log('Brave error:', braveState.error);
     }
 
-    if (interleaved.length === 0 && !braveState.loading && !googleState.loading) {
-        if (googleState.error || braveState.error) {
+    if (interleaved.length === 0) {
+        if (anyLoading) {
+            // Still loading, keep showing skeletons
+            return;
+        }
+        if (googleState.error && braveState.error) {
             commercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
             commercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
@@ -393,7 +398,11 @@ function renderNoncommercialResults() {
         console.log('Marginalia error:', marginaliaState.error);
     }
 
-    if (results.length === 0 && !marginaliaState.loading) {
+    if (results.length === 0) {
+        if (marginaliaState.loading) {
+            // Still loading, keep showing skeletons
+            return;
+        }
         if (marginaliaState.error) {
             noncommercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
@@ -570,11 +579,15 @@ function renderMergedResults() {
     if (marginaliaState.error) console.log('Marginalia error:', marginaliaState.error);
     if (braveState.error) console.log('Brave error:', braveState.error);
 
-    const allLoading = braveState.loading && googleState.loading && marginaliaState.loading;
-    const hasErrors = googleState.error || marginaliaState.error || braveState.error;
+    const anyLoading = braveState.loading || googleState.loading || marginaliaState.loading;
+    const allErrors = googleState.error && marginaliaState.error && braveState.error;
 
-    if (allResults.length === 0 && !allLoading) {
-        if (hasErrors) {
+    if (allResults.length === 0) {
+        if (anyLoading) {
+            // Still loading, keep showing skeletons
+            return;
+        }
+        if (allErrors) {
             mergedResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
         } else {
             mergedResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
