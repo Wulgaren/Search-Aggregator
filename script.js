@@ -278,9 +278,17 @@ async function fetchSource(source, query, page) {
     state.loading = true;
 
     try {
-        const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
-        );
+        let response;
+        
+        // Check if we have an early fetch for this source (page 1 only)
+        if (page === 1 && window.__earlyFetch?.query === query && window.__earlyFetch[source]) {
+            response = await window.__earlyFetch[source];
+            delete window.__earlyFetch[source]; // Consume it
+        } else {
+            response = await fetch(
+                `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
+            );
+        }
 
         if (!response.ok) throw new Error(`Search failed: ${response.status}`);
 
@@ -656,10 +664,16 @@ async function fetchImages(query, page = 1) {
             imageState.images = [];
             imageState.page = 1;
 
-            // Fetch Google images immediately
-            const googleResponse = await fetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
-            );
+            // Fetch Google images - use early fetch if available
+            let googleResponse;
+            if (window.__earlyFetch?.query === query && window.__earlyFetch.images) {
+                googleResponse = await window.__earlyFetch.images;
+                delete window.__earlyFetch.images;
+            } else {
+                googleResponse = await fetch(
+                    `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
+                );
+            }
             if (googleResponse.ok) {
                 const googleData = await googleResponse.json();
                 const googleImages = googleData.images || [];
@@ -874,9 +888,17 @@ async function fetchInfobox(query) {
     infoboxState.loading = true;
 
     try {
-        const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&source=infobox`
-        );
+        let response;
+        
+        // Use early fetch if available
+        if (window.__earlyFetch?.query === query && window.__earlyFetch.infobox) {
+            response = await window.__earlyFetch.infobox;
+            delete window.__earlyFetch.infobox;
+        } else {
+            response = await fetch(
+                `/api/search?q=${encodeURIComponent(query)}&source=infobox`
+            );
+        }
 
         if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
 
