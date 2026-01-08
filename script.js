@@ -11,9 +11,9 @@ const chatgptBtn = document.getElementById('chatgpt-btn');
 // DDG Bang detection - matches !bang with space before/after or at start/end
 function detectBang(query) {
     // Pattern: !word at start (followed by space) or at end (preceded by space)
-    // Valid: "!g test", "test !g", "!yt video"
-    // Invalid: "test !g query" (middle)
-    const bangPattern = /(?:^![\w]+\s|\s![\w]+$)/;
+    // Valid: "!g test", "test !g", "!yt video", "!g"
+    // Invalid: "test !g query" (middle), "test!g"
+    const bangPattern = /^![\w]+(?:\s|$)|\s![\w]+$/;
     return bangPattern.test(query);
 }
 
