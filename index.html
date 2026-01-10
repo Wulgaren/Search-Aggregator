@@ -6,27 +6,34 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    
+
     <!-- Early fetch - start API requests while page is still loading -->
     <script>
-      (function() {
+      (() => {
         var params = new URLSearchParams(window.location.search);
-        var q = params.get('q');
+        var q = params.get("q");
         // Skip if no query or if it's a bang (will redirect anyway)
         if (q && !/^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) {
-          var base = '/api/search?q=' + encodeURIComponent(q) + '&page=1&source=';
+          var base =
+            "/api/search?q=" + encodeURIComponent(q) + "&page=1&source=";
           window.__earlyFetch = {
             query: q,
-            google: fetch(base + 'google'),
-            brave: fetch(base + 'brave'),
-            marginalia: fetch(base + 'marginalia'),
-            images: fetch('/api/search?q=' + encodeURIComponent(q) + '&source=images&imageSource=google&page=1'),
-            infobox: fetch('/api/search?q=' + encodeURIComponent(q) + '&source=infobox')
+            google: fetch(base + "google"),
+            brave: fetch(base + "brave"),
+            marginalia: fetch(base + "marginalia"),
+            images: fetch(
+              "/api/search?q=" +
+                encodeURIComponent(q) +
+                "&source=images&imageSource=google&page=1"
+            ),
+            infobox: fetch(
+              "/api/search?q=" + encodeURIComponent(q) + "&source=infobox"
+            ),
           };
         }
       })();
     </script>
-    
+
     <link rel="stylesheet" href="style.css?v=15" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -193,6 +200,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=18"></script>
+    <script src="script.js?v=19"></script>
   </body>
 </html>

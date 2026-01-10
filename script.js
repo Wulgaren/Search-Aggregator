@@ -80,7 +80,7 @@ function isMergedView() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    restoreSearchState(true);
+    restoreSearchState();
     setupInfiniteScroll();
 
     let wasMerged = isMergedView();
@@ -151,7 +151,7 @@ window.addEventListener('pageshow', (e) => {
     }
 });
 
-function restoreSearchState(focusInput = false) {
+function restoreSearchState() {
     const urlParams = new URLSearchParams(window.location.search);
     const query = urlParams.get('q');
 
@@ -182,7 +182,7 @@ function restoreSearchState(focusInput = false) {
             return;
         }
 
-        setInputValue(query, focusInput);
+        setInputValue(query, false);
 
         document.title = `${query} - Search`;
         // Only re-search if results are empty (page was restored from bfcache)
@@ -190,7 +190,7 @@ function restoreSearchState(focusInput = false) {
             performSearch(query);
         }
     } else {
-        setInputValue('', false);
+        setInputValue('', true);
         document.title = 'Search';
         resetResults();
     }
@@ -279,7 +279,7 @@ async function fetchSource(source, query, page) {
 
     try {
         let response;
-        
+
         // Check if we have an early fetch for this source (page 1 only)
         if (page === 1 && window.__earlyFetch?.query === query && window.__earlyFetch[source]) {
             response = await window.__earlyFetch[source];
@@ -889,7 +889,7 @@ async function fetchInfobox(query) {
 
     try {
         let response;
-        
+
         // Use early fetch if available
         if (window.__earlyFetch?.query === query && window.__earlyFetch.infobox) {
             response = await window.__earlyFetch.infobox;
