@@ -778,7 +778,7 @@ a:hover {
 
 .preview-image {
   max-width: 90vw;
-  max-height: 80vh;
+  max-height: calc(80vh - 40px);
   object-fit: contain;
   border-radius: 8px;
   transition: opacity 0.2s ease;
