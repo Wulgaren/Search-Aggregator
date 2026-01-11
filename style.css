@@ -817,6 +817,90 @@ a:hover {
   color: var(--link-color);
 }
 
+/* Preview Navigation */
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  opacity: 0.8;
+}
+
+.preview-nav:hover {
+  background: rgba(0, 0, 0, 0.8);
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.preview-nav:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.preview-prev {
+  left: 20px;
+}
+
+.preview-next {
+  right: 20px;
+}
+
+.preview-counter {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+.preview-nav.loading {
+  pointer-events: none;
+}
+
+.preview-nav.loading svg {
+  display: none;
+}
+
+.preview-nav.loading::after {
+  content: "";
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (max-width: 600px) {
+  .preview-nav {
+    width: 40px;
+    height: 40px;
+  }
+
+  .preview-prev {
+    left: 10px;
+  }
+
+  .preview-next {
+    right: 10px;
+  }
+
+  .preview-nav svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 @media (max-width: 700px) {
   .image-slider-section {
     padding: 0 0.75rem;

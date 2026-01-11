@@ -34,7 +34,7 @@
       })();
     </script>
 
-    <link rel="stylesheet" href="style.css?v=15" />
+    <link rel="stylesheet" href="style.css?v=17" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -131,12 +131,23 @@
       <!-- Image Preview -->
       <div class="image-preview" id="image-preview">
         <div class="preview-overlay" id="preview-overlay"></div>
+        <button class="preview-nav preview-prev" id="preview-prev" aria-label="Previous image">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <button class="preview-nav preview-next" id="preview-next" aria-label="Next image">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
         <div class="preview-content">
           <button class="preview-close" id="preview-close">×</button>
           <div class="preview-image-container">
             <img class="preview-image" id="preview-image" src="" alt="" />
           </div>
           <div class="preview-info" id="preview-info"></div>
+          <div class="preview-counter" id="preview-counter"></div>
         </div>
       </div>
 
@@ -200,6 +211,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=19"></script>
+    <script src="script.js?v=21"></script>
   </body>
 </html>

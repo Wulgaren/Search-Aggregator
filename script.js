@@ -126,18 +126,94 @@ chatgptBtn.addEventListener('click', () => {
     }
 });
 
+// Preview navigation elements
+const previewPrev = document.getElementById('preview-prev');
+const previewNext = document.getElementById('preview-next');
+const previewCounter = document.getElementById('preview-counter');
+
+// Preview state
+let currentPreviewIndex = -1;
+
 // Preview close handlers
 previewClose.addEventListener('click', closeImagePreview);
 previewOverlay.addEventListener('click', closeImagePreview);
 
-// ESC key to close preview
+// Preview navigation handlers
+previewPrev.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigatePreview(-1);
+});
+previewNext.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigatePreview(1);
+});
+
+// Keyboard navigation for preview
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        if (imagePreview.classList.contains('active')) {
+    if (imagePreview.classList.contains('active')) {
+        if (e.key === 'Escape') {
             closeImagePreview();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            navigatePreview(-1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            navigatePreview(1);
         }
     }
 });
+
+// Touch swipe support for preview
+let touchStartX = 0;
+let touchStartY = 0;
+let touchEndX = 0;
+
+imagePreview.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+}, { passive: true });
+
+imagePreview.addEventListener('touchend', (e) => {
+    touchEndX = e.changedTouches[0].screenX;
+    const touchEndY = e.changedTouches[0].screenY;
+    handleSwipe(touchStartX, touchEndX, touchStartY, touchEndY);
+}, { passive: true });
+
+function handleSwipe(startX, endX, startY, endY) {
+    const deltaX = endX - startX;
+    const deltaY = Math.abs(endY - startY);
+    const minSwipeDistance = 50;
+    
+    // Only trigger if horizontal swipe is dominant and significant
+    if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > deltaY) {
+        if (deltaX > 0) {
+            navigatePreview(-1); // Swipe right = previous
+        } else {
+            navigatePreview(1); // Swipe left = next
+        }
+    }
+}
+
+async function navigatePreview(direction) {
+    if (imageState.images.length === 0) return;
+    
+    const newIndex = currentPreviewIndex + direction;
+    
+    if (newIndex >= 0 && newIndex < imageState.images.length) {
+        openImagePreview(newIndex);
+    } else if (newIndex >= imageState.images.length && imageState.hasMore && !imageState.loading) {
+        // At the end but more images available - load them
+        previewNext.classList.add('loading');
+        const previousCount = imageState.images.length;
+        await fetchImages(currentQuery, imageState.page + 1);
+        previewNext.classList.remove('loading');
+        
+        // If new images were loaded, navigate to the first new one
+        if (imageState.images.length > previousCount) {
+            openImagePreview(previousCount);
+        }
+    }
+}
 
 // Handle browser back/forward
 window.addEventListener('popstate', () => {
@@ -836,7 +912,19 @@ function renderImageSlider() {
 
 function openImagePreview(imgOrIndex) {
     // Accept either an index (for image slider) or an image object directly
-    const img = typeof imgOrIndex === 'number' ? imageState.images[imgOrIndex] : imgOrIndex;
+    let img;
+    let index = -1;
+    
+    if (typeof imgOrIndex === 'number') {
+        index = imgOrIndex;
+        img = imageState.images[index];
+        currentPreviewIndex = index;
+    } else {
+        // It's an image object (e.g., from infobox), not from the slider
+        img = imgOrIndex;
+        currentPreviewIndex = -1; // Not navigable
+    }
+    
     if (!img) return;
 
     // Show loading state
@@ -870,7 +958,31 @@ function openImagePreview(imgOrIndex) {
         ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">${img.sourceLinkText || 'Visit page'}</a>` : ''}
     `;
 
+    // Update navigation visibility and counter
+    updatePreviewNavigation();
+
     document.body.style.overflow = 'hidden';
+}
+
+function updatePreviewNavigation() {
+    const totalImages = imageState.images.length;
+    const isNavigable = currentPreviewIndex >= 0 && totalImages > 1;
+    
+    // Show/hide navigation buttons
+    // Show prev if not at start
+    previewPrev.style.display = isNavigable && currentPreviewIndex > 0 ? 'flex' : 'none';
+    // Show next if not at end, OR if more images can be loaded
+    const canGoNext = currentPreviewIndex < totalImages - 1 || imageState.hasMore;
+    previewNext.style.display = isNavigable && canGoNext ? 'flex' : 'none';
+    
+    // Update counter - show "+" if more images available
+    if (isNavigable) {
+        const suffix = imageState.hasMore ? '+' : '';
+        previewCounter.textContent = `${currentPreviewIndex + 1} / ${totalImages}${suffix}`;
+        previewCounter.style.display = 'block';
+    } else {
+        previewCounter.style.display = 'none';
+    }
 }
 
 function closeImagePreview() {
@@ -879,6 +991,7 @@ function closeImagePreview() {
     previewImage.style.opacity = '';
     previewImage.onload = null;
     previewImage.onerror = null;
+    currentPreviewIndex = -1;
     document.body.style.overflow = '';
 }
 
