@@ -375,7 +375,10 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     const url = `https://api.marginalia.nu/public/search/${encodedQuery}?count=${resultsPerPage}&index=${offset}`;
 
     const response = await fetch(url, {
-        headers: { Accept: "application/json" },
+        headers: { 
+            Accept: "application/json",
+            "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)"
+        },
     });
 
     if (!response.ok) {

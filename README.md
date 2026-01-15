@@ -18,7 +18,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 ## Tech Stack
 
 - **Frontend**: Vanilla JavaScript, HTML, CSS
-- **Backend**: Netlify Edge Functions (Deno) and Serverless Functions (Node.js)
+- **Backend**: Netlify Edge Functions (Deno)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
@@ -84,10 +84,8 @@ Example `GOOGLE_SERVICE_ACCOUNT` format:
 ├── script.js               # Frontend JavaScript
 ├── style.css               # Stylesheet
 ├── netlify/
-│   ├── functions/
-│   │   └── search.js       # Serverless function (Node.js)
 │   └── edge-functions/
-│       └── search.js       # Edge function (Deno) - primary handler
+│       └── search.js       # Edge function (Deno) - API handler
 ├── netlify.toml            # Netlify configuration
 └── README.md               # This file
 ```
@@ -141,8 +139,7 @@ netlify env:set GOOGLE_SERVICE_ACCOUNT '{"type":"service_account",...}'
 ### Code Structure
 
 - **Frontend** (`script.js`): Handles UI, search state, infinite scroll, image previews
-- **Backend** (`netlify/edge-functions/search.js`): Primary API handler using Deno edge functions
-- **Legacy Backend** (`netlify/functions/search.js`): Node.js serverless function (fallback)
+- **Backend** (`netlify/edge-functions/search.js`): API handler using Deno edge functions
 
 ## API Endpoints
 
@@ -172,6 +169,29 @@ GET /api/search?q=javascript&page=1&source=brave
 - No cookies
 - Search queries are sent directly to search APIs
 - Results are cached for performance (5 minutes for search, 1 hour for infobox)
+
+## Third-Party Services
+
+### Marginalia Search
+
+This project uses the [Marginalia Search public API](https://api.marginalia.nu/public/search/). The API is publicly available and doesn't require authentication. However, please:
+
+- **Respect rate limits**: The service may have rate limits; implement appropriate caching
+- **Add attribution**: Marginalia results are clearly labeled in the UI
+- **Monitor usage**: If you expect high traffic, consider contacting the Marginalia maintainers
+
+### unduck.link
+
+This project redirects DDG bang queries to [unduck.link](https://unduck.link), which is a public service for handling DuckDuckGo-style bang syntax. This is a client-side redirect (users are sent directly to unduck.link), so no API calls are made from your server.
+
+## Legal & Ethical Considerations
+
+- **Attribution**: All search sources are properly attributed in the UI
+- **Terms of Service**: Ensure you comply with:
+  - Brave Search API terms
+  - Google Custom Search API terms
+  - Marginalia Search usage (check their website for any terms)
+- **Rate Limiting**: Implement appropriate caching and rate limiting to avoid overwhelming third-party services
 
 ## License
 

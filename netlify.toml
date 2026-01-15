@@ -1,20 +1,10 @@
 [build]
   publish = "."
-  functions = "netlify/functions"
-
-[functions]
-  node_bundler = "esbuild"
 
 # Edge Functions configuration
 [[edge_functions]]
   path = "/api/search"
   function = "search"
-
-# Keep legacy function redirect for backwards compatibility (will be overridden by edge function)
-[[redirects]]
-  from = "/.netlify/functions/search"
-  to = "/api/search"
-  status = 200
 
 # Headers for security and caching
 [[headers]]
