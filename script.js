@@ -190,26 +190,6 @@ async function fetchAIAnswer(query) {
     // Scroll to make AI panel visible
     aiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Collect search results for grounding
-    const allResults = [
-        ...googleState.results,
-        ...braveState.results,
-        ...marginaliaState.results,
-    ];
-
-    // Deduplicate by URL
-    const seen = new Set();
-    const searchResults = allResults.filter(result => {
-        const key = result.url;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    }).slice(0, 8).map(r => ({
-        title: r.title,
-        url: r.url,
-        snippet: r.snippet,
-    }));
-
     // Create abort controller for this request
     aiState.abortController = new AbortController();
 
@@ -217,7 +197,7 @@ async function fetchAIAnswer(query) {
         const response = await fetch('/api/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, searchResults }),
+            body: JSON.stringify({ query }),
             signal: aiState.abortController.signal,
         });
 
@@ -234,6 +214,7 @@ async function fetchAIAnswer(query) {
         const decoder = new TextDecoder();
         let buffer = '';
         let fullContent = '';
+        let webSearchSources = null;
 
         // Add cursor for streaming effect
         aiAnswer.innerHTML = '<span class="ai-cursor"></span>';
@@ -258,6 +239,10 @@ async function fetchAIAnswer(query) {
                         // Render markdown and add cursor
                         aiAnswer.innerHTML = renderMarkdown(fullContent) + '<span class="ai-cursor"></span>';
                     }
+                    if (json.sources) {
+                        // Store sources from web search
+                        webSearchSources = json.sources;
+                    }
                     if (json.error) {
                         throw new Error(json.error);
                     }
@@ -272,9 +257,9 @@ async function fetchAIAnswer(query) {
         // Final render without cursor
         aiAnswer.innerHTML = renderMarkdown(fullContent);
 
-        // Show sources if we have them
-        if (searchResults.length > 0) {
-            renderAISources(searchResults);
+        // Show sources from web search if available
+        if (webSearchSources && webSearchSources.length > 0) {
+            renderAISources(webSearchSources);
         }
 
     } catch (error) {

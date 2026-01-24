@@ -647,7 +647,7 @@ async function handleAI(request) {
         });
     }
 
-    const { query, searchResults } = body;
+    const { query } = body;
 
     if (!query || query.trim() === "") {
         return new Response(JSON.stringify({ error: "Query is required" }), {
@@ -656,30 +656,17 @@ async function handleAI(request) {
         });
     }
 
-    // Build context from search results for grounding
-    let searchContext = "";
-    if (searchResults && searchResults.length > 0) {
-        searchContext = "Here are relevant search results to help answer the query:\n\n";
-        searchResults.slice(0, 8).forEach((result, index) => {
-            searchContext += `[${index + 1}] "${result.title}"\nURL: ${result.url}\nSnippet: ${result.snippet || "No snippet available"}\n\n`;
-        });
-    }
-
-    const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries.
+    const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries using web search when needed for current information.
 
 Guidelines:
+- Use web search automatically when the query requires current, real-time, or up-to-date information
 - Be concise but comprehensive
-- When search results are provided, USE THEM to ground your answers in factual information
-- Reference specific sources using [1], [2], etc. when citing information from the search results
-- If you're not certain about something, say so
 - Format your response with markdown for readability (headers, lists, bold, etc.)
 - For factual questions, prioritize accuracy over length
 - For how-to questions, provide step-by-step guidance
-- IMPORTANT: Always try to answer using the search results provided. Do not say "no search results" if results are given.`;
+- Cite sources naturally in your response when using web search results`;
 
-    const userMessage = searchContext 
-        ? `Query: "${query}"\n\n${searchContext}\nBased on the search results above, please provide a helpful answer to the query.`
-        : `Query: "${query}"\n\nPlease provide a helpful answer.`;
+    const userMessage = query;
 
     try {
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -689,13 +676,13 @@ Guidelines:
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
+                model: "groq/compound-mini",
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userMessage },
                 ],
                 stream: true,
-                max_tokens: 1024,
+                max_tokens: 2048,
                 temperature: 0.7,
             }),
         });
@@ -715,6 +702,7 @@ Guidelines:
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
+            let searchResults = null;
 
             try {
                 while (true) {
@@ -732,14 +720,44 @@ Guidelines:
 
                         try {
                             const json = JSON.parse(trimmed.slice(6));
+                            
+                            // Extract content for streaming
                             const content = json.choices?.[0]?.delta?.content;
                             if (content) {
                                 await writer.write(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                            }
+                            
+                            // Extract search results from message (could be in delta or message)
+                            const choice = json.choices?.[0];
+                            const message = choice?.message || choice?.delta;
+                            
+                            if (message?.executed_tools) {
+                                for (const tool of message.executed_tools) {
+                                    if (tool.search_results) {
+                                        searchResults = tool.search_results;
+                                    }
+                                }
+                            }
+                            
+                            // Also check for tool_calls in delta
+                            if (choice?.delta?.tool_calls) {
+                                // Tool calls might be in progress, wait for final message
                             }
                         } catch (e) {
                             // Skip malformed JSON
                         }
                     }
+                }
+
+                // Send search results if we found any
+                if (searchResults?.results && searchResults.results.length > 0) {
+                    const sources = searchResults.results.map((result, index) => ({
+                        title: result.title,
+                        url: result.url,
+                        snippet: result.content || "",
+                        index: index + 1,
+                    }));
+                    await writer.write(encoder.encode(`data: ${JSON.stringify({ sources })}\n\n`));
                 }
 
                 // Send done signal
