@@ -304,7 +304,34 @@ function renderAISources(sources) {
 function renderMarkdown(text) {
     if (!text) return '';
 
-    let html = escapeHtml(text);
+    // First, handle HTML tags that the AI might output directly
+    // Convert common HTML tags to markdown equivalents before escaping
+    let html = text
+        .replace(/<br\s*\/?>/gi, '\n')  // Convert <br> to newline
+        .replace(/<br>/gi, '\n')        // Also handle <br> without slash
+        .replace(/<\/?p>/gi, '\n\n')   // Convert <p> tags to double newlines
+        .replace(/<\/?div>/gi, '\n')   // Convert <div> tags to newlines
+        .replace(/<strong>(.+?)<\/strong>/gi, '**$1**')  // Convert <strong> to **
+        .replace(/<b>(.+?)<\/b>/gi, '**$1**')            // Convert <b> to **
+        .replace(/<em>(.+?)<\/em>/gi, '*$1*')            // Convert <em> to *
+        .replace(/<i>(.+?)<\/i>/gi, '*$1*')             // Convert <i> to *
+        .replace(/<code>(.+?)<\/code>/gi, '`$1`')        // Convert <code> to `
+        .replace(/<a\s+href=["']([^"']+)["'][^>]*>(.+?)<\/a>/gi, '[$2]($1)') // Convert links
+        .replace(/<h1>(.+?)<\/h1>/gi, '# $1')           // Convert headers
+        .replace(/<h2>(.+?)<\/h2>/gi, '## $1')
+        .replace(/<h3>(.+?)<\/h3>/gi, '### $1')
+        .replace(/<h4>(.+?)<\/h4>/gi, '#### $1')
+        .replace(/<h5>(.+?)<\/h5>/gi, '##### $1')
+        .replace(/<h6>(.+?)<\/h6>/gi, '###### $1')
+        .replace(/<ul>/gi, '\n')
+        .replace(/<\/ul>/gi, '\n')
+        .replace(/<ol>/gi, '\n')
+        .replace(/<\/ol>/gi, '\n')
+        .replace(/<li>(.+?)<\/li>/gi, '- $1\n')
+        .replace(/<blockquote>(.+?)<\/blockquote>/gi, '> $1');
+
+    // Now escape remaining HTML
+    html = escapeHtml(html);
 
     // Code blocks (must be first to prevent other replacements inside)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
@@ -348,12 +375,13 @@ function renderMarkdown(text) {
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
     // Headers (must go from most # to least to avoid partial matches)
-    html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
-    html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
-    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    // Match headers at start of line (after optional whitespace), must have space after #
+    html = html.replace(/^(\s*)######\s+(.+?)\s*$/gm, '$1<h6>$2</h6>');
+    html = html.replace(/^(\s*)#####\s+(.+?)\s*$/gm, '$1<h5>$2</h5>');
+    html = html.replace(/^(\s*)####\s+(.+?)\s*$/gm, '$1<h4>$2</h4>');
+    html = html.replace(/^(\s*)###\s+(.+?)\s*$/gm, '$1<h3>$2</h3>');
+    html = html.replace(/^(\s*)##\s+(.+?)\s*$/gm, '$1<h2>$2</h2>');
+    html = html.replace(/^(\s*)#\s+(.+?)\s*$/gm, '$1<h1>$2</h1>');
 
     // Bold and italic
     html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -382,8 +410,17 @@ function renderMarkdown(text) {
 
     // Clean up empty paragraphs and fix structure
     html = html.replace(/<p><\/p>/g, '');
-    html = html.replace(/<p>(<h[1-6]>)/g, '$1');
-    html = html.replace(/(<\/h[1-6]>)<\/p>/g, '$1');
+    // Unwrap headers from paragraphs - handle both opening and closing
+    html = html.replace(/<p>\s*(<h[1-6]>)/g, '$1');
+    html = html.replace(/(<\/h[1-6]>)\s*<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<pre>)/g, '$1');
+    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<blockquote>)/g, '$1');
+    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<table>)/g, '$1');
+    html = html.replace(/(<\/table>)<\/p>/g, '$1');
     html = html.replace(/<p>(<ul>)/g, '$1');
     html = html.replace(/(<\/ul>)<\/p>/g, '$1');
     html = html.replace(/<p>(<pre>)/g, '$1');
