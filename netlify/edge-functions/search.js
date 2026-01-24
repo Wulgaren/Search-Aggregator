@@ -659,26 +659,26 @@ async function handleAI(request) {
     // Build context from search results for grounding
     let searchContext = "";
     if (searchResults && searchResults.length > 0) {
-        searchContext = "\n\nHere are relevant search results to help answer the query:\n\n";
+        searchContext = "Here are relevant search results to help answer the query:\n\n";
         searchResults.slice(0, 8).forEach((result, index) => {
-            searchContext += `[${index + 1}] ${result.title}\nURL: ${result.url}\n${result.snippet}\n\n`;
+            searchContext += `[${index + 1}] "${result.title}"\nURL: ${result.url}\nSnippet: ${result.snippet || "No snippet available"}\n\n`;
         });
     }
 
     const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries.
 
-${searchContext ? "Use the provided search results as context to ground your answers in factual information. Reference specific sources when relevant by using [1], [2], etc." : ""}
-
 Guidelines:
 - Be concise but comprehensive
-- If the search results contain relevant information, use them to support your answer
+- When search results are provided, USE THEM to ground your answers in factual information
+- Reference specific sources using [1], [2], etc. when citing information from the search results
 - If you're not certain about something, say so
 - Format your response with markdown for readability (headers, lists, bold, etc.)
 - For factual questions, prioritize accuracy over length
-- For how-to questions, provide step-by-step guidance`;
+- For how-to questions, provide step-by-step guidance
+- IMPORTANT: Always try to answer using the search results provided. Do not say "no search results" if results are given.`;
 
     const userMessage = searchContext 
-        ? `Query: "${query}"\n\nPlease answer based on the search results provided above.`
+        ? `Query: "${query}"\n\n${searchContext}\nBased on the search results above, please provide a helpful answer to the query.`
         : `Query: "${query}"\n\nPlease provide a helpful answer.`;
 
     try {
