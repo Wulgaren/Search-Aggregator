@@ -7,7 +7,12 @@ let googleTokenExpiry = 0;
 export default async (request, context) => {
     const url = new URL(request.url);
     
-    // Only allow GET requests
+    // Route to AI handler for /api/ai
+    if (url.pathname === "/api/ai") {
+        return handleAI(request);
+    }
+    
+    // Only allow GET requests for search
     if (request.method !== "GET") {
         return new Response(JSON.stringify({ error: "Method not allowed" }), {
             status: 405,
@@ -154,7 +159,7 @@ export default async (request, context) => {
 };
 
 export const config = {
-    path: "/api/search",
+    path: ["/api/search", "/api/ai"],
 };
 
 async function fetchBrave(query, page, resultsPerPage) {
@@ -611,6 +616,153 @@ async function tryFetchPageInfobox(pageTitle) {
         };
     } catch (e) {
         return null;
+    }
+}
+
+// AI Answer Handler with Groq streaming
+async function handleAI(request) {
+    // Only allow POST requests
+    if (request.method !== "POST") {
+        return new Response(JSON.stringify({ error: "Method not allowed" }), {
+            status: 405,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const groqApiKey = Deno.env.get("GROQ_API_KEY");
+    if (!groqApiKey) {
+        return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    let body;
+    try {
+        body = await request.json();
+    } catch (e) {
+        return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const { query, searchResults } = body;
+
+    if (!query || query.trim() === "") {
+        return new Response(JSON.stringify({ error: "Query is required" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    // Build context from search results for grounding
+    let searchContext = "";
+    if (searchResults && searchResults.length > 0) {
+        searchContext = "\n\nHere are relevant search results to help answer the query:\n\n";
+        searchResults.slice(0, 8).forEach((result, index) => {
+            searchContext += `[${index + 1}] ${result.title}\nURL: ${result.url}\n${result.snippet}\n\n`;
+        });
+    }
+
+    const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries.
+
+${searchContext ? "Use the provided search results as context to ground your answers in factual information. Reference specific sources when relevant by using [1], [2], etc." : ""}
+
+Guidelines:
+- Be concise but comprehensive
+- If the search results contain relevant information, use them to support your answer
+- If you're not certain about something, say so
+- Format your response with markdown for readability (headers, lists, bold, etc.)
+- For factual questions, prioritize accuracy over length
+- For how-to questions, provide step-by-step guidance`;
+
+    const userMessage = searchContext 
+        ? `Query: "${query}"\n\nPlease answer based on the search results provided above.`
+        : `Query: "${query}"\n\nPlease provide a helpful answer.`;
+
+    try {
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${groqApiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userMessage },
+                ],
+                stream: true,
+                max_tokens: 1024,
+                temperature: 0.7,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || `Groq API error: ${response.status}`);
+        }
+
+        // Stream the response back to the client
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // Process the stream in the background
+        (async () => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || trimmed === "data: [DONE]") continue;
+                        if (!trimmed.startsWith("data: ")) continue;
+
+                        try {
+                            const json = JSON.parse(trimmed.slice(6));
+                            const content = json.choices?.[0]?.delta?.content;
+                            if (content) {
+                                await writer.write(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                            }
+                        } catch (e) {
+                            // Skip malformed JSON
+                        }
+                    }
+                }
+
+                // Send done signal
+                await writer.write(encoder.encode("data: [DONE]\n\n"));
+            } catch (e) {
+                await writer.write(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
+            } finally {
+                await writer.close();
+            }
+        })();
+
+        return new Response(readable, {
+            headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        });
+    } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+        });
     }
 }
 

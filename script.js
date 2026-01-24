@@ -6,7 +6,14 @@ const noncommercialResults = document.getElementById('noncommercial-results');
 const mergedResults = document.getElementById('merged-results');
 const commercialCount = document.getElementById('commercial-count');
 const noncommercialCount = document.getElementById('noncommercial-count');
-const chatgptBtn = document.getElementById('chatgpt-btn');
+const aiBtn = document.getElementById('ai-btn');
+const aiPanel = document.getElementById('ai-panel');
+const aiPanelClose = document.getElementById('ai-panel-close');
+const aiPanelContent = document.getElementById('ai-panel-content');
+const aiLoading = document.getElementById('ai-loading');
+const aiAnswer = document.getElementById('ai-answer');
+const aiPanelFooter = document.getElementById('ai-panel-footer');
+const aiSources = document.getElementById('ai-sources');
 
 // DDG Bang detection - matches !bang with space before/after or at start/end
 function detectBang(query) {
@@ -67,6 +74,7 @@ let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], err
 let mergedState = { loading: false };
 let imageState = { images: [], loading: false, page: 1, hasMore: true };
 let infoboxState = { data: null, loading: false };
+let aiState = { loading: false, abortController: null };
 
 // Track rendered URLs to prevent animation replay on re-render
 let renderedCommercialUrls = new Set();
@@ -118,13 +126,248 @@ searchForm.addEventListener('submit', (e) => {
     }
 });
 
-// ChatGPT button
-chatgptBtn.addEventListener('click', () => {
+// AI Answer button
+aiBtn.addEventListener('click', () => {
     const query = searchInput.value.trim();
     if (query) {
-        window.open(`https://chat.openai.com/?q=${encodeURIComponent(query)}`, '_blank');
+        fetchAIAnswer(query);
     }
 });
+
+// AI Panel close button
+aiPanelClose.addEventListener('click', () => {
+    closeAIPanel();
+});
+
+// Close AI panel with Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && aiPanel.style.display !== 'none') {
+        closeAIPanel();
+    }
+});
+
+// Handle clicks on source references in AI answer
+aiAnswer.addEventListener('click', (e) => {
+    if (e.target.classList.contains('source-ref')) {
+        const sourceNum = parseInt(e.target.dataset.source);
+        const sourceItem = aiSources.querySelector(`.ai-source-item:nth-child(${sourceNum})`);
+        if (sourceItem) {
+            sourceItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            sourceItem.style.animation = 'none';
+            sourceItem.offsetHeight; // Trigger reflow
+            sourceItem.style.animation = 'highlightSource 1s ease';
+        }
+    }
+});
+
+function closeAIPanel() {
+    // Abort any ongoing request
+    if (aiState.abortController) {
+        aiState.abortController.abort();
+        aiState.abortController = null;
+    }
+    aiPanel.style.display = 'none';
+    aiBtn.classList.remove('active');
+    aiState.loading = false;
+}
+
+async function fetchAIAnswer(query) {
+    // If already loading, abort and close
+    if (aiState.loading) {
+        closeAIPanel();
+        return;
+    }
+
+    // Show panel and loading state
+    aiPanel.style.display = 'block';
+    aiBtn.classList.add('active');
+    aiLoading.style.display = 'flex';
+    aiAnswer.innerHTML = '';
+    aiAnswer.style.display = 'none';
+    aiPanelFooter.style.display = 'none';
+    aiState.loading = true;
+
+    // Scroll to make AI panel visible
+    aiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Collect search results for grounding
+    const allResults = [
+        ...googleState.results,
+        ...braveState.results,
+        ...marginaliaState.results,
+    ];
+
+    // Deduplicate by URL
+    const seen = new Set();
+    const searchResults = allResults.filter(result => {
+        const key = result.url;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).slice(0, 8).map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+    }));
+
+    // Create abort controller for this request
+    aiState.abortController = new AbortController();
+
+    try {
+        const response = await fetch('/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, searchResults }),
+            signal: aiState.abortController.signal,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Request failed: ${response.status}`);
+        }
+
+        // Start streaming
+        aiLoading.style.display = 'none';
+        aiAnswer.style.display = 'block';
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullContent = '';
+
+        // Add cursor for streaming effect
+        aiAnswer.innerHTML = '<span class="ai-cursor"></span>';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed === 'data: [DONE]') continue;
+                if (!trimmed.startsWith('data: ')) continue;
+
+                try {
+                    const json = JSON.parse(trimmed.slice(6));
+                    if (json.content) {
+                        fullContent += json.content;
+                        // Render markdown and add cursor
+                        aiAnswer.innerHTML = renderMarkdown(fullContent) + '<span class="ai-cursor"></span>';
+                    }
+                    if (json.error) {
+                        throw new Error(json.error);
+                    }
+                } catch (e) {
+                    if (e.message !== 'Unexpected end of JSON input') {
+                        console.error('Parse error:', e);
+                    }
+                }
+            }
+        }
+
+        // Final render without cursor
+        aiAnswer.innerHTML = renderMarkdown(fullContent);
+
+        // Show sources if we have them
+        if (searchResults.length > 0) {
+            renderAISources(searchResults);
+        }
+
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            // Request was aborted, do nothing
+            return;
+        }
+        aiLoading.style.display = 'none';
+        aiAnswer.style.display = 'block';
+        aiAnswer.innerHTML = `
+            <div class="ai-error">
+                <span class="ai-error-icon">⚠</span>
+                <span class="ai-error-message">${escapeHtml(error.message)}</span>
+            </div>
+        `;
+    } finally {
+        aiState.loading = false;
+        aiState.abortController = null;
+    }
+}
+
+function renderAISources(sources) {
+    if (!sources || sources.length === 0) return;
+
+    aiPanelFooter.style.display = 'block';
+    aiSources.innerHTML = sources.map((source, index) => `
+        <a href="${escapeHtml(source.url)}" class="ai-source-item" target="_blank" rel="noopener">
+            <span class="ai-source-num">${index + 1}</span>
+            <span class="ai-source-title">${escapeHtml(source.title)}</span>
+        </a>
+    `).join('');
+}
+
+// Simple markdown renderer
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    let html = escapeHtml(text);
+
+    // Code blocks (must be first to prevent other replacements inside)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code>${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // Bold and italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+    // Source references [1], [2], etc.
+    html = html.replace(/\[(\d+)\]/g, '<span class="source-ref" data-source="$1">$1</span>');
+
+    // Blockquotes
+    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+
+    // Unordered lists
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+    // Paragraphs (double newlines)
+    html = html.replace(/\n\n+/g, '</p><p>');
+    html = '<p>' + html + '</p>';
+
+    // Clean up empty paragraphs and fix structure
+    html = html.replace(/<p><\/p>/g, '');
+    html = html.replace(/<p>(<h[123]>)/g, '$1');
+    html = html.replace(/(<\/h[123]>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<pre>)/g, '$1');
+    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<blockquote>)/g, '$1');
+    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
+
+    // Single newlines to <br> within paragraphs
+    html = html.replace(/([^>])\n([^<])/g, '$1<br>$2');
+
+    return html;
+}
 
 // Preview navigation elements
 const previewPrev = document.getElementById('preview-prev');
@@ -325,6 +568,13 @@ async function performSearch(query) {
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
 
+    // Reset AI state
+    if (aiState.abortController) {
+        aiState.abortController.abort();
+        aiState.abortController = null;
+    }
+    aiState = { loading: false, abortController: null };
+
     // Reset rendered URL tracking for new search
     renderedCommercialUrls = new Set();
     renderedNoncommercialUrls = new Set();
@@ -337,9 +587,11 @@ async function performSearch(query) {
     commercialCount.textContent = '';
     noncommercialCount.textContent = '';
 
-    // Hide image section and infobox initially
+    // Hide image section, infobox, and AI panel initially
     imageSection.style.display = 'none';
     infobox.style.display = 'none';
+    aiPanel.style.display = 'none';
+    aiBtn.classList.remove('active');
 
     // Fetch all sources independently - don't wait for all
     fetchSource('brave', query, 1);
@@ -1174,6 +1426,13 @@ function resetResults() {
     imageState = { images: [], loading: false, page: 1, hasMore: true };
     infoboxState = { data: null, loading: false };
 
+    // Reset AI state
+    if (aiState.abortController) {
+        aiState.abortController.abort();
+        aiState.abortController = null;
+    }
+    aiState = { loading: false, abortController: null };
+
     // Reset rendered URL tracking
     renderedCommercialUrls = new Set();
     renderedNoncommercialUrls = new Set();
@@ -1187,6 +1446,8 @@ function resetResults() {
     imageSection.style.display = 'none';
     sliderTrack.innerHTML = '';
     infobox.style.display = 'none';
+    aiPanel.style.display = 'none';
+    aiBtn.classList.remove('active');
 }
 
 function escapeHtml(text) {
