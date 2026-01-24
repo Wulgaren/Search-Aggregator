@@ -1235,7 +1235,10 @@ a:hover {
 /* AI Answer Markdown Styles */
 .ai-answer h1,
 .ai-answer h2,
-.ai-answer h3 {
+.ai-answer h3,
+.ai-answer h4,
+.ai-answer h5,
+.ai-answer h6 {
   margin: 1rem 0 0.5rem;
   color: var(--text-primary);
   font-weight: 600;
@@ -1251,6 +1254,18 @@ a:hover {
 
 .ai-answer h3 {
   font-size: 1rem;
+}
+
+.ai-answer h4 {
+  font-size: 0.95rem;
+}
+
+.ai-answer h5 {
+  font-size: 0.9rem;
+}
+
+.ai-answer h6 {
+  font-size: 0.85rem;
 }
 
 .ai-answer p {
