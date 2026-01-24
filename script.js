@@ -649,6 +649,10 @@ async function fetchSource(source, query, page) {
         renderNoncommercialResults();
     } else {
         renderCommercialResults();
+        // Re-render Marginalia to filter out any new duplicates from commercial results
+        if (!isMergedView() && marginaliaState.results.length > 0) {
+            renderNoncommercialResults();
+        }
     }
 
     if (isMergedView()) {
@@ -730,7 +734,19 @@ function renderCommercialResults() {
 }
 
 function renderNoncommercialResults() {
-    const results = marginaliaState.results;
+    // Build set of commercial URLs to exclude duplicates
+    const commercialUrls = new Set();
+    for (const result of googleState.results) {
+        commercialUrls.add(getDedupeKey(result.url));
+    }
+    for (const result of braveState.results) {
+        commercialUrls.add(getDedupeKey(result.url));
+    }
+
+    // Filter out Marginalia results that duplicate commercial results
+    const results = marginaliaState.results.filter(result => {
+        return !commercialUrls.has(getDedupeKey(result.url));
+    });
 
     // Log errors to console
     if (marginaliaState.error) {
@@ -744,6 +760,9 @@ function renderNoncommercialResults() {
         }
         if (marginaliaState.error) {
             noncommercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
+        } else if (marginaliaState.results.length > 0) {
+            // Has results but all are duplicates
+            noncommercialResults.innerHTML = `<div class="empty-state"><p>All results match commercial results</p></div>`;
         } else {
             noncommercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
         }
