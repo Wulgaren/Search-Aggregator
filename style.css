@@ -1322,6 +1322,38 @@ a:hover {
   font-style: italic;
 }
 
+.ai-answer table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ai-answer th {
+  background: var(--bg-tertiary);
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+}
+
+.ai-answer td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.ai-answer tr:last-child td {
+  border-bottom: none;
+}
+
+.ai-answer tr:hover {
+  background: var(--bg-secondary);
+}
+
 /* Source citation badges in AI answer */
 .ai-answer .source-ref {
   display: inline-flex;

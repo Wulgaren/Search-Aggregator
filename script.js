@@ -257,9 +257,16 @@ async function fetchAIAnswer(query) {
         // Final render without cursor
         aiAnswer.innerHTML = renderMarkdown(fullContent);
 
-        // Show sources from web search if available
+        // Only show sources if they're actually referenced in the response
+        // Check for citation patterns like [1], [2], or explicit source mentions
         if (webSearchSources && webSearchSources.length > 0) {
-            renderAISources(webSearchSources);
+            const hasCitations = /\[\d+\]/.test(fullContent) || 
+                                /source|reference|cited|according to/i.test(fullContent) ||
+                                webSearchSources.some(source => fullContent.includes(source.url) || fullContent.includes(source.title));
+            
+            if (hasCitations) {
+                renderAISources(webSearchSources);
+            }
         }
 
     } catch (error) {
@@ -302,6 +309,39 @@ function renderMarkdown(text) {
     // Code blocks (must be first to prevent other replacements inside)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
         return `<pre><code>${code.trim()}</code></pre>`;
+    });
+
+    // Tables - process markdown tables
+    // Match table blocks: consecutive lines starting/ending with |
+    html = html.replace(/((?:^\|.+\|\s*\n)+)/gm, (match) => {
+        const lines = match.trim().split('\n').filter(l => l.trim());
+        if (lines.length < 2) return match; // Need at least 2 rows
+        
+        let tableHtml = '<table>';
+        let isFirstRow = true;
+        
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+            
+            // Check if it's a separator row (contains only dashes, pipes, colons, spaces)
+            if (/^[\s\|:\-]+$/.test(trimmed)) {
+                if (isFirstRow) isFirstRow = false;
+                continue;
+            }
+            
+            // Parse cells
+            const cells = trimmed.slice(1, -1).split('|').map(cell => cell.trim());
+            if (cells.length < 2) continue; // Need at least 2 cells
+            
+            const tag = isFirstRow ? 'th' : 'td';
+            tableHtml += '<tr>' + cells.map(cell => `<${tag}>${cell}</${tag}>`).join('') + '</tr>';
+            
+            if (isFirstRow) isFirstRow = false;
+        }
+        
+        tableHtml += '</table>';
+        return tableHtml;
     });
 
     // Inline code
@@ -350,6 +390,8 @@ function renderMarkdown(text) {
     html = html.replace(/(<\/pre>)<\/p>/g, '$1');
     html = html.replace(/<p>(<blockquote>)/g, '$1');
     html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<table>)/g, '$1');
+    html = html.replace(/(<\/table>)<\/p>/g, '$1');
 
     // Single newlines to <br> within paragraphs
     html = html.replace(/([^>])\n([^<])/g, '$1<br>$2');
