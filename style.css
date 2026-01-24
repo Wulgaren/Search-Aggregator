@@ -171,8 +171,19 @@ a:hover {
   cursor: not-allowed;
 }
 
-.ai-btn svg {
-  flex-shrink: 0;
+.ai-icon {
+  font-size: 1.25rem;
+  color: transparent;
+  text-shadow: 0 0 0 var(--text-secondary);
+  transition: text-shadow 0.15s ease;
+}
+
+.ai-btn:hover .ai-icon {
+  text-shadow: 0 0 0 var(--text-primary);
+}
+
+.ai-btn.active .ai-icon {
+  text-shadow: 0 0 0 white;
 }
 
 /* Results */
@@ -1172,8 +1183,10 @@ a:hover {
   color: var(--text-secondary);
 }
 
-.ai-panel-title svg {
-  color: var(--accent);
+.ai-panel-title .ai-icon {
+  font-size: 1rem;
+  color: transparent;
+  text-shadow: 0 0 0 var(--accent);
 }
 
 .ai-model-badge {
