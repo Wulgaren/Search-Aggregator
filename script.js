@@ -83,7 +83,7 @@ let renderedMergedUrls = new Set();
 
 // Check if we're in mobile merged view
 function isMergedView() {
-    return window.innerWidth <= 700;
+    return window.innerWidth <= 900;
 }
 
 // Initialize

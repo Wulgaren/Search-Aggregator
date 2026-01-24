@@ -593,16 +593,6 @@ a:hover {
 
 /* Responsive */
 @media (max-width: 900px) {
-  .results {
-    grid-template-columns: 1fr;
-  }
-
-  .results-column {
-    min-height: 300px;
-  }
-}
-
-@media (max-width: 700px) {
   /* Hide columns, show merged view */
   .results-column {
     display: none;
@@ -927,7 +917,7 @@ a:hover {
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .image-slider-section {
     padding: 0 0.75rem;
     margin-bottom: 1rem;
@@ -1453,7 +1443,7 @@ a:hover {
 }
 
 /* Responsive AI Panel */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .ai-panel {
     margin: 0 0.75rem 1rem;
     border-radius: 12px;
