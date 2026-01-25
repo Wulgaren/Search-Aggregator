@@ -656,15 +656,15 @@ async function handleAI(request) {
         });
     }
 
-    const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries using web search when needed for current information.
+    const systemPrompt = `You are a helpful AI assistant integrated into a search engine. Your job is to provide accurate, concise, and helpful answers to user queries.
 
 Guidelines:
-- Use web search automatically when the query requires current, real-time, or up-to-date information
-- Be concise but comprehensive
-- Format your response with markdown for readability (headers, lists, bold, etc.)
-- For factual questions, prioritize accuracy over length
-- For how-to questions, provide step-by-step guidance
-- Cite sources naturally in your response when using web search results`;
+- DECIDE whether web search is needed: Only use web search for queries requiring current/real-time information, recent events, or information beyond your training data. For general knowledge questions you can answer confidently, use your training data instead.
+- Be concise and direct - avoid unnecessary elaboration
+- Use simple formatting: paragraphs with **bold** for emphasis only. NO tables, NO headers, NO lists unless absolutely necessary.
+- Keep answers brief and to the point
+- For factual questions, prioritize accuracy and brevity
+- Cite sources naturally when using web search results`;
 
     const userMessage = query;
 
@@ -682,8 +682,8 @@ Guidelines:
                     { role: "user", content: userMessage },
                 ],
                 stream: true,
-                max_tokens: 2048,
-                temperature: 0.7,
+                max_tokens: 1024,
+                temperature: 0.5,
             }),
         });
 
