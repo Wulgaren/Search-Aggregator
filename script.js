@@ -206,18 +206,13 @@ async function fetchAIAnswer(query) {
             throw new Error(errorData.error || `Request failed: ${response.status}`);
         }
 
-        // Start streaming
-        aiLoading.style.display = 'none';
-        aiAnswer.style.display = 'block';
-
+        // Start streaming - keep loading visible until first content arrives
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         let fullContent = '';
         let webSearchSources = null;
-
-        // Add cursor for streaming effect
-        aiAnswer.innerHTML = '<span class="ai-cursor"></span>';
+        let hasReceivedContent = false;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -235,6 +230,13 @@ async function fetchAIAnswer(query) {
                 try {
                     const json = JSON.parse(trimmed.slice(6));
                     if (json.content) {
+                        // Hide loading and show answer area on first content
+                        if (!hasReceivedContent) {
+                            aiLoading.style.display = 'none';
+                            aiAnswer.style.display = 'block';
+                            hasReceivedContent = true;
+                        }
+                        
                         fullContent += json.content;
                         // Render markdown and add cursor
                         aiAnswer.innerHTML = renderMarkdown(fullContent) + '<span class="ai-cursor"></span>';
@@ -254,6 +256,12 @@ async function fetchAIAnswer(query) {
             }
         }
 
+        // Hide loading if we never received content (shouldn't happen, but safety check)
+        if (!hasReceivedContent) {
+            aiLoading.style.display = 'none';
+            aiAnswer.style.display = 'block';
+        }
+        
         // Final render without cursor
         aiAnswer.innerHTML = renderMarkdown(fullContent);
 
