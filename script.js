@@ -66,6 +66,13 @@ const infoboxDescription = document.getElementById('infobox-description');
 const infoboxLinks = document.getElementById('infobox-links');
 const infoboxSource = document.getElementById('infobox-source');
 
+// Results container for mouse tracking
+const resultsContainer = document.getElementById('results');
+
+// Mouse position tracking for scroll compensation
+let mousePosition = { x: null, y: null, element: null, isInsideResults: false };
+let elementPositionBeforeContent = null;
+
 // State - track each source separately
 let currentQuery = '';
 let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -90,6 +97,7 @@ function isMergedView() {
 document.addEventListener('DOMContentLoaded', () => {
     restoreSearchState();
     setupInfiniteScroll();
+    setupMouseTracking();
 
     let wasMerged = isMergedView();
     window.addEventListener('resize', () => {
@@ -100,6 +108,89 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Track mouse position inside #results container
+function setupMouseTracking() {
+    document.addEventListener('mousemove', (e) => {
+        if (resultsContainer) {
+            const rect = resultsContainer.getBoundingClientRect();
+            const isInside = (
+                e.clientX >= rect.left &&
+                e.clientX <= rect.right &&
+                e.clientY >= rect.top &&
+                e.clientY <= rect.bottom
+            );
+            
+            if (isInside) {
+                mousePosition.x = e.clientX;
+                mousePosition.y = e.clientY;
+                mousePosition.isInsideResults = true;
+                // Get the element under the cursor
+                mousePosition.element = document.elementFromPoint(e.clientX, e.clientY);
+            } else {
+                mousePosition.isInsideResults = false;
+                mousePosition.element = null;
+            }
+        }
+    });
+}
+
+// Store element position before content is added
+function storeElementPositionBeforeContent() {
+    if (!mousePosition.isInsideResults || !mousePosition.x || !mousePosition.y) {
+        elementPositionBeforeContent = null;
+        return;
+    }
+
+    const elementAtMouse = document.elementFromPoint(mousePosition.x, mousePosition.y);
+    if (!elementAtMouse) {
+        elementPositionBeforeContent = null;
+        return;
+    }
+
+    const rect = elementAtMouse.getBoundingClientRect();
+    elementPositionBeforeContent = {
+        element: elementAtMouse,
+        viewportTop: rect.top,
+        absoluteTop: rect.top + window.scrollY,
+        mouseOffset: mousePosition.y - rect.top
+    };
+}
+
+// Scroll to maintain mouse position when content is added above
+function maintainMousePosition() {
+    if (!elementPositionBeforeContent) {
+        return;
+    }
+
+    // Find the element again (it may have moved in the DOM)
+    const element = elementPositionBeforeContent.element;
+    if (!element || !document.contains(element)) {
+        elementPositionBeforeContent = null;
+        return;
+    }
+
+    // Get the element's new position after content was added
+    const rect = element.getBoundingClientRect();
+    const newViewportTop = rect.top;
+    const oldViewportTop = elementPositionBeforeContent.viewportTop;
+    
+    // Calculate how much the element moved down
+    const elementMovedDown = newViewportTop - oldViewportTop;
+    
+    // If the element moved down, scroll to compensate
+    if (elementMovedDown > 1) {
+        const currentScroll = window.scrollY;
+        const targetScroll = currentScroll + elementMovedDown;
+        window.scrollTo({
+            top: targetScroll,
+            behavior: 'auto'
+        });
+    }
+    
+    // Clear the stored position
+    elementPositionBeforeContent = null;
+}
 
 // Keyboard shortcut: / to focus search
 document.addEventListener('keydown', (e) => {
@@ -1101,9 +1192,20 @@ async function fetchImages(query, page = 1) {
                 const googleImages = googleData.images || [];
                 imageState.images = googleImages;
                 if (googleImages.length > 0) {
+                    // Store element position before showing images (if mouse is in results)
+                    const wasHidden = imageSection.style.display === 'none';
+                    if (wasHidden) {
+                        storeElementPositionBeforeContent();
+                    }
                     renderImageSlider();
                     imageSection.style.display = 'block';
                     setupImageSliderScroll();
+                    // Maintain mouse position after showing images
+                    if (wasHidden) {
+                        requestAnimationFrame(() => {
+                            maintainMousePosition();
+                        });
+                    }
                 }
             }
 
@@ -1122,9 +1224,15 @@ async function fetchImages(query, page = 1) {
                         if (uniqueBraveImages.length > 0) {
                             imageState.images = [...imageState.images, ...uniqueBraveImages];
                             if (imageSection.style.display === 'none' && imageState.images.length > 0) {
+                                // Store element position before showing images (if mouse is in results)
+                                storeElementPositionBeforeContent();
                                 renderImageSlider();
                                 imageSection.style.display = 'block';
                                 setupImageSliderScroll();
+                                // Maintain mouse position after showing images
+                                requestAnimationFrame(() => {
+                                    maintainMousePosition();
+                                });
                             } else {
                                 appendImagesToSlider(uniqueBraveImages);
                             }
@@ -1189,6 +1297,10 @@ function removeImageLoadingIndicator() {
 }
 
 function appendImagesToSlider(newImages) {
+    // Note: appendImagesToSlider is called when adding more images to existing slider
+    // We don't need to track position here as the slider is already visible
+    // and new images are appended to the end, not inserted above
+    
     removeImageLoadingIndicator();
 
     const startIndex = imageState.images.length - newImages.length;
@@ -1380,6 +1492,12 @@ function renderInfobox(data) {
         return;
     }
 
+    // Store element position before showing infobox (if mouse is in results)
+    const wasHidden = infobox.style.display === 'none';
+    if (wasHidden) {
+        storeElementPositionBeforeContent();
+    }
+
     // Set title
     infoboxTitle.textContent = data.title;
 
@@ -1439,6 +1557,12 @@ function renderInfobox(data) {
 
     // Show the infobox
     infobox.style.display = 'flex';
+    
+    // Maintain mouse position if cursor is inside #results
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+        maintainMousePosition();
+    });
 }
 
 function attachSentinel(container, source) {
