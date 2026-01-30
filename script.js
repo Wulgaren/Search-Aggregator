@@ -649,6 +649,7 @@ function restoreSearchState() {
                 const len = value.length;
                 searchInput.setSelectionRange(len, len);
             }
+	    else searchInput.blur();
         };
         // Immediate attempt
         doSet();
