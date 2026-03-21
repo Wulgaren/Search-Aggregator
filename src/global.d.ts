@@ -3,7 +3,11 @@
 interface Window {
   __earlyFetch?: {
     query: string;
-    batch?: Promise<Response>;
+    google?: Promise<Response>;
+    brave?: Promise<Response>;
+    marginalia?: Promise<Response>;
+    images?: Promise<Response>;
+    infobox?: Promise<Response>;
   };
   scrollObservers?: Record<string, IntersectionObserver>;
   sentinels?: Record<string, HTMLElement>;

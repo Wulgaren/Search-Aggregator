@@ -37,66 +37,6 @@ export default async (request, context) => {
 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
-    const batch = url.searchParams.get("batch") === "1" || url.searchParams.get("batch") === "true";
-
-    // Single round-trip: web sources + Google images + infobox (page 1 only)
-    if (batch && page === 1) {
-        const [braveResults, googleResults, marginaliaResults, imagesSettled, infoboxSettled] =
-            await Promise.allSettled([
-                fetchBrave(searchQuery, 1, resultsPerPage),
-                fetchGoogle(searchQuery, 1, resultsPerPage),
-                fetchMarginalia(searchQuery, 1, resultsPerPage),
-                fetchGoogleImages(searchQuery, 1),
-                fetchWikipediaInfobox(searchQuery),
-            ]);
-
-        const response = { page: 1 };
-
-        response.brave =
-            braveResults.status === "fulfilled" && braveResults.value
-                ? braveResults.value
-                : {
-                    error: braveResults.reason?.message || "Failed to fetch Brave results",
-                    results: [],
-                };
-
-        response.google =
-            googleResults.status === "fulfilled" && googleResults.value
-                ? googleResults.value
-                : {
-                    error: googleResults.reason?.message || "Failed to fetch Google results",
-                    results: [],
-                };
-
-        response.marginalia =
-            marginaliaResults.status === "fulfilled" && marginaliaResults.value
-                ? marginaliaResults.value
-                : {
-                    error: marginaliaResults.reason?.message || "Failed to fetch Marginalia results",
-                    results: [],
-                };
-
-        const googleImages =
-            imagesSettled.status === "fulfilled" && Array.isArray(imagesSettled.value)
-                ? imagesSettled.value
-                : [];
-
-        response.images = {
-            images: googleImages,
-            hasMore: true,
-        };
-
-        response.infobox = {
-            infobox: infoboxSettled.status === "fulfilled" ? infoboxSettled.value : null,
-        };
-
-        return new Response(JSON.stringify(response), {
-            headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": SEARCH_JSON_CACHE,
-            },
-        });
-    }
 
     // Handle infobox request
     if (source === "infobox") {

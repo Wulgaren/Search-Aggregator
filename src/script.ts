@@ -770,25 +770,11 @@ async function performSearch(query) {
     aiPanel.style.display = 'none';
     aiBtn.classList.remove('active');
 
-    fetchInitialBatch(query);
-}
-
-function applyWebSourcePayload(source, sourceData) {
-    const state = getState(source);
-    if (!sourceData) {
-        state.hasMore = false;
-        state.error = 'No data';
-        return;
-    }
-    if (sourceData.error) {
-        state.hasMore = false;
-        state.error = sourceData.error;
-        console.error(`Error from ${source}:`, sourceData.error);
-    } else {
-        state.hasMore = sourceData.hasMore;
-        state.results = sourceData.results || [];
-        state.error = null;
-    }
+    fetchSource('brave', query, 1);
+    fetchSource('google', query, 1);
+    fetchSource('marginalia', query, 1);
+    fetchImages(query);
+    fetchInfobox(query);
 }
 
 /** Brave image API after 1s — rate-limit friendly */
@@ -824,96 +810,26 @@ function scheduleBraveImagesDelayed(query) {
     }, 1000);
 }
 
-async function fetchInitialBatch(query) {
-    braveState.loading = true;
-    googleState.loading = true;
-    marginaliaState.loading = true;
-    imageState.loading = true;
-    infoboxState.loading = true;
-
-    try {
-        let response;
-        if (window.__earlyFetch?.query === query && window.__earlyFetch.batch) {
-            response = await window.__earlyFetch.batch;
-            delete window.__earlyFetch.batch;
-        } else {
-            response = await fetch(
-                `/api/search?q=${encodeURIComponent(query)}&page=1&batch=1`
-            );
-        }
-
-        if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-
-        const data = await response.json();
-
-        applyWebSourcePayload('brave', data.brave);
-        applyWebSourcePayload('google', data.google);
-        applyWebSourcePayload('marginalia', data.marginalia);
-
-        braveState.loading = false;
-        googleState.loading = false;
-        marginaliaState.loading = false;
-
-        if (data.images) {
-            imageState.images = data.images.images || [];
-            imageState.hasMore = data.images.hasMore ?? true;
-            imageState.page = 1;
-            if (imageState.images.length > 0) {
-                const wasHidden = imageSection.style.display === 'none';
-                if (wasHidden) {
-                    storeElementPositionBeforeContent();
-                }
-                renderImageSlider();
-                imageSection.style.display = 'block';
-                setupImageSliderScroll();
-                if (wasHidden) {
-                    requestAnimationFrame(() => {
-                        maintainMousePosition();
-                    });
-                }
-            }
-        }
-        imageState.loading = false;
-
-        if (data.infobox && Object.prototype.hasOwnProperty.call(data.infobox, 'infobox')) {
-            infoboxState.data = data.infobox.infobox;
-            if (data.infobox.infobox) {
-                renderInfobox(data.infobox.infobox);
-            }
-        }
-        infoboxState.loading = false;
-
-        renderCommercialResults();
-        renderNoncommercialResults();
-        if (isMergedView()) {
-            renderMergedResults();
-        }
-
-        scheduleBraveImagesDelayed(query);
-    } catch (error) {
-        console.error('Batch fetch failed:', error);
-        braveState.loading = false;
-        googleState.loading = false;
-        marginaliaState.loading = false;
-        imageState.loading = false;
-        infoboxState.loading = false;
-
-        fetchSource('brave', query, 1);
-        fetchSource('google', query, 1);
-        fetchSource('marginalia', query, 1);
-        fetchImages(query);
-        fetchInfobox(query);
-    }
-}
-
 async function fetchSource(source, query, page) {
     const state = getState(source);
     state.loading = true;
 
     try {
-        const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
-        );
+        let response: Response;
+        if (
+            page === 1 &&
+            window.__earlyFetch?.query === query &&
+            window.__earlyFetch[source as 'brave' | 'google' | 'marginalia']
+        ) {
+            const early = window.__earlyFetch;
+            const key = source as 'brave' | 'google' | 'marginalia';
+            response = await early[key]!;
+            delete early[key];
+        } else {
+            response = await fetch(
+                `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
+            );
+        }
 
         if (!response.ok) throw new Error(`Search failed: ${response.status}`);
 
@@ -1311,9 +1227,15 @@ async function fetchImages(query, page = 1) {
             imageState.images = [];
             imageState.page = 1;
 
-            const googleResponse = await fetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
-            );
+            let googleResponse: Response;
+            if (window.__earlyFetch?.query === query && window.__earlyFetch.images) {
+                googleResponse = await window.__earlyFetch.images;
+                delete window.__earlyFetch.images;
+            } else {
+                googleResponse = await fetch(
+                    `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
+                );
+            }
             if (googleResponse.ok) {
                 const googleData = await googleResponse.json();
                 const googleImages = googleData.images || [];
@@ -1558,9 +1480,15 @@ async function fetchInfobox(query) {
     infoboxState.loading = true;
 
     try {
-        const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&source=infobox`
-        );
+        let response: Response;
+        if (window.__earlyFetch?.query === query && window.__earlyFetch.infobox) {
+            response = await window.__earlyFetch.infobox;
+            delete window.__earlyFetch.infobox;
+        } else {
+            response = await fetch(
+                `/api/search?q=${encodeURIComponent(query)}&source=infobox`
+            );
+        }
 
         if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
 
