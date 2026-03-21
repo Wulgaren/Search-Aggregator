@@ -4,6 +4,10 @@
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
 
+/** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
+const SEARCH_JSON_CACHE =
+    "public, max-age=120, s-maxage=120, stale-while-revalidate=86400";
+
 export default async (request, context) => {
     const url = new URL(request.url);
     
@@ -33,6 +37,66 @@ export default async (request, context) => {
 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
+    const batch = url.searchParams.get("batch") === "1" || url.searchParams.get("batch") === "true";
+
+    // Single round-trip: web sources + Google images + infobox (page 1 only)
+    if (batch && page === 1) {
+        const [braveResults, googleResults, marginaliaResults, imagesSettled, infoboxSettled] =
+            await Promise.allSettled([
+                fetchBrave(searchQuery, 1, resultsPerPage),
+                fetchGoogle(searchQuery, 1, resultsPerPage),
+                fetchMarginalia(searchQuery, 1, resultsPerPage),
+                fetchGoogleImages(searchQuery, 1),
+                fetchWikipediaInfobox(searchQuery),
+            ]);
+
+        const response = { page: 1 };
+
+        response.brave =
+            braveResults.status === "fulfilled" && braveResults.value
+                ? braveResults.value
+                : {
+                    error: braveResults.reason?.message || "Failed to fetch Brave results",
+                    results: [],
+                };
+
+        response.google =
+            googleResults.status === "fulfilled" && googleResults.value
+                ? googleResults.value
+                : {
+                    error: googleResults.reason?.message || "Failed to fetch Google results",
+                    results: [],
+                };
+
+        response.marginalia =
+            marginaliaResults.status === "fulfilled" && marginaliaResults.value
+                ? marginaliaResults.value
+                : {
+                    error: marginaliaResults.reason?.message || "Failed to fetch Marginalia results",
+                    results: [],
+                };
+
+        const googleImages =
+            imagesSettled.status === "fulfilled" && Array.isArray(imagesSettled.value)
+                ? imagesSettled.value
+                : [];
+
+        response.images = {
+            images: googleImages,
+            hasMore: true,
+        };
+
+        response.infobox = {
+            infobox: infoboxSettled.status === "fulfilled" ? infoboxSettled.value : null,
+        };
+
+        return new Response(JSON.stringify(response), {
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": SEARCH_JSON_CACHE,
+            },
+        });
+    }
 
     // Handle infobox request
     if (source === "infobox") {
@@ -40,7 +104,8 @@ export default async (request, context) => {
         return new Response(JSON.stringify({ infobox }), {
             headers: {
                 "Content-Type": "application/json",
-                "Cache-Control": "public, max-age=3600",
+                "Cache-Control":
+                    "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
             },
         });
     }
@@ -89,7 +154,7 @@ export default async (request, context) => {
         return new Response(JSON.stringify({ images, hasMore }), {
             headers: {
                 "Content-Type": "application/json",
-                "Cache-Control": "public, max-age=300",
+                "Cache-Control": SEARCH_JSON_CACHE,
             },
         });
     }
@@ -153,7 +218,7 @@ export default async (request, context) => {
     return new Response(JSON.stringify(response), {
         headers: {
             "Content-Type": "application/json",
-            "Cache-Control": "public, max-age=300",
+            "Cache-Control": SEARCH_JSON_CACHE,
         },
     });
 };

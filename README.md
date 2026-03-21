@@ -17,7 +17,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 
 ## Tech Stack
 
-- **Frontend**: Vanilla JavaScript, HTML, CSS
+- **Frontend**: TypeScript (compiled with Bun), HTML, CSS — sources in `src/`, minified bundles `script.js` / `style.css` at repo root
 - **Backend**: Netlify Edge Functions (Deno)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
@@ -29,6 +29,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 
 ### Prerequisites
 
+- [Bun](https://bun.sh/) (for installing deps and building the client)
 - A Netlify account
 - Brave Search API key ([Get one here](https://brave.com/search/api/))
 - Google Custom Search Engine ID and Service Account (optional, for Google results)
@@ -43,7 +44,14 @@ git clone <repository-url>
 cd Search
 ```
 
-2. Set up environment variables in Netlify:
+2. Install dependencies and build the client (TypeScript + minified CSS):
+```bash
+bun install
+bun run build
+```
+This writes `script.js` and `style.css` at the project root. Netlify runs the same steps via `netlify.toml`.
+
+3. Set up environment variables in Netlify:
    - Go to your Netlify site settings
    - Navigate to **Site settings** → **Environment variables**
    - Add the following variables:
@@ -71,7 +79,7 @@ Example `GOOGLE_SERVICE_ACCOUNT` format:
 }
 ```
 
-3. Deploy to Netlify:
+4. Deploy to Netlify:
    - Connect your repository to Netlify
    - Netlify will automatically detect the build settings from `netlify.toml`
    - The site will deploy automatically
@@ -81,8 +89,14 @@ Example `GOOGLE_SERVICE_ACCOUNT` format:
 ```
 .
 ├── index.html              # Main HTML file
-├── script.js               # Frontend JavaScript
-├── style.css               # Stylesheet
+├── script.js               # Built client bundle (run `bun run build`)
+├── style.css               # Minified CSS (run `bun run build`)
+├── src/
+│   ├── script.ts           # Frontend TypeScript source
+│   ├── style.css           # Stylesheet source
+│   └── global.d.ts         # DOM / window typings
+├── scripts/
+│   └── build.ts            # Bun build (JS + CSS minify)
 ├── netlify/
 │   └── edge-functions/
 │       └── search.js       # Edge function (Deno) - API handler
@@ -119,17 +133,23 @@ The `netlify.toml` file configures:
 
 ### Local Development
 
-1. Install Netlify CLI:
+1. Install dependencies and build the client (or use `bun run watch` to rebuild on save):
 ```bash
-npm install -g netlify-cli
+bun install
+bun run build
 ```
 
-2. Start local development server:
+2. Install Netlify CLI (optional; any static server works for UI-only testing):
+```bash
+bun install -g netlify-cli
+```
+
+3. Start local development server (includes edge functions):
 ```bash
 netlify dev
 ```
 
-3. Set environment variables locally:
+4. Set environment variables locally:
 ```bash
 netlify env:set BRAVE_API_KEY "your-key"
 netlify env:set GOOGLE_CX "your-cx"
@@ -138,8 +158,11 @@ netlify env:set GOOGLE_SERVICE_ACCOUNT '{"type":"service_account",...}'
 
 ### Code Structure
 
-- **Frontend** (`script.js`): Handles UI, search state, infinite scroll, image previews
+- **Frontend** (`src/script.ts` → `script.js`): UI, search state, infinite scroll, image previews
+- **Styles** (`src/style.css` → minified `style.css`)
 - **Backend** (`netlify/edge-functions/search.js`): API handler using Deno edge functions
+
+Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebuild `script.js` and `style.css` when editing `src/`.
 
 ## API Endpoints
 
