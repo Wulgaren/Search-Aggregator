@@ -36,3 +36,7 @@ yarn-error.log*
 node_modules/
 package-lock.json
 yarn.lock
+
+# Generated frontend bundles (built from src/)
+/script.js
+/style.css
