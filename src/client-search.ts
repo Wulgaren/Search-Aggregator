@@ -1,6 +1,12 @@
-// Netlify Edge Function for search - runs at the edge for lower latency
+// @ts-nocheck
+/**
+ * Search + AI API logic bundled for the browser (testing: skip Netlify edge hop).
+ * Secrets are inlined at build time via scripts/build.ts --define process.env.*.
+ */
 
 type Timings = Record<string, number>;
+
+declare const process: { env: Record<string, string | undefined> };
 type ServiceAccountConfig = {
     client_email: string;
     private_key: string;
@@ -36,7 +42,7 @@ async function withTiming<T>(
     }
 }
 
-export default async (request: Request, context: unknown): Promise<Response> => {
+export async function handleSearchApiRequest(request: Request): Promise<Response> {
     const requestStart = performance.now();
     const timings = {};
     const url = new URL(request.url);
@@ -213,14 +219,10 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             "Server-Timing": buildServerTimingHeader(timings),
         },
     });
-};
-
-export const config = {
-    path: ["/api/search", "/api/ai"],
-};
+}
 
 async function fetchBrave(query, page, resultsPerPage) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
         throw new Error("Brave API key not configured");
@@ -311,7 +313,7 @@ async function getGoogleAccessToken() {
     }
 
     if (!googleServiceAccountConfig) {
-        const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
+        const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT;
         if (!serviceAccountJson) {
             throw new Error("Google service account not configured");
         }
@@ -387,13 +389,13 @@ async function getGoogleAccessToken() {
 }
 
 async function fetchGoogle(query, page, resultsPerPage) {
-    const cx = Deno.env.get("GOOGLE_CX");
+    const cx = process.env.GOOGLE_CX;
 
     if (!cx) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
-    if (!Deno.env.get("GOOGLE_SERVICE_ACCOUNT")) {
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
@@ -475,7 +477,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
 }
 
 async function fetchBraveImages(query, page = 1) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
         return [];
@@ -519,9 +521,9 @@ async function fetchBraveImages(query, page = 1) {
 }
 
 async function fetchGoogleImages(query, page = 1) {
-    const cx = Deno.env.get("GOOGLE_CX");
+    const cx = process.env.GOOGLE_CX;
 
-    if (!cx || !Deno.env.get("GOOGLE_SERVICE_ACCOUNT")) {
+    if (!cx || !process.env.GOOGLE_SERVICE_ACCOUNT) {
         return [];
     }
 
@@ -695,7 +697,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
+    const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
             status: 500,

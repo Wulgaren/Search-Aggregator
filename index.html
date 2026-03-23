@@ -7,24 +7,6 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <!-- Early fetch - start API requests while page is still loading -->
-    <script>
-      (() => {
-        var params = new URLSearchParams(window.location.search);
-        var q = params.get("q");
-        // Skip if no query or if it's a bang (will redirect anyway)
-        if (q && !/^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) {
-          var base =
-            "/api/search?q=" + encodeURIComponent(q) + "&page=1&source=";
-          window.__earlyFetch = {
-            query: q,
-            brave: fetch(base + "brave"),
-            google: fetch(base + "google"),
-          };
-        }
-      })();
-    </script>
-
     <link rel="preload" href="style.css?v=28" as="style" />
     <link rel="stylesheet" href="style.css?v=28" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

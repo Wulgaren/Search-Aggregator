@@ -1,3 +1,26 @@
+import { handleSearchApiRequest } from './client-search';
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+    const url = new URL(path, window.location.origin);
+    return handleSearchApiRequest(new Request(url.toString(), init));
+}
+
+(function startEarlyClientFetch() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (!q || /^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) return;
+    const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
+    window.__earlyFetch = {
+        query: q,
+        brave: apiFetch(base + 'brave'),
+        google: apiFetch(base + 'google'),
+        images: apiFetch(
+            `/api/search?q=${encodeURIComponent(q)}&source=images&imageSource=google&page=1`
+        ),
+        infobox: apiFetch(`/api/search?q=${encodeURIComponent(q)}&source=infobox`),
+    };
+})();
+
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     const el = document.getElementById(id);
     if (!el) throw new Error(`Missing #${id}`);
@@ -300,7 +323,7 @@ async function fetchAIAnswer(query) {
     aiState.abortController = new AbortController();
 
     try {
-        const response = await fetch('/api/ai', {
+        const response = await apiFetch('/api/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query }),
@@ -796,7 +819,7 @@ async function performSearch(query) {
 function scheduleBraveImagesDelayed(query) {
     setTimeout(async () => {
         try {
-            const braveResponse = await fetch(
+            const braveResponse = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
             );
             if (braveResponse.ok) {
@@ -841,7 +864,7 @@ async function fetchSource(source, query, page) {
             response = await early[key]!;
             delete early[key];
         } else {
-            response = await fetch(
+            response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
             );
         }
@@ -1247,7 +1270,7 @@ async function fetchImages(query, page = 1) {
                 googleResponse = await window.__earlyFetch.images;
                 delete window.__earlyFetch.images;
             } else {
-                googleResponse = await fetch(
+                googleResponse = await apiFetch(
                     `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
                 );
             }
@@ -1278,7 +1301,7 @@ async function fetchImages(query, page = 1) {
             imageState.hasMore = true;
         } else {
             // Subsequent pages: fetch both together (user-triggered, rate limit not an issue)
-            const response = await fetch(
+            const response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
             );
 
@@ -1500,7 +1523,7 @@ async function fetchInfobox(query) {
             response = await window.__earlyFetch.infobox;
             delete window.__earlyFetch.infobox;
         } else {
-            response = await fetch(
+            response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=infobox`
             );
         }
