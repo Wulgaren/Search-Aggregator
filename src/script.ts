@@ -96,6 +96,11 @@ let renderedMergedUrls = new Set();
 
 /** Avoid duplicate scroll listeners on the image strip */
 let imageSliderScrollBound = false;
+const INITIAL_FETCH_STAGGER_MS = {
+    google: 120,
+    infobox: 180,
+    images: 260,
+};
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -770,11 +775,21 @@ async function performSearch(query) {
     aiPanel.style.display = 'none';
     aiBtn.classList.remove('active');
 
+    // Stage initial requests to reduce first-hit burst against edge/API providers.
     fetchSource('brave', query, 1);
-    fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
-    fetchImages(query);
-    fetchInfobox(query);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchSource('google', query, 1);
+    }, INITIAL_FETCH_STAGGER_MS.google);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchInfobox(query);
+    }, INITIAL_FETCH_STAGGER_MS.infobox);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchImages(query);
+    }, INITIAL_FETCH_STAGGER_MS.images);
 }
 
 /** Brave image API after 1s — rate-limit friendly */

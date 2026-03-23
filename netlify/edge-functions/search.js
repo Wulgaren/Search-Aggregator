@@ -3,10 +3,12 @@
 // In-memory cache for Google access token (persists across requests in same isolate)
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
+let googleServiceAccountConfig = null;
+let googlePrivateCryptoKey = null;
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
-    "public, max-age=120, s-maxage=120, stale-while-revalidate=86400";
+    "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
 function buildServerTimingHeader(timings) {
     return Object.entries(timings)
@@ -68,7 +70,7 @@ export default async (request, context) => {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control":
-                    "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+                    "public, max-age=7200, s-maxage=7200, stale-while-revalidate=86400",
                 "Server-Timing": buildServerTimingHeader(timings),
             },
         });
@@ -298,19 +300,28 @@ async function getGoogleAccessToken() {
         return googleAccessToken;
     }
 
-    const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
-    if (!serviceAccountJson) {
-        throw new Error("Google service account not configured");
+    if (!googleServiceAccountConfig) {
+        const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
+        if (!serviceAccountJson) {
+            throw new Error("Google service account not configured");
+        }
+
+        let serviceAccount;
+        try {
+            serviceAccount = JSON.parse(serviceAccountJson);
+        } catch (e) {
+            throw new Error("Invalid Google service account JSON");
+        }
+
+        const { client_email, private_key } = serviceAccount;
+        if (!client_email || !private_key) {
+            throw new Error("Service account missing client_email or private_key");
+        }
+
+        googleServiceAccountConfig = { client_email, private_key };
     }
 
-    let serviceAccount;
-    try {
-        serviceAccount = JSON.parse(serviceAccountJson);
-    } catch (e) {
-        throw new Error("Invalid Google service account JSON");
-    }
-
-    const { client_email, private_key } = serviceAccount;
+    const { client_email, private_key } = googleServiceAccountConfig;
     if (!client_email || !private_key) {
         throw new Error("Service account missing client_email or private_key");
     }
@@ -330,12 +341,14 @@ async function getGoogleAccessToken() {
     const payloadEncoded = base64UrlEncodeString(JSON.stringify(payload));
     const signatureInput = `${headerEncoded}.${payloadEncoded}`;
 
-    // Sign with Web Crypto API
-    const privateKey = await importPrivateKey(private_key);
+    // Import/signing key once per isolate to reduce first-hit overhead
+    if (!googlePrivateCryptoKey) {
+        googlePrivateCryptoKey = await importPrivateKey(private_key);
+    }
     const encoder = new TextEncoder();
     const signatureBuffer = await crypto.subtle.sign(
         "RSASSA-PKCS1-v1_5",
-        privateKey,
+        googlePrivateCryptoKey,
         encoder.encode(signatureInput)
     );
     const signature = base64UrlEncode(signatureBuffer);
