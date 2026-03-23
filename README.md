@@ -99,7 +99,7 @@ Example `GOOGLE_SERVICE_ACCOUNT` format:
 │   └── build.ts            # Bun build (JS + CSS minify)
 ├── netlify/
 │   └── edge-functions/
-│       └── search.js       # Edge function (Deno) - API handler
+│       └── search.ts       # Edge function (Deno) - API handler
 ├── netlify.toml            # Netlify configuration
 └── README.md               # This file
 ```
@@ -160,7 +160,7 @@ netlify env:set GOOGLE_SERVICE_ACCOUNT '{"type":"service_account",...}'
 
 - **Frontend** (`src/script.ts` → `script.js`): UI, search state, infinite scroll, image previews
 - **Styles** (`src/style.css` → minified `style.css`)
-- **Backend** (`netlify/edge-functions/search.js`): API handler using Deno edge functions
+- **Backend** (`netlify/edge-functions/search.ts`): API handler using Deno edge functions
 
 Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebuild `script.js` and `style.css` when editing `src/`.
 

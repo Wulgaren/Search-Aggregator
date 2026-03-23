@@ -1,23 +1,33 @@
 // Netlify Edge Function for search - runs at the edge for lower latency
 
+type Timings = Record<string, number>;
+type ServiceAccountConfig = {
+    client_email: string;
+    private_key: string;
+};
+
 // In-memory cache for Google access token (persists across requests in same isolate)
-let googleAccessToken = null;
+let googleAccessToken: string | null = null;
 let googleTokenExpiry = 0;
-let googleServiceAccountConfig = null;
-let googlePrivateCryptoKey = null;
+let googleServiceAccountConfig: ServiceAccountConfig | null = null;
+let googlePrivateCryptoKey: CryptoKey | null = null;
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
-function buildServerTimingHeader(timings) {
+function buildServerTimingHeader(timings: Timings): string {
     return Object.entries(timings)
         .filter(([, duration]) => Number.isFinite(duration))
         .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
         .join(", ");
 }
 
-async function withTiming(name, fn, timings) {
+async function withTiming<T>(
+    name: string,
+    fn: () => Promise<T>,
+    timings: Timings
+): Promise<T> {
     const start = performance.now();
     try {
         return await fn();
@@ -26,7 +36,7 @@ async function withTiming(name, fn, timings) {
     }
 }
 
-export default async (request, context) => {
+export default async (request: Request, context: unknown): Promise<Response> => {
     const requestStart = performance.now();
     const timings = {};
     const url = new URL(request.url);
