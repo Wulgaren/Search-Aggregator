@@ -7,10 +7,6 @@
   path = "/api/search"
   function = "search"
 
-[[edge_functions]]
-  path = "/api/ping"
-  function = "ping"
-
 # Headers for security and caching
 [[headers]]
   for = "/*"

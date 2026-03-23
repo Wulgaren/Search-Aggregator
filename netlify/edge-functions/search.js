@@ -476,7 +476,6 @@ async function fetchBraveImages(query, page = 1) {
     });
 
     if (!response.ok) {
-        console.error(`Brave images error: ${response.status}`);
         return [];
     }
 
@@ -564,7 +563,6 @@ async function fetchWikipediaInfobox(query) {
 
         return null;
     } catch (e) {
-        console.error("Wikipedia infobox error:", e);
         return null;
     }
 }
