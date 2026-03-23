@@ -8,7 +8,25 @@ let googleTokenExpiry = 0;
 const SEARCH_JSON_CACHE =
     "public, max-age=120, s-maxage=120, stale-while-revalidate=86400";
 
+function buildServerTimingHeader(timings) {
+    return Object.entries(timings)
+        .filter(([, duration]) => Number.isFinite(duration))
+        .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
+        .join(", ");
+}
+
+async function withTiming(name, fn, timings) {
+    const start = performance.now();
+    try {
+        return await fn();
+    } finally {
+        timings[name] = performance.now() - start;
+    }
+}
+
 export default async (request, context) => {
+    const requestStart = performance.now();
+    const timings = {};
     const url = new URL(request.url);
     
     // Route to AI handler for /api/ai
@@ -40,12 +58,18 @@ export default async (request, context) => {
 
     // Handle infobox request
     if (source === "infobox") {
-        const infobox = await fetchWikipediaInfobox(searchQuery);
+        const infobox = await withTiming(
+            "infobox",
+            () => fetchWikipediaInfobox(searchQuery),
+            timings
+        );
+        timings.total = performance.now() - requestStart;
         return new Response(JSON.stringify({ infobox }), {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control":
                     "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+                "Server-Timing": buildServerTimingHeader(timings),
             },
         });
     }
@@ -58,17 +82,25 @@ export default async (request, context) => {
         let hasMore = true;
 
         if (imageSource === "google") {
-            const googleImages = await fetchGoogleImages(searchQuery, page);
+            const googleImages = await withTiming(
+                "google_images",
+                () => fetchGoogleImages(searchQuery, page),
+                timings
+            );
             images = googleImages;
             hasMore = page < 10;
         } else if (imageSource === "brave") {
-            const braveImages = await fetchBraveImages(searchQuery, page);
+            const braveImages = await withTiming(
+                "brave_images",
+                () => fetchBraveImages(searchQuery, page),
+                timings
+            );
             images = braveImages;
             hasMore = page < 3;
         } else {
             const [braveImages, googleImages] = await Promise.allSettled([
-                fetchBraveImages(searchQuery, page),
-                fetchGoogleImages(searchQuery, page),
+                withTiming("brave_images", () => fetchBraveImages(searchQuery, page), timings),
+                withTiming("google_images", () => fetchGoogleImages(searchQuery, page), timings),
             ]);
 
             const allImages = [
@@ -91,10 +123,12 @@ export default async (request, context) => {
             hasMore = page < 3;
         }
 
+        timings.total = performance.now() - requestStart;
         return new Response(JSON.stringify({ images, hasMore }), {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control": SEARCH_JSON_CACHE,
+                "Server-Timing": buildServerTimingHeader(timings),
             },
         });
     }
@@ -102,17 +136,21 @@ export default async (request, context) => {
     // Determine which sources to fetch
     const fetchBravePromise =
         !source || source === "brave"
-            ? fetchBrave(searchQuery, page, resultsPerPage)
+            ? withTiming("brave", () => fetchBrave(searchQuery, page, resultsPerPage), timings)
             : Promise.resolve(null);
 
     const fetchGooglePromise =
         !source || source === "google"
-            ? fetchGoogle(searchQuery, page, resultsPerPage)
+            ? withTiming("google", () => fetchGoogle(searchQuery, page, resultsPerPage), timings)
             : Promise.resolve(null);
 
     const fetchMarginaliaPromise =
         !source || source === "marginalia"
-            ? fetchMarginalia(searchQuery, page, resultsPerPage)
+            ? withTiming(
+                  "marginalia",
+                  () => fetchMarginalia(searchQuery, page, resultsPerPage),
+                  timings
+              )
             : Promise.resolve(null);
 
     // Fetch APIs in parallel
@@ -155,10 +193,12 @@ export default async (request, context) => {
                 };
     }
 
+    timings.total = performance.now() - requestStart;
     return new Response(JSON.stringify(response), {
         headers: {
             "Content-Type": "application/json",
             "Cache-Control": SEARCH_JSON_CACHE,
+            "Server-Timing": buildServerTimingHeader(timings),
         },
     });
 };
