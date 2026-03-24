@@ -187,28 +187,6 @@ a:hover {
 }
 
 /* API keys dialog */
-.api-settings-open {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 54px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-
-.api-settings-open:hover {
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
-  border-color: var(--border-color);
-}
-
 .api-settings-dialog {
   max-width: min(520px, calc(100vw - 2rem));
   width: 100%;
@@ -232,6 +210,21 @@ a:hover {
   font-size: 1.125rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
+}
+
+.api-settings-reason {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--commercial-accent);
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.25);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.api-settings-reason[hidden] {
+  display: none;
 }
 
 .api-settings-hint {

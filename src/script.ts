@@ -36,25 +36,68 @@ const API_FIELD_IDS: Record<ApiSecretId, string> = {
     GROQ_API_KEY: 'api-settings-groq',
 };
 
+const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
+
+function hasCommercialApiKeys(): boolean {
+    const brave = Boolean(getApiSecret('BRAVE_API_KEY'));
+    const google =
+        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    return brave || google;
+}
+
+function isAuthLikeApiError(message: string): boolean {
+    if (!message || typeof message !== 'string') return false;
+    const m = message.toLowerCase();
+    if (m.includes('401') || m.includes('403')) return true;
+    if (m.includes('unauthorized') || m.includes('forbidden')) return true;
+    if (m.includes('not configured')) return true;
+    if (m.includes('invalid') && (m.includes('key') || m.includes('token') || m.includes('credential'))) return true;
+    if (m.includes('token exchange failed')) return true;
+    if (m.includes('api key')) return true;
+    if (m.includes('authentication')) return true;
+    return false;
+}
+
+function loadApiSettingsFieldsFromStorage() {
+    (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
+        const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el) el.value = getApiSecret(id);
+    });
+}
+
+function openApiSettingsDialog(reason?: string) {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const reasonEl = document.getElementById('api-settings-reason');
+    if (!dialog || dialog.open) return;
+    if (reasonEl) {
+        if (reason) {
+            reasonEl.textContent = reason;
+            reasonEl.hidden = false;
+        } else {
+            reasonEl.textContent = '';
+            reasonEl.hidden = true;
+        }
+    }
+    loadApiSettingsFieldsFromStorage();
+    dialog.showModal();
+}
+
+function maybeNotifyMissingCommercialKeys() {
+    if (hasCommercialApiKeys()) return;
+    if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
+    sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
+    openApiSettingsDialog(
+        'Add a Brave API key and/or Google Custom Search credentials (cx + service account JSON) to load commercial results.'
+    );
+}
+
 function setupApiSettingsPanel() {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const openBtn = document.getElementById('api-settings-open');
     const closeBtn = document.getElementById('api-settings-close');
     const saveBtn = document.getElementById('api-settings-save');
     const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
-    if (!dialog || !openBtn || !closeBtn || !saveBtn) return;
+    if (!dialog || !closeBtn || !saveBtn) return;
 
-    function loadFieldsFromStorage() {
-        (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
-            const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
-            if (el) el.value = getApiSecret(id);
-        });
-    }
-
-    openBtn.addEventListener('click', () => {
-        loadFieldsFromStorage();
-        dialog.showModal();
-    });
     closeBtn.addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {
         if (e.target === dialog) dialog.close();
@@ -78,6 +121,7 @@ function setupApiSettingsPanel() {
         });
         setApiSecrets(payload);
         if (googleChanged) clearGoogleClientCaches();
+        sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();
     });
 
@@ -198,6 +242,7 @@ function isMergedView() {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupApiSettingsPanel();
+    maybeNotifyMissingCommercialKeys();
     restoreSearchState();
     setupInfiniteScroll();
     setupMouseTracking();
@@ -373,6 +418,11 @@ async function fetchAIAnswer(query) {
         return;
     }
 
+    if (!getApiSecret('GROQ_API_KEY')) {
+        openApiSettingsDialog('Add a Groq API key to use AI answers.');
+        return;
+    }
+
     // Show panel and loading state
     aiPanel.style.display = 'block';
     aiBtn.classList.add('active');
@@ -398,7 +448,15 @@ async function fetchAIAnswer(query) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `Request failed: ${response.status}`);
+            const errMsg = errorData.error || `Request failed: ${response.status}`;
+            if (
+                response.status === 401 ||
+                response.status === 403 ||
+                isAuthLikeApiError(errMsg)
+            ) {
+                openApiSettingsDialog(errMsg);
+            }
+            throw new Error(errMsg);
         }
 
         // Start streaming - keep loading visible until first content arrives
@@ -944,6 +1002,12 @@ async function fetchSource(source, query, page) {
             state.hasMore = false;
             state.error = sourceData.error;
             console.error(`Error from ${source}:`, sourceData.error);
+            if (
+                (source === 'brave' || source === 'google') &&
+                isAuthLikeApiError(sourceData.error)
+            ) {
+                openApiSettingsDialog(sourceData.error);
+            }
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
             state.results = [...state.results, ...sourceData.results];
@@ -953,7 +1017,14 @@ async function fetchSource(source, query, page) {
     } catch (error) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
-        state.error = error.message;
+        const errMsg = error instanceof Error ? error.message : String(error);
+        state.error = errMsg;
+        if (
+            (source === 'brave' || source === 'google') &&
+            isAuthLikeApiError(errMsg)
+        ) {
+            openApiSettingsDialog(errMsg);
+        }
     } finally {
         state.loading = false;
     }
