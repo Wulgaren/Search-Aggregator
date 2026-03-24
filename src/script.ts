@@ -1,4 +1,5 @@
-import { handleSearchApiRequest } from './client-search';
+import { getApiSecret, setApiSecrets, type ApiSecretId } from './api-keys';
+import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
@@ -10,16 +11,80 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const q = params.get('q');
     if (!q || /^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) return;
     const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
+    const hasBrave = Boolean(getApiSecret('BRAVE_API_KEY'));
+    const hasGoogle =
+        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
     window.__earlyFetch = {
         query: q,
-        brave: apiFetch(base + 'brave'),
-        google: apiFetch(base + 'google'),
-        images: apiFetch(
-            `/api/search?q=${encodeURIComponent(q)}&source=images&imageSource=google&page=1`
-        ),
+        ...(hasBrave ? { brave: apiFetch(base + 'brave') } : {}),
+        ...(hasGoogle
+            ? {
+                  google: apiFetch(base + 'google'),
+                  images: apiFetch(
+                      `/api/search?q=${encodeURIComponent(q)}&source=images&imageSource=google&page=1`
+                  ),
+              }
+            : {}),
         infobox: apiFetch(`/api/search?q=${encodeURIComponent(q)}&source=infobox`),
     };
 })();
+
+const API_FIELD_IDS: Record<ApiSecretId, string> = {
+    BRAVE_API_KEY: 'api-settings-brave',
+    GOOGLE_CX: 'api-settings-google-cx',
+    GOOGLE_SERVICE_ACCOUNT: 'api-settings-google-sa',
+    GROQ_API_KEY: 'api-settings-groq',
+};
+
+function setupApiSettingsPanel() {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const openBtn = document.getElementById('api-settings-open');
+    const closeBtn = document.getElementById('api-settings-close');
+    const saveBtn = document.getElementById('api-settings-save');
+    const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
+    if (!dialog || !openBtn || !closeBtn || !saveBtn) return;
+
+    function loadFieldsFromStorage() {
+        (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
+            const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
+            if (el) el.value = getApiSecret(id);
+        });
+    }
+
+    openBtn.addEventListener('click', () => {
+        loadFieldsFromStorage();
+        dialog.showModal();
+    });
+    closeBtn.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.close();
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const payload: Partial<Record<ApiSecretId, string>> = {};
+        let googleChanged = false;
+        (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
+            const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
+            if (!el) return;
+            const next = el.value.trim();
+            const prev = getApiSecret(id);
+            payload[id] = next;
+            if (
+                (id === 'GOOGLE_SERVICE_ACCOUNT' || id === 'GOOGLE_CX') &&
+                next !== prev
+            ) {
+                googleChanged = true;
+            }
+        });
+        setApiSecrets(payload);
+        if (googleChanged) clearGoogleClientCaches();
+        dialog.close();
+    });
+
+    clearGoogleBtn?.addEventListener('click', () => {
+        clearGoogleClientCaches();
+    });
+}
 
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     const el = document.getElementById(id);
@@ -132,6 +197,7 @@ function isMergedView() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    setupApiSettingsPanel();
     restoreSearchState();
     setupInfiniteScroll();
     setupMouseTracking();

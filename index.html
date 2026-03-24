@@ -7,8 +7,8 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=28" as="style" />
-    <link rel="stylesheet" href="style.css?v=28" />
+    <link rel="preload" href="style.css?v=29" as="style" />
+    <link rel="stylesheet" href="style.css?v=29" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -54,8 +54,49 @@
           >
             <span class="ai-icon">✨</span>
           </button>
+          <button
+            type="button"
+            class="api-settings-open"
+            id="api-settings-open"
+            title="API keys (stored in this browser)"
+            aria-label="API keys"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+          </button>
         </div>
       </header>
+
+      <dialog class="api-settings-dialog" id="api-settings-dialog">
+        <div class="api-settings-inner">
+          <h2 class="api-settings-title">API keys</h2>
+          <p class="api-settings-hint">
+            Stored only in this browser’s <code>localStorage</code>. Not embedded in the JS bundle.
+            Google’s access token is saved automatically and expires after about an hour; use “Clear Google token” if search fails after rotating credentials.
+          </p>
+          <label class="api-settings-label" for="api-settings-brave">Brave API key</label>
+          <input class="api-settings-input" id="api-settings-brave" type="password" autocomplete="off" spellcheck="false" />
+
+          <label class="api-settings-label" for="api-settings-google-cx">Google Custom Search Engine ID (cx)</label>
+          <input class="api-settings-input" id="api-settings-google-cx" type="text" autocomplete="off" spellcheck="false" />
+
+          <label class="api-settings-label" for="api-settings-google-sa">Google service account JSON</label>
+          <textarea class="api-settings-textarea" id="api-settings-google-sa" rows="6" spellcheck="false" placeholder='{"type":"service_account",...}'></textarea>
+
+          <label class="api-settings-label" for="api-settings-groq">Groq API key (AI panel)</label>
+          <input class="api-settings-input" id="api-settings-groq" type="password" autocomplete="off" spellcheck="false" />
+
+          <div class="api-settings-actions">
+            <button type="button" class="api-settings-secondary" id="api-settings-clear-google-token">Clear Google token</button>
+            <div class="api-settings-actions-main">
+              <button type="button" class="api-settings-secondary" id="api-settings-close">Cancel</button>
+              <button type="button" class="api-settings-save" id="api-settings-save">Save</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
 
       <!-- AI Answer Panel -->
       <div class="ai-panel" id="ai-panel" style="display: none;">
@@ -211,6 +252,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=40"></script>
+    <script src="script.js?v=41"></script>
   </body>
 </html>

@@ -1,22 +1,34 @@
 // @ts-nocheck
 /**
- * Search + AI API logic bundled for the browser (testing: skip Netlify edge hop).
- * Secrets are inlined at build time via scripts/build.ts --define process.env.*.
+ * Search + AI API logic bundled for the browser.
+ * API keys are read from localStorage (see api-keys.ts); Google OAuth access tokens
+ * are cached in localStorage with expiry (they rotate; typically ~1h).
  */
 
-type Timings = Record<string, number>;
+import {
+    clearStoredGoogleAccessToken,
+    getApiSecret,
+    getStoredGoogleAccessToken,
+    setStoredGoogleAccessToken,
+} from "./api-keys";
 
-declare const process: { env: Record<string, string | undefined> };
+type Timings = Record<string, number>;
 type ServiceAccountConfig = {
     client_email: string;
     private_key: string;
 };
 
-// In-memory cache for Google access token (persists across requests in same isolate)
-let googleAccessToken: string | null = null;
-let googleTokenExpiry = 0;
 let googleServiceAccountConfig: ServiceAccountConfig | null = null;
 let googlePrivateCryptoKey: CryptoKey | null = null;
+let lastServiceAccountJson = "";
+
+/** Call after user changes Google service account / CX in settings */
+export function clearGoogleClientCaches() {
+    googleServiceAccountConfig = null;
+    googlePrivateCryptoKey = null;
+    lastServiceAccountJson = "";
+    clearStoredGoogleAccessToken();
+}
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -222,7 +234,7 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
 }
 
 async function fetchBrave(query, page, resultsPerPage) {
-    const apiKey = process.env.BRAVE_API_KEY;
+    const apiKey = getApiSecret("BRAVE_API_KEY");
 
     if (!apiKey) {
         throw new Error("Brave API key not configured");
@@ -307,13 +319,19 @@ async function importPrivateKey(pem) {
 }
 
 async function getGoogleAccessToken() {
-    // Return cached token if still valid (with 60s buffer)
-    if (googleAccessToken && Date.now() < googleTokenExpiry - 60000) {
-        return googleAccessToken;
+    const stored = getStoredGoogleAccessToken();
+    if (stored) {
+        return stored;
+    }
+
+    const serviceAccountJson = getApiSecret("GOOGLE_SERVICE_ACCOUNT");
+    if (serviceAccountJson !== lastServiceAccountJson) {
+        lastServiceAccountJson = serviceAccountJson;
+        googleServiceAccountConfig = null;
+        googlePrivateCryptoKey = null;
     }
 
     if (!googleServiceAccountConfig) {
-        const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT;
         if (!serviceAccountJson) {
             throw new Error("Google service account not configured");
         }
@@ -382,20 +400,21 @@ async function getGoogleAccessToken() {
     }
 
     const tokenData = await tokenResponse.json();
-    googleAccessToken = tokenData.access_token;
-    googleTokenExpiry = Date.now() + tokenData.expires_in * 1000;
+    const accessToken = tokenData.access_token;
+    const expiresIn = Number(tokenData.expires_in) || 3600;
+    setStoredGoogleAccessToken(accessToken, expiresIn);
 
-    return googleAccessToken;
+    return accessToken;
 }
 
 async function fetchGoogle(query, page, resultsPerPage) {
-    const cx = process.env.GOOGLE_CX;
+    const cx = getApiSecret("GOOGLE_CX");
 
     if (!cx) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
-    if (!process.env.GOOGLE_SERVICE_ACCOUNT) {
+    if (!getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
@@ -477,7 +496,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
 }
 
 async function fetchBraveImages(query, page = 1) {
-    const apiKey = process.env.BRAVE_API_KEY;
+    const apiKey = getApiSecret("BRAVE_API_KEY");
 
     if (!apiKey) {
         return [];
@@ -521,9 +540,9 @@ async function fetchBraveImages(query, page = 1) {
 }
 
 async function fetchGoogleImages(query, page = 1) {
-    const cx = process.env.GOOGLE_CX;
+    const cx = getApiSecret("GOOGLE_CX");
 
-    if (!cx || !process.env.GOOGLE_SERVICE_ACCOUNT) {
+    if (!cx || !getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
         return [];
     }
 
@@ -697,7 +716,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = process.env.GROQ_API_KEY;
+    const groqApiKey = getApiSecret("GROQ_API_KEY");
     if (!groqApiKey) {
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
             status: 500,
