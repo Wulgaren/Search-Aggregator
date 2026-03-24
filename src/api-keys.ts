@@ -80,3 +80,108 @@ export function clearStoredGoogleAccessToken(): void {
         // ignore
     }
 }
+
+/** Shape for the single JSON editor (all keys in one object). */
+export type ApiConfigFile = {
+    braveApiKey?: string;
+    googleCx?: string;
+    /** Full Google service account JSON (object) or a JSON string */
+    googleServiceAccount?: string | Record<string, unknown>;
+    groqApiKey?: string;
+};
+
+/** Pretty JSON for the settings dialog textarea (from current localStorage). */
+export function getApiConfigJsonText(): string {
+    const saRaw = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
+    let googleServiceAccount: string | Record<string, unknown> = '';
+    if (saRaw) {
+        try {
+            googleServiceAccount = JSON.parse(saRaw) as Record<string, unknown>;
+        } catch {
+            googleServiceAccount = saRaw;
+        }
+    }
+    const obj: ApiConfigFile = {
+        braveApiKey: getApiSecret('BRAVE_API_KEY') || undefined,
+        googleCx: getApiSecret('GOOGLE_CX') || undefined,
+        googleServiceAccount: googleServiceAccount || undefined,
+        groqApiKey: getApiSecret('GROQ_API_KEY') || undefined,
+    };
+    const cleaned = Object.fromEntries(
+        Object.entries(obj).filter(([, v]) => v !== undefined && v !== '')
+    );
+    return JSON.stringify(Object.keys(cleaned).length ? cleaned : {}, null, 2);
+}
+
+export function applyApiConfigJsonText(
+    raw: string
+): { ok: true } | { ok: false; error: string } {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+        setApiSecrets({
+            BRAVE_API_KEY: '',
+            GOOGLE_CX: '',
+            GOOGLE_SERVICE_ACCOUNT: '',
+            GROQ_API_KEY: '',
+        });
+        return { ok: true };
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch (e) {
+        return { ok: false, error: 'Invalid JSON: ' + (e instanceof Error ? e.message : String(e)) };
+    }
+
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { ok: false, error: 'Configuration must be a JSON object, e.g. { "braveApiKey": "..." }.' };
+    }
+
+    const o = parsed as Record<string, unknown>;
+    const allowed = new Set([
+        'braveApiKey',
+        'googleCx',
+        'googleServiceAccount',
+        'groqApiKey',
+    ]);
+    for (const k of Object.keys(o)) {
+        if (!allowed.has(k)) {
+            return { ok: false, error: `Unknown key "${k}". Use: braveApiKey, googleCx, googleServiceAccount, groqApiKey.` };
+        }
+    }
+
+    const braveApiKey = typeof o.braveApiKey === 'string' ? o.braveApiKey.trim() : '';
+    const googleCx = typeof o.googleCx === 'string' ? o.googleCx.trim() : '';
+
+    let googleServiceAccount = '';
+    const gsa = o.googleServiceAccount;
+    if (gsa !== undefined && gsa !== null) {
+        if (typeof gsa === 'string') {
+            googleServiceAccount = gsa.trim();
+        } else if (typeof gsa === 'object') {
+            googleServiceAccount = JSON.stringify(gsa);
+        } else {
+            return { ok: false, error: 'googleServiceAccount must be a JSON object or string.' };
+        }
+    }
+
+    const groqApiKey = typeof o.groqApiKey === 'string' ? o.groqApiKey.trim() : '';
+
+    if (googleServiceAccount && !googleServiceAccount.startsWith('{')) {
+        try {
+            JSON.parse(googleServiceAccount);
+        } catch {
+            return { ok: false, error: 'googleServiceAccount must be valid JSON (service account object).' };
+        }
+    }
+
+    setApiSecrets({
+        BRAVE_API_KEY: braveApiKey,
+        GOOGLE_CX: googleCx,
+        GOOGLE_SERVICE_ACCOUNT: googleServiceAccount,
+        GROQ_API_KEY: groqApiKey,
+    });
+
+    return { ok: true };
+}

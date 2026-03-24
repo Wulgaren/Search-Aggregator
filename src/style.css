@@ -234,13 +234,31 @@ a:hover {
   margin-bottom: 1rem;
 }
 
-.api-settings-hint code {
+.api-settings-hint code,
+.api-settings-example {
   font-family: var(--font-mono);
   font-size: 0.8em;
   color: var(--text-primary);
   background: var(--bg-tertiary);
   padding: 0.1em 0.35em;
   border-radius: 4px;
+}
+
+.api-settings-json {
+  min-height: 220px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.api-settings-json-error {
+  font-size: 0.8125rem;
+  color: #f87171;
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}
+
+.api-settings-json-error[hidden] {
+  display: none;
 }
 
 .api-settings-label {

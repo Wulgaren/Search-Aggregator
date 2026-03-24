@@ -1,4 +1,8 @@
-import { getApiSecret, setApiSecrets, type ApiSecretId } from './api-keys';
+import {
+    applyApiConfigJsonText,
+    getApiConfigJsonText,
+    getApiSecret,
+} from './api-keys';
 import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -29,13 +33,6 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     };
 })();
 
-const API_FIELD_IDS: Record<ApiSecretId, string> = {
-    BRAVE_API_KEY: 'api-settings-brave',
-    GOOGLE_CX: 'api-settings-google-cx',
-    GOOGLE_SERVICE_ACCOUNT: 'api-settings-google-sa',
-    GROQ_API_KEY: 'api-settings-groq',
-};
-
 const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
 
 function hasCommercialApiKeys(): boolean {
@@ -58,17 +55,20 @@ function isAuthLikeApiError(message: string): boolean {
     return false;
 }
 
-function loadApiSettingsFieldsFromStorage() {
-    (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
-        const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
-        if (el) el.value = getApiSecret(id);
-    });
+function loadApiSettingsJsonField() {
+    const el = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
+    if (el) el.value = getApiConfigJsonText();
 }
 
 function openApiSettingsDialog(contextMessage?: string) {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
     const contextEl = document.getElementById('api-settings-context');
+    const errEl = document.getElementById('api-settings-json-error');
     if (!dialog || dialog.open) return;
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.hidden = true;
+    }
     if (contextEl) {
         if (contextMessage) {
             contextEl.textContent = contextMessage;
@@ -78,7 +78,7 @@ function openApiSettingsDialog(contextMessage?: string) {
             contextEl.hidden = true;
         }
     }
-    loadApiSettingsFieldsFromStorage();
+    loadApiSettingsJsonField();
     dialog.showModal();
 }
 
@@ -93,10 +93,12 @@ function maybeNotifyMissingCommercialKeys() {
 
 function setupApiSettingsPanel() {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const jsonField = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
+    const errEl = document.getElementById('api-settings-json-error');
     const closeBtn = document.getElementById('api-settings-close');
     const saveBtn = document.getElementById('api-settings-save');
     const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
-    if (!dialog || !closeBtn || !saveBtn) return;
+    if (!dialog || !jsonField || !closeBtn || !saveBtn) return;
 
     closeBtn.addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {
@@ -104,23 +106,26 @@ function setupApiSettingsPanel() {
     });
 
     saveBtn.addEventListener('click', () => {
-        const payload: Partial<Record<ApiSecretId, string>> = {};
-        let googleChanged = false;
-        (Object.keys(API_FIELD_IDS) as ApiSecretId[]).forEach((id) => {
-            const el = document.getElementById(API_FIELD_IDS[id]) as HTMLInputElement | HTMLTextAreaElement | null;
-            if (!el) return;
-            const next = el.value.trim();
-            const prev = getApiSecret(id);
-            payload[id] = next;
-            if (
-                (id === 'GOOGLE_SERVICE_ACCOUNT' || id === 'GOOGLE_CX') &&
-                next !== prev
-            ) {
-                googleChanged = true;
+        const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
+        const beforeCx = getApiSecret('GOOGLE_CX');
+        const result = applyApiConfigJsonText(jsonField.value);
+        if (result.ok === false) {
+            if (errEl) {
+                errEl.textContent = result.error;
+                errEl.hidden = false;
             }
-        });
-        setApiSecrets(payload);
-        if (googleChanged) clearGoogleClientCaches();
+            return;
+        }
+        if (errEl) {
+            errEl.textContent = '';
+            errEl.hidden = true;
+        }
+        if (
+            getApiSecret('GOOGLE_SERVICE_ACCOUNT') !== beforeSa ||
+            getApiSecret('GOOGLE_CX') !== beforeCx
+        ) {
+            clearGoogleClientCaches();
+        }
         sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();
     });
