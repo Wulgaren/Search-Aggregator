@@ -4,10 +4,16 @@ import {
     getApiSecret,
 } from './api-keys';
 import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
+import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
+
+const cachedSearchGet = createCachedSearchGet((request) => handleSearchApiRequest(request));
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
-    return handleSearchApiRequest(new Request(url.toString(), init));
+    if (init?.method === 'POST' || url.pathname !== '/api/search') {
+        return handleSearchApiRequest(new Request(url.toString(), init));
+    }
+    return cachedSearchGet(url.pathname + url.search);
 }
 
 (function startEarlyClientFetch() {
@@ -18,18 +24,26 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const hasBrave = Boolean(getApiSecret('BRAVE_API_KEY'));
     const hasGoogle =
         Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    const enc = encodeURIComponent(q);
+    const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
+    const imgBrave = `/api/search?q=${enc}&source=images&imageSource=brave&page=1`;
+    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
     window.__earlyFetch = {
         query: q,
-        ...(hasBrave ? { brave: apiFetch(base + 'brave') } : {}),
-        ...(hasGoogle
+        ...(hasBrave
             ? {
-                  google: apiFetch(base + 'google'),
-                  images: apiFetch(
-                      `/api/search?q=${encodeURIComponent(q)}&source=images&imageSource=google&page=1`
-                  ),
+                  brave: apiFetch(base + 'brave'),
+                  imagesBrave: apiFetch(imgBrave),
               }
             : {}),
-        infobox: apiFetch(`/api/search?q=${encodeURIComponent(q)}&source=infobox`),
+        ...(hasGoogle && imgGooglePromise
+            ? {
+                  google: apiFetch(base + 'google'),
+                  images: imgGooglePromise,
+              }
+            : {}),
+        marginalia: apiFetch(base + 'marginalia'),
+        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
     };
 })();
 
@@ -126,12 +140,14 @@ function setupApiSettingsPanel() {
         ) {
             clearGoogleClientCaches();
         }
+        void invalidateSearchCache();
         sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();
     });
 
     clearGoogleBtn?.addEventListener('click', () => {
         clearGoogleClientCaches();
+        void invalidateSearchCache();
     });
 }
 
@@ -233,11 +249,6 @@ let renderedMergedUrls = new Set();
 
 /** Avoid duplicate scroll listeners on the image strip */
 let imageSliderScrollBound = false;
-const INITIAL_FETCH_STAGGER_MS = {
-    google: 120,
-    infobox: 180,
-    images: 260,
-};
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -927,30 +938,26 @@ async function performSearch(query) {
     aiPanel.style.display = 'none';
     aiBtn.classList.remove('active');
 
-    // Stage initial requests to reduce first-hit burst against edge/API providers.
     fetchSource('brave', query, 1);
+    fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchSource('google', query, 1);
-    }, INITIAL_FETCH_STAGGER_MS.google);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchInfobox(query);
-    }, INITIAL_FETCH_STAGGER_MS.infobox);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchImages(query);
-    }, INITIAL_FETCH_STAGGER_MS.images);
+    fetchInfobox(query);
+    fetchImages(query, 1);
 }
 
-/** Brave image API after 1s — rate-limit friendly */
+/** Brave images page 1 — uses early prefetch when available */
 function scheduleBraveImagesDelayed(query) {
     setTimeout(async () => {
         try {
-            const braveResponse = await apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
-            );
+            let braveResponse: Response;
+            if (window.__earlyFetch?.query === query && window.__earlyFetch.imagesBrave) {
+                braveResponse = await window.__earlyFetch.imagesBrave;
+                delete window.__earlyFetch.imagesBrave;
+            } else {
+                braveResponse = await apiFetch(
+                    `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
+                );
+            }
             if (braveResponse.ok) {
                 const braveData = await braveResponse.json();
                 const braveImages = braveData.images || [];
