@@ -2,11 +2,6 @@
   publish = "."
   command = "bun install --frozen-lockfile && bun run build"
 
-# Edge Functions configuration
-[[edge_functions]]
-  path = "/api/search"
-  function = "search"
-
 # Headers for security and caching
 [[headers]]
   for = "/*"

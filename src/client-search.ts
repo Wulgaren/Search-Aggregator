@@ -1,16 +1,56 @@
-// Netlify Edge Function for search - runs at the edge for lower latency
+/**
+ * Search + AI API logic bundled for the browser.
+ * API keys are read from localStorage (see api-keys.ts); Google OAuth access tokens
+ * are cached in localStorage with expiry (they rotate; typically ~1h).
+ */
+
+import {
+    clearStoredGoogleAccessToken,
+    getApiSecret,
+    getStoredGoogleAccessToken,
+    setStoredGoogleAccessToken,
+} from "./api-keys";
 
 type Timings = Record<string, number>;
+
+function aggregateErrorMessage(
+    result: PromiseSettledResult<unknown>,
+    fallback: string
+): string {
+    if (result.status === "rejected") {
+        const r = result.reason;
+        return r instanceof Error ? r.message : fallback;
+    }
+    return fallback;
+}
+
+type WikipediaQueryPage = {
+    missing?: boolean;
+    title?: string;
+    extract?: string;
+    thumbnail?: { source?: string; width?: number; height?: number };
+    original?: { source?: string };
+    fullurl?: string;
+};
+
+type WikidataLinkConfig = { name: string; icon: string; urlPrefix?: string };
+
 type ServiceAccountConfig = {
     client_email: string;
     private_key: string;
 };
 
-// In-memory cache for Google access token (persists across requests in same isolate)
-let googleAccessToken: string | null = null;
-let googleTokenExpiry = 0;
 let googleServiceAccountConfig: ServiceAccountConfig | null = null;
 let googlePrivateCryptoKey: CryptoKey | null = null;
+let lastServiceAccountJson = "";
+
+/** Call after user changes Google service account / CX in settings */
+export function clearGoogleClientCaches() {
+    googleServiceAccountConfig = null;
+    googlePrivateCryptoKey = null;
+    lastServiceAccountJson = "";
+    clearStoredGoogleAccessToken();
+}
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -36,9 +76,9 @@ async function withTiming<T>(
     }
 }
 
-export default async (request: Request, context: unknown): Promise<Response> => {
+export async function handleSearchApiRequest(request: Request): Promise<Response> {
     const requestStart = performance.now();
-    const timings = {};
+    const timings: Timings = {};
     const url = new URL(request.url);
     
     // Route to AI handler for /api/ai
@@ -55,7 +95,7 @@ export default async (request: Request, context: unknown): Promise<Response> => 
     }
 
     const query = url.searchParams.get("q");
-    const page = parseInt(url.searchParams.get("page")) || 1;
+    const page = parseInt(url.searchParams.get("page") ?? "", 10) || 1;
     const source = url.searchParams.get("source");
 
     if (!query || query.trim() === "") {
@@ -173,14 +213,22 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             fetchMarginaliaPromise,
         ]);
 
-    const response = { page };
+    const response: {
+        page: number;
+        brave?: unknown;
+        google?: unknown;
+        marginalia?: unknown;
+    } = { page };
 
     if (!source || source === "brave") {
         response.brave =
             braveResults.status === "fulfilled" && braveResults.value
                 ? braveResults.value
                 : {
-                    error: braveResults.reason?.message || "Failed to fetch Brave results",
+                    error: aggregateErrorMessage(
+                        braveResults,
+                        "Failed to fetch Brave results"
+                    ),
                     results: [],
                 };
     }
@@ -190,7 +238,10 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             googleResults.status === "fulfilled" && googleResults.value
                 ? googleResults.value
                 : {
-                    error: googleResults.reason?.message || "Failed to fetch Google results",
+                    error: aggregateErrorMessage(
+                        googleResults,
+                        "Failed to fetch Google results"
+                    ),
                     results: [],
                 };
     }
@@ -200,7 +251,10 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             marginaliaResults.status === "fulfilled" && marginaliaResults.value
                 ? marginaliaResults.value
                 : {
-                    error: marginaliaResults.reason?.message || "Failed to fetch Marginalia results",
+                    error: aggregateErrorMessage(
+                        marginaliaResults,
+                        "Failed to fetch Marginalia results"
+                    ),
                     results: [],
                 };
     }
@@ -213,14 +267,10 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             "Server-Timing": buildServerTimingHeader(timings),
         },
     });
-};
-
-export const config = {
-    path: ["/api/search", "/api/ai"],
-};
+}
 
 async function fetchBrave(query, page, resultsPerPage) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = getApiSecret("BRAVE_API_KEY");
 
     if (!apiKey) {
         throw new Error("Brave API key not configured");
@@ -234,8 +284,8 @@ async function fetchBrave(query, page, resultsPerPage) {
 
     const url = new URL("https://api.search.brave.com/res/v1/web/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", resultsPerPage);
-    url.searchParams.set("offset", offset);
+    url.searchParams.set("count", String(resultsPerPage));
+    url.searchParams.set("offset", String(offset));
     url.searchParams.set("result_filter", "web,news");
 
     const response = await fetch(url.toString(), {
@@ -305,13 +355,19 @@ async function importPrivateKey(pem) {
 }
 
 async function getGoogleAccessToken() {
-    // Return cached token if still valid (with 60s buffer)
-    if (googleAccessToken && Date.now() < googleTokenExpiry - 60000) {
-        return googleAccessToken;
+    const stored = getStoredGoogleAccessToken();
+    if (stored) {
+        return stored;
+    }
+
+    const serviceAccountJson = getApiSecret("GOOGLE_SERVICE_ACCOUNT");
+    if (serviceAccountJson !== lastServiceAccountJson) {
+        lastServiceAccountJson = serviceAccountJson;
+        googleServiceAccountConfig = null;
+        googlePrivateCryptoKey = null;
     }
 
     if (!googleServiceAccountConfig) {
-        const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
         if (!serviceAccountJson) {
             throw new Error("Google service account not configured");
         }
@@ -380,20 +436,21 @@ async function getGoogleAccessToken() {
     }
 
     const tokenData = await tokenResponse.json();
-    googleAccessToken = tokenData.access_token;
-    googleTokenExpiry = Date.now() + tokenData.expires_in * 1000;
+    const accessToken = tokenData.access_token;
+    const expiresIn = Number(tokenData.expires_in) || 3600;
+    setStoredGoogleAccessToken(accessToken, expiresIn);
 
-    return googleAccessToken;
+    return accessToken;
 }
 
 async function fetchGoogle(query, page, resultsPerPage) {
-    const cx = Deno.env.get("GOOGLE_CX");
+    const cx = getApiSecret("GOOGLE_CX");
 
     if (!cx) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
-    if (!Deno.env.get("GOOGLE_SERVICE_ACCOUNT")) {
+    if (!getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
         return { results: [], hasMore: false, totalResults: "0" };
     }
 
@@ -408,8 +465,8 @@ async function fetchGoogle(query, page, resultsPerPage) {
     const url = new URL("https://www.googleapis.com/customsearch/v1");
     url.searchParams.set("cx", cx);
     url.searchParams.set("q", query);
-    url.searchParams.set("num", Math.min(resultsPerPage, 10));
-    url.searchParams.set("start", startIndex);
+    url.searchParams.set("num", String(Math.min(resultsPerPage, 10)));
+    url.searchParams.set("start", String(startIndex));
     url.searchParams.set("fields", "items(title,link,displayLink,snippet),searchInformation/totalResults");
 
     const response = await fetch(url.toString(), {
@@ -475,7 +532,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
 }
 
 async function fetchBraveImages(query, page = 1) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = getApiSecret("BRAVE_API_KEY");
 
     if (!apiKey) {
         return [];
@@ -488,8 +545,8 @@ async function fetchBraveImages(query, page = 1) {
 
     const url = new URL("https://api.search.brave.com/res/v1/images/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", 20);
-    url.searchParams.set("offset", offset);
+    url.searchParams.set("count", "20");
+    url.searchParams.set("offset", String(offset));
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -519,9 +576,9 @@ async function fetchBraveImages(query, page = 1) {
 }
 
 async function fetchGoogleImages(query, page = 1) {
-    const cx = Deno.env.get("GOOGLE_CX");
+    const cx = getApiSecret("GOOGLE_CX");
 
-    if (!cx || !Deno.env.get("GOOGLE_SERVICE_ACCOUNT")) {
+    if (!cx || !getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
         return [];
     }
 
@@ -537,8 +594,8 @@ async function fetchGoogleImages(query, page = 1) {
         url.searchParams.set("cx", cx);
         url.searchParams.set("q", query);
         url.searchParams.set("searchType", "image");
-        url.searchParams.set("num", 10);
-        url.searchParams.set("start", startIndex);
+        url.searchParams.set("num", "10");
+        url.searchParams.set("start", String(startIndex));
 
         const response = await fetch(url.toString(), {
             headers: { Authorization: `Bearer ${accessToken}` },
@@ -597,9 +654,11 @@ async function tryFetchPageInfobox(pageTitle) {
         const pageResponse = await fetch(pageUrl);
         if (!pageResponse.ok) return null;
 
-        const pageData = await pageResponse.json();
+        const pageData = (await pageResponse.json()) as {
+            query?: { pages?: Record<string, WikipediaQueryPage> };
+        };
         const pages = pageData.query?.pages || {};
-        const page = Object.values(pages)[0];
+        const page = Object.values(pages)[0] as WikipediaQueryPage | undefined;
 
         if (!page || page.missing) return null;
 
@@ -614,7 +673,9 @@ async function tryFetchPageInfobox(pageTitle) {
 
             const wikidataResponse = await fetch(wikidataUrl);
             if (wikidataResponse.ok) {
-                const wikidataData = await wikidataResponse.json();
+                const wikidataData = (await wikidataResponse.json()) as {
+                    query?: { pages?: Record<string, { pageprops?: { wikibase_item?: string } }> };
+                };
                 const wikidataPages = wikidataData.query?.pages || {};
                 const wikidataPage = Object.values(wikidataPages)[0];
                 wikidataId = wikidataPage?.pageprops?.wikibase_item;
@@ -629,7 +690,7 @@ async function tryFetchPageInfobox(pageTitle) {
                     const entity = claimsData.entities?.[wikidataId];
                     const claims = entity?.claims || {};
 
-                    const linkProperties = {
+                    const linkProperties: Record<string, WikidataLinkConfig> = {
                         P856: { name: "Official website", icon: "🌐" },
                         P2002: { name: "Twitter", icon: "𝕏", urlPrefix: "https://twitter.com/" },
                         P2003: { name: "Instagram", icon: "📷", urlPrefix: "https://instagram.com/" },
@@ -695,7 +756,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
+    const groqApiKey = getApiSecret("GROQ_API_KEY");
     if (!groqApiKey) {
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
             status: 500,

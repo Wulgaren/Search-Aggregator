@@ -1,3 +1,157 @@
+import {
+    applyApiConfigJsonText,
+    getApiConfigJsonText,
+    getApiSecret,
+} from './api-keys';
+import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
+import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
+
+/** Stagger only for performSearch (matches pre–split early-fetch era: e388c44). Early fetch runs all requests in parallel. */
+const INITIAL_FETCH_STAGGER_MS = {
+    google: 120,
+    infobox: 180,
+    images: 260,
+};
+
+const cachedSearchGet = createCachedSearchGet((request) => handleSearchApiRequest(request));
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+    const url = new URL(path, window.location.origin);
+    if (init?.method === 'POST' || url.pathname !== '/api/search') {
+        return handleSearchApiRequest(new Request(url.toString(), init));
+    }
+    return cachedSearchGet(url.pathname + url.search);
+}
+
+(function startEarlyClientFetch() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (!q || /^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) return;
+    const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
+    const hasBrave = Boolean(getApiSecret('BRAVE_API_KEY'));
+    const hasGoogle =
+        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    const enc = encodeURIComponent(q);
+    const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
+    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
+    window.__earlyFetch = {
+        query: q,
+        ...(hasBrave ? { brave: apiFetch(base + 'brave') } : {}),
+        ...(hasGoogle && imgGooglePromise
+            ? {
+                  google: apiFetch(base + 'google'),
+                  images: imgGooglePromise,
+              }
+            : {}),
+        marginalia: apiFetch(base + 'marginalia'),
+        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
+    };
+})();
+
+const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
+
+function hasCommercialApiKeys(): boolean {
+    const brave = Boolean(getApiSecret('BRAVE_API_KEY'));
+    const google =
+        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    return brave || google;
+}
+
+function isAuthLikeApiError(message: string): boolean {
+    if (!message || typeof message !== 'string') return false;
+    const m = message.toLowerCase();
+    if (m.includes('401') || m.includes('403')) return true;
+    if (m.includes('unauthorized') || m.includes('forbidden')) return true;
+    if (m.includes('not configured')) return true;
+    if (m.includes('invalid') && (m.includes('key') || m.includes('token') || m.includes('credential'))) return true;
+    if (m.includes('token exchange failed')) return true;
+    if (m.includes('api key')) return true;
+    if (m.includes('authentication')) return true;
+    return false;
+}
+
+function loadApiSettingsJsonField() {
+    const el = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
+    if (el) el.value = getApiConfigJsonText();
+}
+
+function openApiSettingsDialog(contextMessage?: string) {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const contextEl = document.getElementById('api-settings-context');
+    const errEl = document.getElementById('api-settings-json-error');
+    if (!dialog || dialog.open) return;
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.hidden = true;
+    }
+    if (contextEl) {
+        if (contextMessage) {
+            contextEl.textContent = contextMessage;
+            contextEl.hidden = false;
+        } else {
+            contextEl.textContent = '';
+            contextEl.hidden = true;
+        }
+    }
+    loadApiSettingsJsonField();
+    dialog.showModal();
+}
+
+function maybeNotifyMissingCommercialKeys() {
+    if (hasCommercialApiKeys()) return;
+    if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
+    sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
+    openApiSettingsDialog(
+        'Add a Brave API key and/or Google Custom Search credentials (cx + service account JSON) to load commercial results.'
+    );
+}
+
+function setupApiSettingsPanel() {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const jsonField = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
+    const errEl = document.getElementById('api-settings-json-error');
+    const closeBtn = document.getElementById('api-settings-close');
+    const saveBtn = document.getElementById('api-settings-save');
+    const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
+    if (!dialog || !jsonField || !closeBtn || !saveBtn) return;
+
+    closeBtn.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.close();
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
+        const beforeCx = getApiSecret('GOOGLE_CX');
+        const result = applyApiConfigJsonText(jsonField.value);
+        if (result.ok === false) {
+            if (errEl) {
+                errEl.textContent = result.error;
+                errEl.hidden = false;
+            }
+            return;
+        }
+        if (errEl) {
+            errEl.textContent = '';
+            errEl.hidden = true;
+        }
+        if (
+            getApiSecret('GOOGLE_SERVICE_ACCOUNT') !== beforeSa ||
+            getApiSecret('GOOGLE_CX') !== beforeCx
+        ) {
+            clearGoogleClientCaches();
+        }
+        void invalidateSearchCache();
+        sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
+        dialog.close();
+    });
+
+    clearGoogleBtn?.addEventListener('click', () => {
+        clearGoogleClientCaches();
+        void invalidateSearchCache();
+    });
+}
+
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     const el = document.getElementById(id);
     if (!el) throw new Error(`Missing #${id}`);
@@ -96,11 +250,6 @@ let renderedMergedUrls = new Set();
 
 /** Avoid duplicate scroll listeners on the image strip */
 let imageSliderScrollBound = false;
-const INITIAL_FETCH_STAGGER_MS = {
-    google: 120,
-    infobox: 180,
-    images: 260,
-};
 
 // Check if we're in mobile merged view
 function isMergedView() {
@@ -109,6 +258,8 @@ function isMergedView() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    setupApiSettingsPanel();
+    maybeNotifyMissingCommercialKeys();
     restoreSearchState();
     setupInfiniteScroll();
     setupMouseTracking();
@@ -284,6 +435,11 @@ async function fetchAIAnswer(query) {
         return;
     }
 
+    if (!getApiSecret('GROQ_API_KEY')) {
+        openApiSettingsDialog('Add a Groq API key to use AI answers.');
+        return;
+    }
+
     // Show panel and loading state
     aiPanel.style.display = 'block';
     aiBtn.classList.add('active');
@@ -300,7 +456,7 @@ async function fetchAIAnswer(query) {
     aiState.abortController = new AbortController();
 
     try {
-        const response = await fetch('/api/ai', {
+        const response = await apiFetch('/api/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query }),
@@ -309,7 +465,15 @@ async function fetchAIAnswer(query) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `Request failed: ${response.status}`);
+            const errMsg = errorData.error || `Request failed: ${response.status}`;
+            if (
+                response.status === 401 ||
+                response.status === 403 ||
+                isAuthLikeApiError(errMsg)
+            ) {
+                openApiSettingsDialog(errMsg);
+            }
+            throw new Error(errMsg);
         }
 
         // Start streaming - keep loading visible until first content arrives
@@ -775,7 +939,6 @@ async function performSearch(query) {
     aiPanel.style.display = 'none';
     aiBtn.classList.remove('active');
 
-    // Stage initial requests to reduce first-hit burst against edge/API providers.
     fetchSource('brave', query, 1);
     fetchSource('marginalia', query, 1);
 
@@ -788,15 +951,15 @@ async function performSearch(query) {
     }, INITIAL_FETCH_STAGGER_MS.infobox);
 
     setTimeout(() => {
-        if (currentQuery === query) fetchImages(query);
+        if (currentQuery === query) fetchImages(query, 1);
     }, INITIAL_FETCH_STAGGER_MS.images);
 }
 
-/** Brave image API after 1s — rate-limit friendly */
+/** Brave images page 1 — 1s after fetchImages starts (rate-limit friendly); not in early fetch (same as e388c44). */
 function scheduleBraveImagesDelayed(query) {
     setTimeout(async () => {
         try {
-            const braveResponse = await fetch(
+            const braveResponse = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
             );
             if (braveResponse.ok) {
@@ -841,7 +1004,7 @@ async function fetchSource(source, query, page) {
             response = await early[key]!;
             delete early[key];
         } else {
-            response = await fetch(
+            response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
             );
         }
@@ -855,6 +1018,12 @@ async function fetchSource(source, query, page) {
             state.hasMore = false;
             state.error = sourceData.error;
             console.error(`Error from ${source}:`, sourceData.error);
+            if (
+                (source === 'brave' || source === 'google') &&
+                isAuthLikeApiError(sourceData.error)
+            ) {
+                openApiSettingsDialog(sourceData.error);
+            }
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
             state.results = [...state.results, ...sourceData.results];
@@ -864,7 +1033,14 @@ async function fetchSource(source, query, page) {
     } catch (error) {
         console.error(`Error fetching ${source}:`, error);
         state.hasMore = false;
-        state.error = error.message;
+        const errMsg = error instanceof Error ? error.message : String(error);
+        state.error = errMsg;
+        if (
+            (source === 'brave' || source === 'google') &&
+            isAuthLikeApiError(errMsg)
+        ) {
+            openApiSettingsDialog(errMsg);
+        }
     } finally {
         state.loading = false;
     }
@@ -1247,7 +1423,7 @@ async function fetchImages(query, page = 1) {
                 googleResponse = await window.__earlyFetch.images;
                 delete window.__earlyFetch.images;
             } else {
-                googleResponse = await fetch(
+                googleResponse = await apiFetch(
                     `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
                 );
             }
@@ -1278,7 +1454,7 @@ async function fetchImages(query, page = 1) {
             imageState.hasMore = true;
         } else {
             // Subsequent pages: fetch both together (user-triggered, rate limit not an issue)
-            const response = await fetch(
+            const response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
             );
 
@@ -1500,7 +1676,7 @@ async function fetchInfobox(query) {
             response = await window.__earlyFetch.infobox;
             delete window.__earlyFetch.infobox;
         } else {
-            response = await fetch(
+            response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=infobox`
             );
         }
@@ -1657,16 +1833,6 @@ function removeLoadingMore(container) {
 
 function updateCount(element, count, hasMore) {
     element.textContent = hasMore ? `${count}+ results` : `${count} results`;
-}
-
-function showError(container, message) {
-    container.innerHTML = `
-        <div class="error-state">
-            <span class="error-icon">⚠</span>
-            <span class="error-message">Something went wrong</span>
-            <span class="error-detail">${escapeHtml(message)}</span>
-        </div>
-    `;
 }
 
 function resetResults() {
