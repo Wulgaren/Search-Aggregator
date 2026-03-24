@@ -212,7 +212,7 @@ a:hover {
   margin-bottom: 0.75rem;
 }
 
-.api-settings-reason {
+.api-settings-context {
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--commercial-accent);
@@ -223,7 +223,7 @@ a:hover {
   margin-bottom: 0.75rem;
 }
 
-.api-settings-reason[hidden] {
+.api-settings-context[hidden] {
   display: none;
 }
 

@@ -65,17 +65,17 @@ function loadApiSettingsFieldsFromStorage() {
     });
 }
 
-function openApiSettingsDialog(reason?: string) {
+function openApiSettingsDialog(contextMessage?: string) {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const reasonEl = document.getElementById('api-settings-reason');
+    const contextEl = document.getElementById('api-settings-context');
     if (!dialog || dialog.open) return;
-    if (reasonEl) {
-        if (reason) {
-            reasonEl.textContent = reason;
-            reasonEl.hidden = false;
+    if (contextEl) {
+        if (contextMessage) {
+            contextEl.textContent = contextMessage;
+            contextEl.hidden = false;
         } else {
-            reasonEl.textContent = '';
-            reasonEl.hidden = true;
+            contextEl.textContent = '';
+            contextEl.hidden = true;
         }
     }
     loadApiSettingsFieldsFromStorage();

@@ -7,8 +7,8 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=30" as="style" />
-    <link rel="stylesheet" href="style.css?v=30" />
+    <link rel="preload" href="style.css?v=31" as="style" />
+    <link rel="stylesheet" href="style.css?v=31" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -60,7 +60,8 @@
       <dialog class="api-settings-dialog" id="api-settings-dialog">
         <div class="api-settings-inner">
           <h2 class="api-settings-title">API keys</h2>
-          <p class="api-settings-reason" id="api-settings-reason" hidden></p>
+          <!-- Shown when the dialog auto-opens: why (missing keys, bad key, API error). Hidden when empty. -->
+          <p class="api-settings-context" id="api-settings-context" hidden></p>
           <p class="api-settings-hint">
             Stored only in this browser’s <code>localStorage</code>. Not embedded in the JS bundle.
             Google’s access token is saved automatically and expires after about an hour; use “Clear Google token” if search fails after rotating credentials.
@@ -241,6 +242,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=42"></script>
+    <script src="script.js?v=43"></script>
   </body>
 </html>
