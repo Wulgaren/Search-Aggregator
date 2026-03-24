@@ -7,7 +7,6 @@ interface Window {
     brave?: Promise<Response>;
     marginalia?: Promise<Response>;
     images?: Promise<Response>;
-    imagesBrave?: Promise<Response>;
     infobox?: Promise<Response>;
   };
   scrollObservers?: Record<string, IntersectionObserver>;
