@@ -1835,16 +1835,6 @@ function updateCount(element, count, hasMore) {
     element.textContent = hasMore ? `${count}+ results` : `${count} results`;
 }
 
-function showError(container, message) {
-    container.innerHTML = `
-        <div class="error-state">
-            <span class="error-icon">⚠</span>
-            <span class="error-message">Something went wrong</span>
-            <span class="error-detail">${escapeHtml(message)}</span>
-        </div>
-    `;
-}
-
 function resetResults() {
     currentQuery = '';
     braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
