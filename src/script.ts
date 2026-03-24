@@ -6,6 +6,14 @@ import {
 import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
 import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
 
+/** Same timing as before parallel-fetch PR: stagger web/infobox/images; Brave images 1s after fetchImages starts. */
+const INITIAL_FETCH_STAGGER_MS = {
+    google: 120,
+    infobox: 180,
+    images: 260,
+};
+const BRAVE_IMAGES_AFTER_FETCH_IMAGES_MS = 1000;
+
 const cachedSearchGet = createCachedSearchGet((request) => handleSearchApiRequest(request));
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -27,24 +35,31 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const enc = encodeURIComponent(q);
     const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
     const imgBrave = `/api/search?q=${enc}&source=images&imageSource=brave&page=1`;
-    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
-    window.__earlyFetch = {
-        query: q,
-        ...(hasBrave
-            ? {
-                  brave: apiFetch(base + 'brave'),
-                  imagesBrave: apiFetch(imgBrave),
-              }
-            : {}),
-        ...(hasGoogle && imgGooglePromise
-            ? {
-                  google: apiFetch(base + 'google'),
-                  images: imgGooglePromise,
-              }
-            : {}),
-        marginalia: apiFetch(base + 'marginalia'),
-        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
-    };
+    const infoboxUrl = `/api/search?q=${enc}&source=infobox`;
+
+    const early: NonNullable<Window['__earlyFetch']> = { query: q };
+    window.__earlyFetch = early;
+
+    if (hasBrave) {
+        early.brave = apiFetch(base + 'brave');
+    }
+    early.marginalia = apiFetch(base + 'marginalia');
+
+    setTimeout(() => {
+        if (window.__earlyFetch?.query !== q || !hasGoogle) return;
+        early.google = apiFetch(base + 'google');
+        early.images = apiFetch(imgGoogle);
+    }, INITIAL_FETCH_STAGGER_MS.google);
+
+    setTimeout(() => {
+        if (window.__earlyFetch?.query !== q) return;
+        early.infobox = apiFetch(infoboxUrl);
+    }, INITIAL_FETCH_STAGGER_MS.infobox);
+
+    setTimeout(() => {
+        if (window.__earlyFetch?.query !== q || !hasBrave) return;
+        early.imagesBrave = apiFetch(imgBrave);
+    }, INITIAL_FETCH_STAGGER_MS.images + BRAVE_IMAGES_AFTER_FETCH_IMAGES_MS);
 })();
 
 const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
@@ -939,10 +954,19 @@ async function performSearch(query) {
     aiBtn.classList.remove('active');
 
     fetchSource('brave', query, 1);
-    fetchSource('google', query, 1);
     fetchSource('marginalia', query, 1);
-    fetchInfobox(query);
-    fetchImages(query, 1);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchSource('google', query, 1);
+    }, INITIAL_FETCH_STAGGER_MS.google);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchInfobox(query);
+    }, INITIAL_FETCH_STAGGER_MS.infobox);
+
+    setTimeout(() => {
+        if (currentQuery === query) fetchImages(query, 1);
+    }, INITIAL_FETCH_STAGGER_MS.images);
 }
 
 /** Brave images page 1 — uses early prefetch when available */
