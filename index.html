@@ -7,8 +7,8 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=32" as="style" />
-    <link rel="stylesheet" href="style.css?v=32" />
+    <link rel="preload" href="style.css?v=33" as="style" />
+    <link rel="stylesheet" href="style.css?v=33" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -62,21 +62,51 @@
           <h2 class="api-settings-title">API configuration</h2>
           <p class="api-settings-context" id="api-settings-context" hidden></p>
           <p class="api-settings-hint">
-            One JSON object in <code>localStorage</code>. Example:
-            <code class="api-settings-example">braveApiKey</code>,
-            <code class="api-settings-example">googleCx</code>,
-            <code class="api-settings-example">googleServiceAccount</code> (object or string),
-            <code class="api-settings-example">groqApiKey</code>.
-            Clear the field and save to remove keys. Google’s OAuth token is cached separately; use “Clear Google token” if search fails after rotating credentials.
+            Values are stored in <code>localStorage</code>. Clear a field and save to remove that key. Google’s OAuth token is cached separately; use “Clear Google token” if search fails after rotating credentials.
           </p>
-          <label class="api-settings-label" for="api-settings-json">JSON</label>
-          <textarea
-            class="api-settings-textarea api-settings-json"
-            id="api-settings-json"
-            rows="12"
-            spellcheck="false"
-            placeholder='{\n  "braveApiKey": "",\n  "googleCx": "",\n  "googleServiceAccount": { },\n  "groqApiKey": ""\n}'
-          ></textarea>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-brave">Brave API key</label>
+            <input
+              type="password"
+              class="api-settings-input"
+              id="api-settings-brave"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Brave Search API key"
+            />
+          </div>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-google-cx">Google Custom Search Engine ID (cx)</label>
+            <input
+              type="text"
+              class="api-settings-input"
+              id="api-settings-google-cx"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="cx"
+            />
+          </div>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-google-sa">Google service account JSON</label>
+            <textarea
+              class="api-settings-textarea api-settings-json"
+              id="api-settings-google-sa"
+              rows="8"
+              spellcheck="false"
+              placeholder="Paste the full service account JSON from Google Cloud"
+            ></textarea>
+          </div>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-groq">Groq API key</label>
+            <input
+              type="password"
+              class="api-settings-input"
+              id="api-settings-groq"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Groq API key"
+            />
+          </div>
           <p class="api-settings-json-error" id="api-settings-json-error" hidden></p>
 
           <div class="api-settings-actions">
@@ -243,6 +273,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=47"></script>
+    <script src="script.js?v=48"></script>
   </body>
 </html>

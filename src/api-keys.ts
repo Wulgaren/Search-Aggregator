@@ -90,6 +90,30 @@ export type ApiConfigFile = {
     groqApiKey?: string;
 };
 
+/** Values for the individual API settings inputs (from localStorage). */
+export function getApiSecretsFields(): {
+    braveApiKey: string;
+    googleCx: string;
+    googleServiceAccount: string;
+    groqApiKey: string;
+} {
+    const saRaw = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
+    let googleServiceAccount = '';
+    if (saRaw) {
+        try {
+            googleServiceAccount = JSON.stringify(JSON.parse(saRaw) as Record<string, unknown>, null, 2);
+        } catch {
+            googleServiceAccount = saRaw;
+        }
+    }
+    return {
+        braveApiKey: getApiSecret('BRAVE_API_KEY'),
+        googleCx: getApiSecret('GOOGLE_CX'),
+        googleServiceAccount,
+        groqApiKey: getApiSecret('GROQ_API_KEY'),
+    };
+}
+
 /** Pretty JSON for the settings dialog textarea (from current localStorage). */
 export function getApiConfigJsonText(): string {
     const saRaw = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
@@ -167,6 +191,26 @@ export function applyApiConfigJsonText(
     }
 
     const groqApiKey = typeof o.groqApiKey === 'string' ? o.groqApiKey.trim() : '';
+
+    return applyApiSecretsFromFields({
+        braveApiKey,
+        googleCx,
+        googleServiceAccount,
+        groqApiKey,
+    });
+}
+
+/** Persist API secrets from individual form fields (same rules as JSON import). */
+export function applyApiSecretsFromFields(fields: {
+    braveApiKey: string;
+    googleCx: string;
+    googleServiceAccount: string;
+    groqApiKey: string;
+}): { ok: true } | { ok: false; error: string } {
+    const braveApiKey = fields.braveApiKey.trim();
+    const googleCx = fields.googleCx.trim();
+    const googleServiceAccount = fields.googleServiceAccount.trim();
+    const groqApiKey = fields.groqApiKey.trim();
 
     if (googleServiceAccount && !googleServiceAccount.startsWith('{')) {
         try {

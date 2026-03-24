@@ -1,7 +1,7 @@
 import {
-    applyApiConfigJsonText,
-    getApiConfigJsonText,
+    applyApiSecretsFromFields,
     getApiSecret,
+    getApiSecretsFields,
 } from './api-keys';
 import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
 import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
@@ -70,9 +70,16 @@ function isAuthLikeApiError(message: string): boolean {
     return false;
 }
 
-function loadApiSettingsJsonField() {
-    const el = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
-    if (el) el.value = getApiConfigJsonText();
+function loadApiSettingsFields() {
+    const f = getApiSecretsFields();
+    const brave = document.getElementById('api-settings-brave') as HTMLInputElement | null;
+    const cx = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
+    const sa = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
+    const groq = document.getElementById('api-settings-groq') as HTMLInputElement | null;
+    if (brave) brave.value = f.braveApiKey;
+    if (cx) cx.value = f.googleCx;
+    if (sa) sa.value = f.googleServiceAccount;
+    if (groq) groq.value = f.groqApiKey;
 }
 
 function openApiSettingsDialog(contextMessage?: string) {
@@ -93,7 +100,7 @@ function openApiSettingsDialog(contextMessage?: string) {
             contextEl.hidden = true;
         }
     }
-    loadApiSettingsJsonField();
+    loadApiSettingsFields();
     dialog.showModal();
 }
 
@@ -108,12 +115,15 @@ function maybeNotifyMissingCommercialKeys() {
 
 function setupApiSettingsPanel() {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const jsonField = document.getElementById('api-settings-json') as HTMLTextAreaElement | null;
+    const braveField = document.getElementById('api-settings-brave') as HTMLInputElement | null;
+    const cxField = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
+    const saField = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
+    const groqField = document.getElementById('api-settings-groq') as HTMLInputElement | null;
     const errEl = document.getElementById('api-settings-json-error');
     const closeBtn = document.getElementById('api-settings-close');
     const saveBtn = document.getElementById('api-settings-save');
     const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
-    if (!dialog || !jsonField || !closeBtn || !saveBtn) return;
+    if (!dialog || !braveField || !cxField || !saField || !groqField || !closeBtn || !saveBtn) return;
 
     closeBtn.addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {
@@ -123,7 +133,12 @@ function setupApiSettingsPanel() {
     saveBtn.addEventListener('click', () => {
         const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
         const beforeCx = getApiSecret('GOOGLE_CX');
-        const result = applyApiConfigJsonText(jsonField.value);
+        const result = applyApiSecretsFromFields({
+            braveApiKey: braveField.value,
+            googleCx: cxField.value,
+            googleServiceAccount: saField.value,
+            groqApiKey: groqField.value,
+        });
         if (result.ok === false) {
             if (errEl) {
                 errEl.textContent = result.error;
