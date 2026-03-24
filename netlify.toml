@@ -2,6 +2,15 @@
   publish = "."
   command = "bun install --frozen-lockfile && bun run build"
 
+# Edge: Brave, Marginalia, Wikipedia infobox, Brave images, Groq (/api/ai). Google uses the browser (popup).
+[[edge_functions]]
+  path = "/api/search"
+  function = "search"
+
+[[edge_functions]]
+  path = "/api/ai"
+  function = "search"
+
 # Headers for security and caching
 [[headers]]
   for = "/*"

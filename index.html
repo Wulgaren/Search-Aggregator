@@ -7,8 +7,8 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=33" as="style" />
-    <link rel="stylesheet" href="style.css?v=33" />
+    <link rel="preload" href="style.css?v=38" as="style" />
+    <link rel="stylesheet" href="style.css?v=38" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -59,22 +59,11 @@
 
       <dialog class="api-settings-dialog" id="api-settings-dialog">
         <div class="api-settings-inner">
-          <h2 class="api-settings-title">API configuration</h2>
+          <h2 class="api-settings-title">Google Custom Search</h2>
           <p class="api-settings-context" id="api-settings-context" hidden></p>
           <p class="api-settings-hint">
-            Values are stored in <code>localStorage</code>. Clear a field and save to remove that key. Google’s OAuth token is cached separately; use “Clear Google token” if search fails after rotating credentials.
+            Values are stored in <code>localStorage</code>. Brave, Marginalia, and Groq use Netlify environment variables. Clear a field and save to remove it. Use “Clear Google token” if search fails after rotating credentials.
           </p>
-          <div class="api-settings-field">
-            <label class="api-settings-label" for="api-settings-brave">Brave API key</label>
-            <input
-              type="password"
-              class="api-settings-input"
-              id="api-settings-brave"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="Brave Search API key"
-            />
-          </div>
           <div class="api-settings-field">
             <label class="api-settings-label" for="api-settings-google-cx">Google Custom Search Engine ID (cx)</label>
             <input
@@ -95,17 +84,6 @@
               spellcheck="false"
               placeholder="Paste the full service account JSON from Google Cloud"
             ></textarea>
-          </div>
-          <div class="api-settings-field">
-            <label class="api-settings-label" for="api-settings-groq">Groq API key</label>
-            <input
-              type="password"
-              class="api-settings-input"
-              id="api-settings-groq"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="Groq API key"
-            />
           </div>
           <p class="api-settings-json-error" id="api-settings-json-error" hidden></p>
 
@@ -273,6 +251,6 @@
       </footer>
     </div>
 
-    <script src="script.js?v=48"></script>
+    <script src="script.js?v=52"></script>
   </body>
 </html>

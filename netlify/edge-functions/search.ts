@@ -1,56 +1,6 @@
-/**
- * Search + AI API logic bundled for the browser.
- * API keys are read from localStorage (see api-keys.ts); Google OAuth access tokens
- * are cached in localStorage with expiry (they rotate; typically ~1h).
- */
-
-import {
-    clearStoredGoogleAccessToken,
-    getApiSecret,
-    getStoredGoogleAccessToken,
-    setStoredGoogleAccessToken,
-} from "./api-keys";
+// Netlify Edge Function for search - runs at the edge for lower latency
 
 type Timings = Record<string, number>;
-
-function aggregateErrorMessage(
-    result: PromiseSettledResult<unknown>,
-    fallback: string
-): string {
-    if (result.status === "rejected") {
-        const r = result.reason;
-        return r instanceof Error ? r.message : fallback;
-    }
-    return fallback;
-}
-
-type WikipediaQueryPage = {
-    missing?: boolean;
-    title?: string;
-    extract?: string;
-    thumbnail?: { source?: string; width?: number; height?: number };
-    original?: { source?: string };
-    fullurl?: string;
-};
-
-type WikidataLinkConfig = { name: string; icon: string; urlPrefix?: string };
-
-type ServiceAccountConfig = {
-    client_email: string;
-    private_key: string;
-};
-
-let googleServiceAccountConfig: ServiceAccountConfig | null = null;
-let googlePrivateCryptoKey: CryptoKey | null = null;
-let lastServiceAccountJson = "";
-
-/** Call after user changes Google service account / CX in settings */
-export function clearGoogleClientCaches() {
-    googleServiceAccountConfig = null;
-    googlePrivateCryptoKey = null;
-    lastServiceAccountJson = "";
-    clearStoredGoogleAccessToken();
-}
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -76,9 +26,9 @@ async function withTiming<T>(
     }
 }
 
-export async function handleSearchApiRequest(request: Request): Promise<Response> {
+export default async (request: Request, context: unknown): Promise<Response> => {
     const requestStart = performance.now();
-    const timings: Timings = {};
+    const timings = {};
     const url = new URL(request.url);
     
     // Route to AI handler for /api/ai
@@ -95,7 +45,7 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
     }
 
     const query = url.searchParams.get("q");
-    const page = parseInt(url.searchParams.get("page") ?? "", 10) || 1;
+    const page = parseInt(url.searchParams.get("page")) || 1;
     const source = url.searchParams.get("source");
 
     if (!query || query.trim() === "") {
@@ -107,6 +57,13 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
+
+    if (source === "google") {
+        return new Response(
+            JSON.stringify({ error: "Google Custom Search runs in the browser (configure cx + service account in the site settings)." }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+    }
 
     // Handle infobox request
     if (source === "infobox") {
@@ -130,70 +87,37 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
     const imageSource = url.searchParams.get("imageSource");
 
     if (source === "images") {
-        let images = [];
-        let hasMore = true;
-
-        if (imageSource === "google") {
-            const googleImages = await withTiming(
-                "google_images",
-                () => fetchGoogleImages(searchQuery, page),
-                timings
+        if (imageSource === "google" || !imageSource) {
+            return new Response(
+                JSON.stringify({
+                    error: "Google and combined image search are handled in the browser",
+                }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
             );
-            images = googleImages;
-            hasMore = page < 10;
-        } else if (imageSource === "brave") {
-            const braveImages = await withTiming(
-                "brave_images",
-                () => fetchBraveImages(searchQuery, page),
-                timings
-            );
-            images = braveImages;
-            hasMore = page < 3;
-        } else {
-            const [braveImages, googleImages] = await Promise.allSettled([
-                withTiming("brave_images", () => fetchBraveImages(searchQuery, page), timings),
-                withTiming("google_images", () => fetchGoogleImages(searchQuery, page), timings),
-            ]);
-
-            const allImages = [
-                ...(braveImages.status === "fulfilled" ? braveImages.value : []),
-                ...(googleImages.status === "fulfilled" ? googleImages.value : []),
-            ];
-
-            const seenUrls = new Set();
-            images = allImages.filter((img) => {
-                const normalizedUrl = img.full
-                    .replace(/^https?:\/\//, "")
-                    .replace(/\/$/, "");
-                if (seenUrls.has(normalizedUrl)) {
-                    return false;
-                }
-                seenUrls.add(normalizedUrl);
-                return true;
-            });
-
-            hasMore = page < 3;
         }
 
+        const braveImages = await withTiming(
+            "brave_images",
+            () => fetchBraveImages(searchQuery, page),
+            timings
+        );
         timings.total = performance.now() - requestStart;
-        return new Response(JSON.stringify({ images, hasMore }), {
-            headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": SEARCH_JSON_CACHE,
-                "Server-Timing": buildServerTimingHeader(timings),
-            },
-        });
+        return new Response(
+            JSON.stringify({ images: braveImages, hasMore: page < 3 }),
+            {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                    "Server-Timing": buildServerTimingHeader(timings),
+                },
+            }
+        );
     }
 
     // Determine which sources to fetch
     const fetchBravePromise =
         !source || source === "brave"
             ? withTiming("brave", () => fetchBrave(searchQuery, page, resultsPerPage), timings)
-            : Promise.resolve(null);
-
-    const fetchGooglePromise =
-        !source || source === "google"
-            ? withTiming("google", () => fetchGoogle(searchQuery, page, resultsPerPage), timings)
             : Promise.resolve(null);
 
     const fetchMarginaliaPromise =
@@ -205,18 +129,14 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
               )
             : Promise.resolve(null);
 
-    // Fetch APIs in parallel
-    const [braveResults, googleResults, marginaliaResults] =
-        await Promise.allSettled([
-            fetchBravePromise,
-            fetchGooglePromise,
-            fetchMarginaliaPromise,
-        ]);
+    const [braveResults, marginaliaResults] = await Promise.allSettled([
+        fetchBravePromise,
+        fetchMarginaliaPromise,
+    ]);
 
     const response: {
         page: number;
         brave?: unknown;
-        google?: unknown;
         marginalia?: unknown;
     } = { page };
 
@@ -225,23 +145,9 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
             braveResults.status === "fulfilled" && braveResults.value
                 ? braveResults.value
                 : {
-                    error: aggregateErrorMessage(
-                        braveResults,
-                        "Failed to fetch Brave results"
-                    ),
-                    results: [],
-                };
-    }
-
-    if (!source || source === "google") {
-        response.google =
-            googleResults.status === "fulfilled" && googleResults.value
-                ? googleResults.value
-                : {
-                    error: aggregateErrorMessage(
-                        googleResults,
-                        "Failed to fetch Google results"
-                    ),
+                    error:
+                        (braveResults.reason as Error)?.message ||
+                        "Failed to fetch Brave results",
                     results: [],
                 };
     }
@@ -251,10 +157,9 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
             marginaliaResults.status === "fulfilled" && marginaliaResults.value
                 ? marginaliaResults.value
                 : {
-                    error: aggregateErrorMessage(
-                        marginaliaResults,
-                        "Failed to fetch Marginalia results"
-                    ),
+                    error:
+                        (marginaliaResults.reason as Error)?.message ||
+                        "Failed to fetch Marginalia results",
                     results: [],
                 };
     }
@@ -267,10 +172,10 @@ export async function handleSearchApiRequest(request: Request): Promise<Response
             "Server-Timing": buildServerTimingHeader(timings),
         },
     });
-}
+};
 
 async function fetchBrave(query, page, resultsPerPage) {
-    const apiKey = getApiSecret("BRAVE_API_KEY");
+    const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
         throw new Error("Brave API key not configured");
@@ -284,8 +189,8 @@ async function fetchBrave(query, page, resultsPerPage) {
 
     const url = new URL("https://api.search.brave.com/res/v1/web/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", String(resultsPerPage));
-    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("count", resultsPerPage);
+    url.searchParams.set("offset", offset);
     url.searchParams.set("result_filter", "web,news");
 
     const response = await fetch(url.toString(), {
@@ -318,184 +223,6 @@ async function fetchBrave(query, page, resultsPerPage) {
         results,
         hasMore: webResults.length === resultsPerPage && offset < 9,
         totalResults: String(data.web?.total || results.length),
-    };
-}
-
-// Base64url encode for JWT
-function base64UrlEncode(data) {
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(data)));
-    return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function base64UrlEncodeString(str) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(str);
-    return base64UrlEncode(data);
-}
-
-// Import PEM private key for Web Crypto
-async function importPrivateKey(pem) {
-    // Remove PEM header/footer and decode
-    const pemContents = pem
-        .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-        .replace(/-----END PRIVATE KEY-----/g, "")
-        .replace(/-----BEGIN RSA PRIVATE KEY-----/g, "")
-        .replace(/-----END RSA PRIVATE KEY-----/g, "")
-        .replace(/\s/g, "");
-
-    const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
-
-    return await crypto.subtle.importKey(
-        "pkcs8",
-        binaryDer,
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-        false,
-        ["sign"]
-    );
-}
-
-async function getGoogleAccessToken() {
-    const stored = getStoredGoogleAccessToken();
-    if (stored) {
-        return stored;
-    }
-
-    const serviceAccountJson = getApiSecret("GOOGLE_SERVICE_ACCOUNT");
-    if (serviceAccountJson !== lastServiceAccountJson) {
-        lastServiceAccountJson = serviceAccountJson;
-        googleServiceAccountConfig = null;
-        googlePrivateCryptoKey = null;
-    }
-
-    if (!googleServiceAccountConfig) {
-        if (!serviceAccountJson) {
-            throw new Error("Google service account not configured");
-        }
-
-        let serviceAccount;
-        try {
-            serviceAccount = JSON.parse(serviceAccountJson);
-        } catch (e) {
-            throw new Error("Invalid Google service account JSON");
-        }
-
-        const { client_email, private_key } = serviceAccount;
-        if (!client_email || !private_key) {
-            throw new Error("Service account missing client_email or private_key");
-        }
-
-        googleServiceAccountConfig = { client_email, private_key };
-    }
-
-    const { client_email, private_key } = googleServiceAccountConfig;
-    if (!client_email || !private_key) {
-        throw new Error("Service account missing client_email or private_key");
-    }
-
-    // Create JWT header and payload
-    const now = Math.floor(Date.now() / 1000);
-    const header = { alg: "RS256", typ: "JWT" };
-    const payload = {
-        iss: client_email,
-        scope: "https://www.googleapis.com/auth/cse",
-        aud: "https://oauth2.googleapis.com/token",
-        iat: now,
-        exp: now + 3600,
-    };
-
-    const headerEncoded = base64UrlEncodeString(JSON.stringify(header));
-    const payloadEncoded = base64UrlEncodeString(JSON.stringify(payload));
-    const signatureInput = `${headerEncoded}.${payloadEncoded}`;
-
-    // Import/signing key once per isolate to reduce first-hit overhead
-    if (!googlePrivateCryptoKey) {
-        googlePrivateCryptoKey = await importPrivateKey(private_key);
-    }
-    const encoder = new TextEncoder();
-    const signatureBuffer = await crypto.subtle.sign(
-        "RSASSA-PKCS1-v1_5",
-        googlePrivateCryptoKey,
-        encoder.encode(signatureInput)
-    );
-    const signature = base64UrlEncode(signatureBuffer);
-
-    const jwt = `${signatureInput}.${signature}`;
-
-    // Exchange JWT for access token
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-    });
-
-    if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        throw new Error(
-            errorData.error_description || `Token exchange failed: ${tokenResponse.status}`
-        );
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
-    const expiresIn = Number(tokenData.expires_in) || 3600;
-    setStoredGoogleAccessToken(accessToken, expiresIn);
-
-    return accessToken;
-}
-
-async function fetchGoogle(query, page, resultsPerPage) {
-    const cx = getApiSecret("GOOGLE_CX");
-
-    if (!cx) {
-        return { results: [], hasMore: false, totalResults: "0" };
-    }
-
-    if (!getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
-        return { results: [], hasMore: false, totalResults: "0" };
-    }
-
-    const startIndex = (page - 1) * resultsPerPage + 1;
-
-    if (startIndex > 91) {
-        return { results: [], hasMore: false, totalResults: "0" };
-    }
-
-    const accessToken = await getGoogleAccessToken();
-
-    const url = new URL("https://www.googleapis.com/customsearch/v1");
-    url.searchParams.set("cx", cx);
-    url.searchParams.set("q", query);
-    url.searchParams.set("num", String(Math.min(resultsPerPage, 10)));
-    url.searchParams.set("start", String(startIndex));
-    url.searchParams.set("fields", "items(title,link,displayLink,snippet),searchInformation/totalResults");
-
-    const response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `Google API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const items = data.items || [];
-
-    const results = items.map((item) => ({
-        title: item.title,
-        url: item.link,
-        displayUrl: item.displayLink,
-        snippet: item.snippet || "",
-        source: "google",
-    }));
-
-    const totalResults = parseInt(data.searchInformation?.totalResults) || 0;
-    const hasMore = startIndex + results.length - 1 < totalResults && startIndex < 91;
-
-    return {
-        results,
-        hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
-        totalResults: String(totalResults),
     };
 }
 
@@ -532,7 +259,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
 }
 
 async function fetchBraveImages(query, page = 1) {
-    const apiKey = getApiSecret("BRAVE_API_KEY");
+    const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
         return [];
@@ -545,8 +272,8 @@ async function fetchBraveImages(query, page = 1) {
 
     const url = new URL("https://api.search.brave.com/res/v1/images/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", "20");
-    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("count", 20);
+    url.searchParams.set("offset", offset);
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -573,55 +300,6 @@ async function fetchBraveImages(query, page = 1) {
             source: "brave",
         }))
         .filter((img) => img.thumbnail && img.full);
-}
-
-async function fetchGoogleImages(query, page = 1) {
-    const cx = getApiSecret("GOOGLE_CX");
-
-    if (!cx || !getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
-        return [];
-    }
-
-    const startIndex = (page - 1) * 10 + 1;
-    if (startIndex > 91) {
-        return [];
-    }
-
-    try {
-        const accessToken = await getGoogleAccessToken();
-
-        const url = new URL("https://www.googleapis.com/customsearch/v1");
-        url.searchParams.set("cx", cx);
-        url.searchParams.set("q", query);
-        url.searchParams.set("searchType", "image");
-        url.searchParams.set("num", "10");
-        url.searchParams.set("start", String(startIndex));
-
-        const response = await fetch(url.toString(), {
-            headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        if (!response.ok) {
-            return [];
-        }
-
-        const data = await response.json();
-        const items = data.items || [];
-
-        return items
-            .map((item) => ({
-                thumbnail: item.image?.thumbnailLink || item.link,
-                full: item.link,
-                title: item.title || "",
-                sourceUrl: item.image?.contextLink || "",
-                width: item.image?.width,
-                height: item.image?.height,
-                source: "google",
-            }))
-            .filter((img) => img.thumbnail && img.full);
-    } catch (e) {
-        return [];
-    }
 }
 
 async function fetchWikipediaInfobox(query) {
@@ -654,11 +332,9 @@ async function tryFetchPageInfobox(pageTitle) {
         const pageResponse = await fetch(pageUrl);
         if (!pageResponse.ok) return null;
 
-        const pageData = (await pageResponse.json()) as {
-            query?: { pages?: Record<string, WikipediaQueryPage> };
-        };
+        const pageData = await pageResponse.json();
         const pages = pageData.query?.pages || {};
-        const page = Object.values(pages)[0] as WikipediaQueryPage | undefined;
+        const page = Object.values(pages)[0];
 
         if (!page || page.missing) return null;
 
@@ -673,9 +349,7 @@ async function tryFetchPageInfobox(pageTitle) {
 
             const wikidataResponse = await fetch(wikidataUrl);
             if (wikidataResponse.ok) {
-                const wikidataData = (await wikidataResponse.json()) as {
-                    query?: { pages?: Record<string, { pageprops?: { wikibase_item?: string } }> };
-                };
+                const wikidataData = await wikidataResponse.json();
                 const wikidataPages = wikidataData.query?.pages || {};
                 const wikidataPage = Object.values(wikidataPages)[0];
                 wikidataId = wikidataPage?.pageprops?.wikibase_item;
@@ -690,7 +364,7 @@ async function tryFetchPageInfobox(pageTitle) {
                     const entity = claimsData.entities?.[wikidataId];
                     const claims = entity?.claims || {};
 
-                    const linkProperties: Record<string, WikidataLinkConfig> = {
+                    const linkProperties = {
                         P856: { name: "Official website", icon: "🌐" },
                         P2002: { name: "Twitter", icon: "𝕏", urlPrefix: "https://twitter.com/" },
                         P2003: { name: "Instagram", icon: "📷", urlPrefix: "https://instagram.com/" },
@@ -756,7 +430,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = getApiSecret("GROQ_API_KEY");
+    const groqApiKey = Deno.env.get("GROQ_API_KEY");
     if (!groqApiKey) {
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
             status: 500,
@@ -891,7 +565,8 @@ Guidelines:
                 // Send done signal
                 await writer.write(encoder.encode("data: [DONE]\n\n"));
             } catch (e) {
-                await writer.write(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
+                const msg = e instanceof Error ? e.message : String(e);
+                await writer.write(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
             } finally {
                 await writer.close();
             }
@@ -905,7 +580,8 @@ Guidelines:
             },
         });
     } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        const msg = error instanceof Error ? error.message : String(error);
+        return new Response(JSON.stringify({ error: msg }), {
             status: 500,
             headers: { "Content-Type": "application/json" },
         });

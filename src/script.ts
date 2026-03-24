@@ -3,7 +3,7 @@ import {
     getApiSecret,
     getApiSecretsFields,
 } from './api-keys';
-import { clearGoogleClientCaches, handleSearchApiRequest } from './client-search';
+import { clearGoogleClientCaches, handleGoogleSearchRequest, isGoogleClientSearchUrl } from './google-search';
 import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
 
 /** Stagger only for performSearch (matches pre–split early-fetch era: e388c44). Early fetch runs all requests in parallel. */
@@ -13,14 +13,18 @@ const INITIAL_FETCH_STAGGER_MS = {
     images: 260,
 };
 
-const cachedSearchGet = createCachedSearchGet((request) => handleSearchApiRequest(request));
+const cachedEdgeSearchGet = createCachedSearchGet((request) => fetch(request.url));
+const cachedGoogleSearchGet = createCachedSearchGet((request) => handleGoogleSearchRequest(request));
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
-    if (init?.method === 'POST' || url.pathname !== '/api/search') {
-        return handleSearchApiRequest(new Request(url.toString(), init));
+    if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
+        if (isGoogleClientSearchUrl(url)) {
+            return cachedGoogleSearchGet(url.pathname + url.search);
+        }
+        return cachedEdgeSearchGet(url.pathname + url.search);
     }
-    return cachedSearchGet(url.pathname + url.search);
+    return fetch(url.toString(), init);
 }
 
 (function startEarlyClientFetch() {
@@ -28,7 +32,6 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const q = params.get('q');
     if (!q || /^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) return;
     const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
-    const hasBrave = Boolean(getApiSecret('BRAVE_API_KEY'));
     const hasGoogle =
         Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
     const enc = encodeURIComponent(q);
@@ -36,7 +39,7 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
     window.__earlyFetch = {
         query: q,
-        ...(hasBrave ? { brave: apiFetch(base + 'brave') } : {}),
+        brave: apiFetch(base + 'brave'),
         ...(hasGoogle && imgGooglePromise
             ? {
                   google: apiFetch(base + 'google'),
@@ -51,10 +54,9 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
 
 function hasCommercialApiKeys(): boolean {
-    const brave = Boolean(getApiSecret('BRAVE_API_KEY'));
-    const google =
-        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
-    return brave || google;
+    return (
+        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'))
+    );
 }
 
 function isAuthLikeApiError(message: string): boolean {
@@ -72,14 +74,10 @@ function isAuthLikeApiError(message: string): boolean {
 
 function loadApiSettingsFields() {
     const f = getApiSecretsFields();
-    const brave = document.getElementById('api-settings-brave') as HTMLInputElement | null;
     const cx = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
     const sa = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    const groq = document.getElementById('api-settings-groq') as HTMLInputElement | null;
-    if (brave) brave.value = f.braveApiKey;
     if (cx) cx.value = f.googleCx;
     if (sa) sa.value = f.googleServiceAccount;
-    if (groq) groq.value = f.groqApiKey;
 }
 
 function openApiSettingsDialog(contextMessage?: string) {
@@ -109,21 +107,19 @@ function maybeNotifyMissingCommercialKeys() {
     if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
     sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
     openApiSettingsDialog(
-        'Add a Brave API key and/or Google Custom Search credentials (cx + service account JSON) to load commercial results.'
+        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq run on Netlify (env vars).'
     );
 }
 
 function setupApiSettingsPanel() {
     const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const braveField = document.getElementById('api-settings-brave') as HTMLInputElement | null;
     const cxField = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
     const saField = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    const groqField = document.getElementById('api-settings-groq') as HTMLInputElement | null;
     const errEl = document.getElementById('api-settings-json-error');
     const closeBtn = document.getElementById('api-settings-close');
     const saveBtn = document.getElementById('api-settings-save');
     const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
-    if (!dialog || !braveField || !cxField || !saField || !groqField || !closeBtn || !saveBtn) return;
+    if (!dialog || !cxField || !saField || !closeBtn || !saveBtn) return;
 
     closeBtn.addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {
@@ -134,10 +130,8 @@ function setupApiSettingsPanel() {
         const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
         const beforeCx = getApiSecret('GOOGLE_CX');
         const result = applyApiSecretsFromFields({
-            braveApiKey: braveField.value,
             googleCx: cxField.value,
             googleServiceAccount: saField.value,
-            groqApiKey: groqField.value,
         });
         if (result.ok === false) {
             if (errEl) {
@@ -450,11 +444,6 @@ async function fetchAIAnswer(query) {
         return;
     }
 
-    if (!getApiSecret('GROQ_API_KEY')) {
-        openApiSettingsDialog('Add a Groq API key to use AI answers.');
-        return;
-    }
-
     // Show panel and loading state
     aiPanel.style.display = 'block';
     aiBtn.classList.add('active');
@@ -481,13 +470,6 @@ async function fetchAIAnswer(query) {
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             const errMsg = errorData.error || `Request failed: ${response.status}`;
-            if (
-                response.status === 401 ||
-                response.status === 403 ||
-                isAuthLikeApiError(errMsg)
-            ) {
-                openApiSettingsDialog(errMsg);
-            }
             throw new Error(errMsg);
         }
 
@@ -1033,11 +1015,8 @@ async function fetchSource(source, query, page) {
             state.hasMore = false;
             state.error = sourceData.error;
             console.error(`Error from ${source}:`, sourceData.error);
-            if (
-                (source === 'brave' || source === 'google') &&
-                isAuthLikeApiError(sourceData.error)
-            ) {
-                openApiSettingsDialog(sourceData.error);
+            if (source === 'google' && isAuthLikeApiError(String(sourceData.error))) {
+                openApiSettingsDialog(String(sourceData.error));
             }
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
@@ -1050,10 +1029,7 @@ async function fetchSource(source, query, page) {
         state.hasMore = false;
         const errMsg = error instanceof Error ? error.message : String(error);
         state.error = errMsg;
-        if (
-            (source === 'brave' || source === 'google') &&
-            isAuthLikeApiError(errMsg)
-        ) {
+        if (source === 'google' && isAuthLikeApiError(errMsg)) {
             openApiSettingsDialog(errMsg);
         }
     } finally {

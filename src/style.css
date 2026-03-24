@@ -186,10 +186,17 @@ a:hover {
   text-shadow: 0 0 0 white;
 }
 
-/* API keys dialog */
+/* API keys dialog (Google only) */
 .api-settings-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
   max-width: min(520px, calc(100vw - 2rem));
   width: 100%;
+  max-height: min(90vh, calc(100vh - 2rem));
+  overflow-y: auto;
   padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -234,8 +241,7 @@ a:hover {
   margin-bottom: 1rem;
 }
 
-.api-settings-hint code,
-.api-settings-example {
+.api-settings-hint code {
   font-family: var(--font-mono);
   font-size: 0.8em;
   color: var(--text-primary);
@@ -286,7 +292,6 @@ a:hover {
   width: 100%;
   padding: 0.6rem 0.75rem;
   font-family: var(--font-mono);
-  /* 16px avoids iOS Safari zoom on focus */
   font-size: 16px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
