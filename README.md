@@ -10,15 +10,15 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **Image Search**: Integrated image search with slider and preview functionality
 - **Knowledge Panel**: Wikipedia infobox with entity information and external links
 - **DDG Bang Support**: DuckDuckGo-style bang syntax (e.g., `!g`, `!yt`) redirects to unduck.link
-- **ChatGPT Integration**: Quick access button to open queries in ChatGPT
+- **AI Answer**: Groq-powered streaming answers (optional API key)
 - **Infinite Scroll**: Automatic pagination for seamless browsing
 - **Dark Theme**: Modern, minimal dark interface
-- **Fast Performance**: Edge functions for low-latency responses
+- **Fast Performance**: Search and AI requests run in the browser bundle with optional Cache Storage for repeat queries
 
 ## Tech Stack
 
 - **Frontend**: TypeScript (compiled with Bun), HTML, CSS — sources in `src/`, minified bundles `script.js` / `style.css` at repo root
-- **Backend**: Netlify Edge Functions (Deno)
+- **Hosting**: Netlify (static build from `netlify.toml`; no server-side search API)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
@@ -30,7 +30,6 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 ### Prerequisites
 
 - [Bun](https://bun.sh/) (for installing deps and building the client)
-- A Netlify account
 - Brave Search API key ([Get one here](https://brave.com/search/api/))
 - Google Custom Search Engine ID and Service Account (optional, for Google results)
   - Create a [Custom Search Engine](https://programmablesearchengine.google.com/)
@@ -51,38 +50,18 @@ bun run build
 ```
 This writes `script.js` and `style.css` at the project root. Netlify runs the same steps via `netlify.toml`.
 
-3. Set up environment variables in Netlify:
-   - Go to your Netlify site settings
-   - Navigate to **Site settings** → **Environment variables**
-   - Add the following variables:
-
-#### Required:
-- `BRAVE_API_KEY` - Your Brave Search API subscription token
-
-#### Optional (for Google results):
-- `GOOGLE_CX` - Your Google Custom Search Engine ID
-- `GOOGLE_SERVICE_ACCOUNT` - JSON string of your Google service account credentials
-
-Example `GOOGLE_SERVICE_ACCOUNT` format:
-```json
-{
-  "type": "service_account",
-  "project_id": "...",
-  "private_key_id": "...",
-  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-  "client_email": "...",
-  "client_id": "...",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "..."
-}
-```
-
-4. Deploy to Netlify:
+3. Deploy to Netlify (or any static host):
    - Connect your repository to Netlify
    - Netlify will automatically detect the build settings from `netlify.toml`
    - The site will deploy automatically
+
+### API keys (browser)
+
+API keys and Google credentials are **not** set as Netlify environment variables for search. After opening the app, use **API configuration** (JSON in `localStorage`) to add:
+
+- `braveApiKey`, `googleCx`, `googleServiceAccount` (object or JSON string), `groqApiKey` (optional, for AI answers)
+
+**Security note:** credentials live in the user’s browser. Treat this as a personal or trusted-user setup, not a hidden server-side secret store.
 
 ## Project Structure
 
@@ -92,25 +71,25 @@ Example `GOOGLE_SERVICE_ACCOUNT` format:
 ├── script.js               # Built client bundle (run `bun run build`)
 ├── style.css               # Minified CSS (run `bun run build`)
 ├── src/
-│   ├── script.ts           # Frontend TypeScript source
+│   ├── script.ts           # UI, search state, API settings dialog
+│   ├── client-search.ts    # /api/search + /api/ai handlers (bundled, fetch-based)
+│   ├── api-keys.ts         # localStorage keys + JSON config helpers
+│   ├── search-cache.ts     # Cache Storage wrapper for GET /api/search
 │   ├── style.css           # Stylesheet source
 │   └── global.d.ts         # DOM / window typings
 ├── scripts/
 │   └── build.ts            # Bun build (JS + CSS minify)
-├── netlify/
-│   └── edge-functions/
-│       └── search.ts       # Edge function (Deno) - API handler
-├── netlify.toml            # Netlify configuration
+├── netlify.toml            # Netlify configuration (build + headers)
 └── README.md               # This file
 ```
 
 ## Configuration
 
 The `netlify.toml` file configures:
-- Edge function routing for `/api/search`
-- Security headers (X-Frame-Options, CSP, etc.)
+
+- Build command and publish directory
+- Security headers (X-Frame-Options, etc.)
 - Cache headers for static assets
-- Build settings
 
 ## Usage
 
@@ -139,44 +118,31 @@ bun install
 bun run build
 ```
 
-2. Install Netlify CLI (optional; any static server works for UI-only testing):
-```bash
-bun install -g netlify-cli
-```
-
-3. Start local development server (includes edge functions):
-```bash
-netlify dev
-```
-
-4. Set environment variables locally:
-```bash
-netlify env:set BRAVE_API_KEY "your-key"
-netlify env:set GOOGLE_CX "your-cx"
-netlify env:set GOOGLE_SERVICE_ACCOUNT '{"type":"service_account",...}'
-```
-
-### Code Structure
-
-- **Frontend** (`src/script.ts` → `script.js`): UI, search state, infinite scroll, image previews
-- **Styles** (`src/style.css` → minified `style.css`)
-- **Backend** (`netlify/edge-functions/search.ts`): API handler using Deno edge functions
+2. Serve the repo root with any static server (e.g. `npx serve .` or your editor’s live server) and open `index.html`.
 
 Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebuild `script.js` and `style.css` when editing `src/`.
 
-## API Endpoints
+### Code Structure
+
+- **UI** (`src/script.ts` → `script.js`): DOM, search state, infinite scroll, image previews, API settings
+- **Search + AI** (`src/client-search.ts`): request handlers invoked from the bundle (same-origin “/api” paths)
+- **Styles** (`src/style.css` → minified `style.css`)
+
+## API Endpoints (in-bundle)
+
+The app issues `fetch()` calls to same-origin paths handled inside `client-search.ts`:
 
 ### `/api/search`
 
-Search endpoint that aggregates results from multiple sources.
-
 **Query Parameters:**
+
 - `q` (required) - Search query
 - `page` (optional) - Page number (default: 1)
 - `source` (optional) - Filter by source: `brave`, `google`, `marginalia`, `images`, `infobox`
 - `imageSource` (optional) - For image search: `google`, `brave`, or both
 
 **Example:**
+
 ```
 GET /api/search?q=javascript&page=1&source=brave
 ```
@@ -190,8 +156,8 @@ GET /api/search?q=javascript&page=1&source=brave
 
 - No tracking or analytics
 - No cookies
-- Search queries are sent directly to search APIs
-- Results are cached for performance (5 minutes for search, 1 hour for infobox)
+- Search queries are sent from the browser to third-party search APIs
+- Optional response caching (Cache Storage for repeat GET `/api/search` queries; configurable TTL in code)
 
 ## Third-Party Services
 
@@ -226,7 +192,7 @@ This project is open source. Feel free to use, modify, and distribute as needed.
 - [Google Custom Search](https://developers.google.com/custom-search) - Search API
 - [Marginalia Search](https://search.marginalia.nu/) - Non-commercial search
 - [Wikipedia](https://www.wikipedia.org/) - Knowledge panel data
-- [Netlify](https://www.netlify.com/) - Hosting and edge functions
+- [Netlify](https://www.netlify.com/) - Hosting
 
 ## Contributing
 
