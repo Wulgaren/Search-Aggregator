@@ -10,8 +10,6 @@ import {
     setStoredGoogleAccessToken,
 } from "./api-keys";
 
-type Timings = Record<string, number>;
-
 type ServiceAccountConfig = {
     client_email: string;
     private_key: string;
@@ -31,26 +29,6 @@ export function clearGoogleClientCaches() {
 
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
-
-function buildServerTimingHeader(timings: Timings): string {
-    return Object.entries(timings)
-        .filter(([, duration]) => Number.isFinite(duration))
-        .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
-        .join(", ");
-}
-
-async function withTiming<T>(
-    name: string,
-    fn: () => Promise<T>,
-    timings: Timings
-): Promise<T> {
-    const start = performance.now();
-    try {
-        return await fn();
-    } finally {
-        timings[name] = performance.now() - start;
-    }
-}
 
 function base64UrlEncode(data: Uint8Array | ArrayBuffer) {
     const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
@@ -323,8 +301,6 @@ export function isGoogleClientSearchUrl(url: URL): boolean {
 }
 
 export async function handleGoogleSearchRequest(request: Request): Promise<Response> {
-    const requestStart = performance.now();
-    const timings: Timings = {};
     const url = new URL(request.url);
 
     if (request.method !== "GET") {
@@ -356,17 +332,13 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
         let hasMore = true;
 
         if (imageSource === "google") {
-            const googleImages = await withTiming(
-                "google_images",
-                () => fetchGoogleImages(searchQuery, page),
-                timings
-            );
+            const googleImages = await fetchGoogleImages(searchQuery, page);
             images = googleImages;
             hasMore = page < 10;
         } else {
             const [braveImages, googleImages] = await Promise.allSettled([
-                withTiming("brave_images", () => fetchBraveImagesViaEdge(searchQuery, page, origin), timings),
-                withTiming("google_images", () => fetchGoogleImages(searchQuery, page), timings),
+                fetchBraveImagesViaEdge(searchQuery, page, origin),
+                fetchGoogleImages(searchQuery, page),
             ]);
 
             const allImages = [
@@ -387,35 +359,25 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
 
             hasMore = page < 3;
         }
-
-        timings.total = performance.now() - requestStart;
         return new Response(JSON.stringify({ images, hasMore }), {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control": SEARCH_JSON_CACHE,
-                "Server-Timing": buildServerTimingHeader(timings),
             },
         });
     }
 
     if (source === "google") {
         try {
-            const google = await withTiming(
-                "google",
-                () => fetchGoogle(searchQuery, page, resultsPerPage),
-                timings
-            );
-            timings.total = performance.now() - requestStart;
+            const google = await fetchGoogle(searchQuery, page, resultsPerPage);
             return new Response(JSON.stringify({ page, google }), {
                 headers: {
                     "Content-Type": "application/json",
                     "Cache-Control": SEARCH_JSON_CACHE,
-                    "Server-Timing": buildServerTimingHeader(timings),
                 },
             });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            timings.total = performance.now() - requestStart;
             return new Response(
                 JSON.stringify({
                     page,
@@ -425,7 +387,6 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
                     headers: {
                         "Content-Type": "application/json",
                         "Cache-Control": SEARCH_JSON_CACHE,
-                        "Server-Timing": buildServerTimingHeader(timings),
                     },
                 }
             );
