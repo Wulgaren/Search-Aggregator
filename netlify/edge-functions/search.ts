@@ -23,6 +23,12 @@ export default async (request: Request, context: unknown): Promise<Response> => 
     const query = url.searchParams.get("q");
     const page = parseInt(url.searchParams.get("page")) || 1;
     const source = url.searchParams.get("source");
+    const imageSource = url.searchParams.get("imageSource");
+
+    const reqId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     if (!query || query.trim() === "") {
         return new Response(
@@ -33,6 +39,22 @@ export default async (request: Request, context: unknown): Promise<Response> => 
 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
+    const requestKey = `q=${searchQuery}&page=${page}&source=${source ?? ""}&imageSource=${imageSource ?? ""}`;
+
+    // Helps confirm whether multiple Brave requests hit during "first whole site load".
+    // Group by `requestKey` and time (Netlify log viewer).
+    console.log("[edge-search] api/search request", {
+        reqId,
+        requestKey,
+        source: source ?? null,
+        page,
+        q: searchQuery,
+        imageSource: imageSource ?? null,
+        clientIp:
+            request.headers.get("cf-connecting-ip") ||
+            request.headers.get("x-forwarded-for") ||
+            null,
+    });
 
     if (source === "google") {
         return new Response(
@@ -52,9 +74,6 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             },
         });
     }
-
-    // Handle image search
-    const imageSource = url.searchParams.get("imageSource");
 
     if (source === "images") {
         if (imageSource === "google" || !imageSource) {
@@ -81,7 +100,7 @@ export default async (request: Request, context: unknown): Promise<Response> => 
     // Determine which sources to fetch
     const fetchBravePromise =
         !source || source === "brave"
-            ? fetchBrave(searchQuery, page, resultsPerPage)
+            ? fetchBrave(searchQuery, page, resultsPerPage, reqId, requestKey)
             : Promise.resolve(null);
 
     const fetchMarginaliaPromise =
@@ -132,7 +151,7 @@ export default async (request: Request, context: unknown): Promise<Response> => 
     });
 };
 
-async function fetchBrave(query, page, resultsPerPage) {
+async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey: string) {
     const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
@@ -152,6 +171,15 @@ async function fetchBrave(query, page, resultsPerPage) {
     url.searchParams.set("offset", offset);
     url.searchParams.set("result_filter", "web,news");
 
+    console.log("[edge-search] Brave API call", {
+        reqId,
+        requestKey,
+        q: query,
+        page,
+        offset,
+        resultsPerPage,
+    });
+
     const response = await fetch(url.toString(), {
         headers: {
             "X-Subscription-Token": apiKey,
@@ -164,6 +192,8 @@ async function fetchBrave(query, page, resultsPerPage) {
             console.error("[edge-search] Brave rate limited", {
                 status: response.status,
                 page,
+                reqId,
+                requestKey,
             });
             throw new Error("Rate limited - too many requests");
         }
@@ -172,6 +202,8 @@ async function fetchBrave(query, page, resultsPerPage) {
             status: response.status,
             message: errorData.message,
             page,
+            reqId,
+            requestKey,
         });
         throw new Error(errorData.message || `Brave API error: ${response.status}`);
     }
