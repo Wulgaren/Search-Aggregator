@@ -72,9 +72,9 @@ API keys and Google credentials are **not** set as Netlify environment variables
 ├── style.css               # Minified CSS (run `bun run build`)
 ├── src/
 │   ├── script.ts           # UI, search state, API settings dialog
-│   ├── client-search.ts    # /api/search + /api/ai handlers (bundled, fetch-based)
 │   ├── api-keys.ts         # localStorage keys + JSON config helpers
-│   ├── search-cache.ts     # Cache Storage wrapper for GET /api/search
+│   ├── google-search.ts    # browser-side Google Custom Search handler
+│   ├── search-cache.ts     # Cache Storage wrapper for GET /api/search JSON
 │   ├── style.css           # Stylesheet source
 │   └── global.d.ts         # DOM / window typings
 ├── scripts/
@@ -125,12 +125,12 @@ Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebui
 ### Code Structure
 
 - **UI** (`src/script.ts` → `script.js`): DOM, search state, infinite scroll, image previews, API settings
-- **Search + AI** (`src/client-search.ts`): request handlers invoked from the bundle (same-origin “/api” paths)
+- **Search + AI** (Netlify edge `netlify/edge-functions/search.ts`): request handlers invoked via same-origin “/api” paths
 - **Styles** (`src/style.css` → minified `style.css`)
 
 ## API Endpoints (in-bundle)
 
-The app issues `fetch()` calls to same-origin paths handled inside `client-search.ts`:
+The app issues `fetch()` calls to same-origin paths handled by `netlify/edge-functions/search.ts`:
 
 ### `/api/search`
 

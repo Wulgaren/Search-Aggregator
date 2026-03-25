@@ -51,6 +51,32 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     };
 })();
 
+type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'images' | 'infobox';
+
+function maybeClearEarlyFetch(): void {
+    const early = window.__earlyFetch;
+    if (!early) return;
+    if (early.brave || early.google || early.marginalia || early.images || early.infobox) return;
+    window.__earlyFetch = undefined;
+}
+
+function takeEarlyFetchPromise(key: EarlyFetchKey, query: string): Promise<Response> | null {
+    const early = window.__earlyFetch;
+    if (!early || early.query !== query) return null;
+
+    const promise = (early as any)[key] as Promise<Response> | undefined;
+    if (!promise) return null;
+
+    delete (early as any)[key];
+    maybeClearEarlyFetch();
+    return promise;
+}
+
+async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Response | null> {
+    const promise = takeEarlyFetchPromise(key, query);
+    return promise ? await promise : null;
+}
+
 const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
 
 function hasCommercialApiKeys(): boolean {
@@ -178,7 +204,6 @@ const noncommercialCount = byId('noncommercial-count');
 const aiBtn = byId<HTMLButtonElement>('ai-btn');
 const aiPanel = byId('ai-panel');
 const aiPanelClose = byId<HTMLButtonElement>('ai-panel-close');
-const aiPanelContent = byId('ai-panel-content');
 const aiLoading = byId('ai-loading');
 const aiAnswer = byId('ai-answer');
 const aiPanelFooter = byId('ai-panel-footer');
@@ -214,7 +239,9 @@ function attachPrefetchListeners(container) {
     container.querySelectorAll('.result-title a').forEach(link => {
         const url = link.href;
         link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
-        link.addEventListener('touchstart', () => prefetchLink(url), { once: true, passive: true });
+        // Safari can be finicky about synchronous DOM work during `touchstart` on taps.
+        // Defer prefetch to the next task so the initial tap reliably triggers navigation.
+        link.addEventListener('touchstart', () => setTimeout(() => prefetchLink(url), 0), { once: true, passive: true });
     });
 }
 
@@ -609,7 +636,7 @@ function renderMarkdown(text) {
     html = escapeHtml(html);
 
     // Code blocks (must be first to prevent other replacements inside)
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
         return `<pre><code>${code.trim()}</code></pre>`;
     });
 
@@ -991,15 +1018,15 @@ async function fetchSource(source, query, page) {
 
     try {
         let response: Response;
-        if (
-            page === 1 &&
-            window.__earlyFetch?.query === query &&
-            window.__earlyFetch[source as 'brave' | 'google' | 'marginalia']
-        ) {
-            const early = window.__earlyFetch;
-            const key = source as 'brave' | 'google' | 'marginalia';
-            response = await early[key]!;
-            delete early[key];
+        if (page === 1 && (source === 'brave' || source === 'google' || source === 'marginalia')) {
+            const early = await takeEarlyFetch(source as EarlyFetchKey, query);
+            if (early) {
+                response = early;
+            } else {
+                response = await apiFetch(
+                    `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
+                );
+            }
         } else {
             response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
@@ -1058,6 +1085,53 @@ function getState(source) {
     return marginaliaState;
 }
 
+function applyNoAnimateToRenderedItems(container: HTMLElement, renderedUrls: Set<unknown>): void {
+    // Disable animation on already-rendered items, track new ones
+    container.querySelectorAll('.result-item').forEach((item) => {
+        const el = item as HTMLElement;
+        const urlKey = el.dataset.urlKey;
+        if (!urlKey) return;
+        if (renderedUrls.has(urlKey)) {
+            el.classList.add('no-animate');
+        } else {
+            renderedUrls.add(urlKey);
+        }
+    });
+}
+
+function renderStandardResultArticle(
+    result: any,
+    index: number,
+    dataSource: string,
+    sourceLabel: string,
+    sourceClassName: string = 'result-source-tag'
+): string {
+    const faviconUrl = getFaviconUrl(result.url);
+    const urlKey = getDedupeKey(result.url);
+    return `
+        <article class="result-item" data-source="${dataSource}" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
+            <div class="result-url-row">
+                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
+                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
+                <div class="${sourceClassName}">${sourceLabel}</div>
+            </div>
+            <h3 class="result-title">
+                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
+            </h3>
+            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
+        </article>
+    `;
+}
+
+function renderEmptyOrErrorState(
+    container: HTMLElement,
+    opts: { anyLoading: boolean; hasError: boolean; errorHtml: string; emptyHtml: string }
+): boolean {
+    if (opts.anyLoading) return false; // keep skeletons; caller should return
+    container.innerHTML = opts.hasError ? opts.errorHtml : opts.emptyHtml;
+    return true;
+}
+
 function renderCommercialResults() {
     // Interleave Google first, then Brave (order: Google, Brave)
     const interleaved = deduplicateResults(interleaveArrays(googleState.results, braveState.results));
@@ -1072,48 +1146,27 @@ function renderCommercialResults() {
     }
 
     if (interleaved.length === 0) {
-        if (anyLoading) {
-            // Still loading, keep showing skeletons
-            return;
-        }
-        if (googleState.error && braveState.error) {
-            commercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
-        } else {
-            commercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
-        }
+        const rendered = renderEmptyOrErrorState(commercialResults, {
+            anyLoading,
+            hasError: Boolean(googleState.error && braveState.error),
+            errorHtml: `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`,
+            emptyHtml: `<div class="empty-state"><p>No results found</p></div>`,
+        });
+        if (!rendered) return; // loading: keep skeletons
         return;
     }
 
-    const html = interleaved.map((result, index) => {
-        const source = result.source || 'brave';
-        const faviconUrl = getFaviconUrl(result.url);
-        const urlKey = getDedupeKey(result.url);
-        return `
-        <article class="result-item" data-source="${source}" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url-row">
-                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
-                <div class="result-source-tag">${source === 'google' ? 'Google' : 'Brave'}</div>
-            </div>
-            <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
-            </h3>
-            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
-        </article>
-    `}).join('');
+    const html = interleaved
+        .map((result, index) => {
+            const dataSource = result.source || 'brave';
+            const sourceLabel = dataSource === 'google' ? 'Google' : 'Brave';
+            return renderStandardResultArticle(result, index, dataSource, sourceLabel);
+        })
+        .join('');
 
     commercialResults.innerHTML = html;
 
-    // Disable animation on already-rendered items, track new ones
-    commercialResults.querySelectorAll('.result-item').forEach((item) => {
-        const el = item as HTMLElement;
-        const urlKey = el.dataset.urlKey;
-        if (renderedCommercialUrls.has(urlKey)) {
-            el.classList.add('no-animate');
-        } else {
-            renderedCommercialUrls.add(urlKey);
-        }
-    });
+    applyNoAnimateToRenderedItems(commercialResults, renderedCommercialUrls);
 
     attachPrefetchListeners(commercialResults);
 
@@ -1162,35 +1215,13 @@ function renderNoncommercialResults() {
         return;
     }
 
-    const html = results.map((result, index) => {
-        const faviconUrl = getFaviconUrl(result.url);
-        const urlKey = getDedupeKey(result.url);
-        return `
-        <article class="result-item" data-source="marginalia" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url-row">
-                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
-                <div class="result-source-tag">Marginalia</div>
-            </div>
-            <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
-            </h3>
-            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
-        </article>
-    `}).join('');
+    const html = results
+        .map((result, index) => renderStandardResultArticle(result, index, 'marginalia', 'Marginalia'))
+        .join('');
 
     noncommercialResults.innerHTML = html;
 
-    // Disable animation on already-rendered items, track new ones
-    noncommercialResults.querySelectorAll('.result-item').forEach((item) => {
-        const el = item as HTMLElement;
-        const urlKey = el.dataset.urlKey;
-        if (renderedNoncommercialUrls.has(urlKey)) {
-            el.classList.add('no-animate');
-        } else {
-            renderedNoncommercialUrls.add(urlKey);
-        }
-    });
+    applyNoAnimateToRenderedItems(noncommercialResults, renderedNoncommercialUrls);
 
     attachPrefetchListeners(noncommercialResults);
     updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
@@ -1335,52 +1366,31 @@ function renderMergedResults() {
     const allErrors = googleState.error && marginaliaState.error && braveState.error;
 
     if (allResults.length === 0) {
-        if (anyLoading) {
-            // Still loading, keep showing skeletons
-            return;
-        }
-        if (allErrors) {
-            mergedResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
-        } else {
-            mergedResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
-        }
+        const rendered = renderEmptyOrErrorState(mergedResults, {
+            anyLoading,
+            hasError: Boolean(allErrors),
+            errorHtml: `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`,
+            emptyHtml: `<div class="empty-state"><p>No results found</p></div>`,
+        });
+        if (!rendered) return; // loading: keep skeletons
         return;
     }
 
-    const html = allResults.map((item, index) => {
-        const sourceLabel = item.type === 'commercial'
-            ? (item.result.source === 'google' ? 'Google' : 'Brave')
-            : 'Marginalia';
-        const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
-        const faviconUrl = getFaviconUrl(item.result.url);
-
-        return `
-            <article class="result-item" data-source="${dataSource}" data-url-key="${escapeHtml(item.urlKey)}" style="animation-delay: ${index * 0.02}s">
-                <div class="result-url-row">
-                    <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                    <div class="result-url">${escapeHtml(item.result.displayUrl || getDomain(item.result.url))}</div>
-                    <div class="result-source">${sourceLabel}</div>
-                </div>
-                <h3 class="result-title">
-                    <a href="${escapeHtml(item.result.url)}">${escapeHtml(item.result.title)}</a>
-                </h3>
-                ${item.result.snippet ? `<p class="result-snippet">${sanitizeSnippet(item.result.snippet)}</p>` : ''}
-            </article>
-        `;
-    }).join('');
+    const html = allResults
+        .map((item, index) => {
+            const sourceLabel =
+                item.type === 'commercial'
+                    ? (item.result.source === 'google' ? 'Google' : 'Brave')
+                    : 'Marginalia';
+            const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
+            // Keep merged markup identical: use `.result-source` class instead of `.result-source-tag`
+            return renderStandardResultArticle(item.result, index, dataSource, sourceLabel, 'result-source');
+        })
+        .join('');
 
     mergedResults.innerHTML = html;
 
-    // Disable animation on already-rendered items, track new ones
-    mergedResults.querySelectorAll('.result-item').forEach((item) => {
-        const el = item as HTMLElement;
-        const urlKey = el.dataset.urlKey;
-        if (renderedMergedUrls.has(urlKey)) {
-            el.classList.add('no-animate');
-        } else {
-            renderedMergedUrls.add(urlKey);
-        }
-    });
+    applyNoAnimateToRenderedItems(mergedResults, renderedMergedUrls);
 
     attachPrefetchListeners(mergedResults);
 
@@ -1410,9 +1420,9 @@ async function fetchImages(query, page = 1) {
             imageState.page = 1;
 
             let googleResponse: Response;
-            if (window.__earlyFetch?.query === query && window.__earlyFetch.images) {
-                googleResponse = await window.__earlyFetch.images;
-                delete window.__earlyFetch.images;
+            const earlyImages = await takeEarlyFetch('images', query);
+            if (earlyImages) {
+                googleResponse = earlyImages;
             } else {
                 googleResponse = await apiFetch(
                     `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
@@ -1663,9 +1673,9 @@ async function fetchInfobox(query) {
 
     try {
         let response: Response;
-        if (window.__earlyFetch?.query === query && window.__earlyFetch.infobox) {
-            response = await window.__earlyFetch.infobox;
-            delete window.__earlyFetch.infobox;
+        const earlyInfobox = await takeEarlyFetch('infobox', query);
+        if (earlyInfobox) {
+            response = earlyInfobox;
         } else {
             response = await apiFetch(
                 `/api/search?q=${encodeURIComponent(query)}&source=infobox`

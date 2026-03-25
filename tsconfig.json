@@ -6,6 +6,9 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "strict": false,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "isolatedModules": true
   },
