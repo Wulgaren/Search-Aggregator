@@ -136,6 +136,7 @@ async function fetchBrave(query, page, resultsPerPage) {
     const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
+        console.error("[edge-search] Brave API key not configured");
         throw new Error("Brave API key not configured");
     }
 
@@ -160,13 +161,31 @@ async function fetchBrave(query, page, resultsPerPage) {
 
     if (!response.ok) {
         if (response.status === 429) {
+            console.error("[edge-search] Brave rate limited", {
+                status: response.status,
+                page,
+            });
             throw new Error("Rate limited - too many requests");
         }
         const errorData = await response.json().catch(() => ({}));
+        console.error("[edge-search] Brave request failed", {
+            status: response.status,
+            message: errorData.message,
+            page,
+        });
         throw new Error(errorData.message || `Brave API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+        data = await response.json();
+    } catch (e) {
+        console.error("[edge-search] Brave response JSON parse failed", {
+            page,
+            error: e instanceof Error ? e.message : String(e),
+        });
+        throw e;
+    }
     const webResults = data.web?.results || [];
 
     const results = webResults.map((item) => ({
@@ -197,10 +216,23 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     });
 
     if (!response.ok) {
+        console.error("[edge-search] Marginalia request failed", {
+            status: response.status,
+            page,
+        });
         throw new Error(`Marginalia API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+        data = await response.json();
+    } catch (e) {
+        console.error("[edge-search] Marginalia response JSON parse failed", {
+            page,
+            error: e instanceof Error ? e.message : String(e),
+        });
+        throw e;
+    }
     const results = (data.results || []).map((item) => ({
         title: item.title || item.url,
         url: item.url,
@@ -220,6 +252,7 @@ async function fetchBraveImages(query, page = 1) {
     const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
+        console.error("[edge-search] Brave API key not configured for images");
         return [];
     }
 
@@ -241,10 +274,23 @@ async function fetchBraveImages(query, page = 1) {
     });
 
     if (!response.ok) {
+        console.error("[edge-search] Brave images request failed", {
+            status: response.status,
+            page,
+        });
         return [];
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+        data = await response.json();
+    } catch (e) {
+        console.error("[edge-search] Brave images response JSON parse failed", {
+            page,
+            error: e instanceof Error ? e.message : String(e),
+        });
+        return [];
+    }
     const results = data.results || [];
 
     return results
@@ -279,6 +325,9 @@ async function fetchWikipediaInfobox(query) {
 
         return null;
     } catch (e) {
+        console.error("[edge-search] Wikipedia infobox fetch failed", {
+            error: e instanceof Error ? e.message : String(e),
+        });
         return null;
     }
 }
@@ -360,6 +409,10 @@ async function tryFetchPageInfobox(pageTitle) {
                 }
             }
         } catch (e) {
+            console.error("[edge-search] Wikidata enrichment failed", {
+                pageTitle,
+                error: e instanceof Error ? e.message : String(e),
+            });
             // Wikidata fetch failed, continue without external links
         }
 
@@ -374,6 +427,10 @@ async function tryFetchPageInfobox(pageTitle) {
             links: externalLinks.slice(0, 6),
         };
     } catch (e) {
+        console.error("[edge-search] tryFetchPageInfobox failed", {
+            pageTitle,
+            error: e instanceof Error ? e.message : String(e),
+        });
         return null;
     }
 }
@@ -390,6 +447,7 @@ async function handleAI(request) {
 
     const groqApiKey = Deno.env.get("GROQ_API_KEY");
     if (!groqApiKey) {
+        console.error("[edge-search] Groq API key not configured");
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
             status: 500,
             headers: { "Content-Type": "application/json" },
@@ -400,6 +458,9 @@ async function handleAI(request) {
     try {
         body = await request.json();
     } catch (e) {
+        console.error("[edge-search] Invalid JSON body for AI request", {
+            error: e instanceof Error ? e.message : String(e),
+        });
         return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
@@ -449,6 +510,10 @@ Guidelines:
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
+            console.error("[edge-search] Groq request failed", {
+                status: response.status,
+                message: errorData.error?.message,
+            });
             throw new Error(errorData.error?.message || `Groq API error: ${response.status}`);
         }
 
@@ -524,6 +589,9 @@ Guidelines:
                 await writer.write(encoder.encode("data: [DONE]\n\n"));
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
+                console.error("[edge-search] Groq streaming handler failed", {
+                    error: msg,
+                });
                 await writer.write(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
             } finally {
                 await writer.close();
@@ -539,6 +607,7 @@ Guidelines:
         });
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
+        console.error("[edge-search] handleAI failed", { error: msg });
         return new Response(JSON.stringify({ error: msg }), {
             status: 500,
             headers: { "Content-Type": "application/json" },
