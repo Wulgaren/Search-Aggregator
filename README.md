@@ -1,5 +1,6 @@
 # Search Engine Aggregator
 
+
 A modern, privacy-focused search engine that aggregates results from multiple sources, providing both commercial and non-commercial search results side-by-side.
 
 ## Features
