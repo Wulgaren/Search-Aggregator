@@ -30,7 +30,11 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 (function startEarlyClientFetch() {
     const params = new URLSearchParams(window.location.search);
     const q = params.get('q');
-    if (!q || /^![\w]+(?:\s|$)|\s![\w]+$/.test(q)) return;
+    if (!q) return;
+    if (detectBang(q)) {
+        handleBangRedirect(q);
+        return;
+    }
     const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
     const hasGoogle =
         Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
