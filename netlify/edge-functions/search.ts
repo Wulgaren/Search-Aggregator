@@ -85,7 +85,12 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             );
         }
 
-        const braveImages = await fetchBraveImages(searchQuery, page);
+        const braveImages = await fetchBraveImages(
+            searchQuery,
+            page,
+            reqId,
+            requestKey
+        );
         return new Response(
             JSON.stringify({ images: braveImages, hasMore: page < 3 }),
             {
@@ -280,7 +285,12 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     };
 }
 
-async function fetchBraveImages(query, page = 1) {
+async function fetchBraveImages(
+    query,
+    page = 1,
+    reqId?: string,
+    requestKey?: string
+) {
     const apiKey = Deno.env.get("BRAVE_API_KEY");
 
     if (!apiKey) {
@@ -298,6 +308,14 @@ async function fetchBraveImages(query, page = 1) {
     url.searchParams.set("count", 20);
     url.searchParams.set("offset", offset);
 
+    console.log("[edge-search] Brave images API call", {
+        reqId,
+        requestKey,
+        q: query,
+        page,
+        offset,
+    });
+
     const response = await fetch(url.toString(), {
         headers: {
             "X-Subscription-Token": apiKey,
@@ -309,6 +327,8 @@ async function fetchBraveImages(query, page = 1) {
         console.error("[edge-search] Brave images request failed", {
             status: response.status,
             page,
+            reqId,
+            requestKey,
         });
         return [];
     }
