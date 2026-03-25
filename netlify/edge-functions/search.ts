@@ -1,34 +1,16 @@
 // Netlify Edge Function for search - runs at the edge for lower latency
 
-type Timings = Record<string, number>;
+// In-flight dedupe for Brave web search requests.
+// Brave has strict burst/rate limits; if the same query/page is requested concurrently
+// we share a single upstream request instead of multiplying 429s.
+const braveInFlight = new Map<string, { promise: Promise<any>; expiresAt: number }>();
+const BRAVE_DEDUPE_TTL_MS = 10_000;
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
-function buildServerTimingHeader(timings: Timings): string {
-    return Object.entries(timings)
-        .filter(([, duration]) => Number.isFinite(duration))
-        .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
-        .join(", ");
-}
-
-async function withTiming<T>(
-    name: string,
-    fn: () => Promise<T>,
-    timings: Timings
-): Promise<T> {
-    const start = performance.now();
-    try {
-        return await fn();
-    } finally {
-        timings[name] = performance.now() - start;
-    }
-}
-
 export default async (request: Request, context: unknown): Promise<Response> => {
-    const requestStart = performance.now();
-    const timings = {};
     const url = new URL(request.url);
     
     // Route to AI handler for /api/ai
@@ -67,18 +49,12 @@ export default async (request: Request, context: unknown): Promise<Response> => 
 
     // Handle infobox request
     if (source === "infobox") {
-        const infobox = await withTiming(
-            "infobox",
-            () => fetchWikipediaInfobox(searchQuery),
-            timings
-        );
-        timings.total = performance.now() - requestStart;
+        const infobox = await fetchWikipediaInfobox(searchQuery);
         return new Response(JSON.stringify({ infobox }), {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control":
                     "public, max-age=7200, s-maxage=7200, stale-while-revalidate=86400",
-                "Server-Timing": buildServerTimingHeader(timings),
             },
         });
     }
@@ -96,19 +72,13 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             );
         }
 
-        const braveImages = await withTiming(
-            "brave_images",
-            () => fetchBraveImages(searchQuery, page),
-            timings
-        );
-        timings.total = performance.now() - requestStart;
+        const braveImages = await fetchBraveImages(searchQuery, page);
         return new Response(
             JSON.stringify({ images: braveImages, hasMore: page < 3 }),
             {
                 headers: {
                     "Content-Type": "application/json",
                     "Cache-Control": SEARCH_JSON_CACHE,
-                    "Server-Timing": buildServerTimingHeader(timings),
                 },
             }
         );
@@ -117,16 +87,12 @@ export default async (request: Request, context: unknown): Promise<Response> => 
     // Determine which sources to fetch
     const fetchBravePromise =
         !source || source === "brave"
-            ? withTiming("brave", () => fetchBrave(searchQuery, page, resultsPerPage), timings)
+            ? fetchBraveDedupe(searchQuery, page, resultsPerPage)
             : Promise.resolve(null);
 
     const fetchMarginaliaPromise =
         !source || source === "marginalia"
-            ? withTiming(
-                  "marginalia",
-                  () => fetchMarginalia(searchQuery, page, resultsPerPage),
-                  timings
-              )
+            ? fetchMarginalia(searchQuery, page, resultsPerPage)
             : Promise.resolve(null);
 
     const [braveResults, marginaliaResults] = await Promise.allSettled([
@@ -164,15 +130,37 @@ export default async (request: Request, context: unknown): Promise<Response> => 
                 };
     }
 
-    timings.total = performance.now() - requestStart;
     return new Response(JSON.stringify(response), {
         headers: {
             "Content-Type": "application/json",
             "Cache-Control": SEARCH_JSON_CACHE,
-            "Server-Timing": buildServerTimingHeader(timings),
         },
     });
 };
+
+async function fetchBraveDedupe(query: string, page: number, resultsPerPage: number) {
+    const key = `${query}|${page}|${resultsPerPage}`;
+    const now = Date.now();
+
+    const existing = braveInFlight.get(key);
+    if (existing && existing.expiresAt > now) {
+        return existing.promise;
+    }
+
+    // Start a new upstream request; store the in-flight promise so concurrent calls share it.
+    const promise = fetchBrave(query, page, resultsPerPage);
+    const entry = { promise, expiresAt: now + BRAVE_DEDUPE_TTL_MS };
+    braveInFlight.set(key, entry);
+
+    try {
+        return await promise;
+    } finally {
+        // Only clear if nothing replaced us in the map while we awaited.
+        if (braveInFlight.get(key) === entry) {
+            braveInFlight.delete(key);
+        }
+    }
+}
 
 async function fetchBrave(query, page, resultsPerPage) {
     const apiKey = Deno.env.get("BRAVE_API_KEY");
