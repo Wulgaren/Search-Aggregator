@@ -6,7 +6,6 @@ import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
-const INITIAL_FETCH_STAGGER_MS = { google: 120, infobox: 180, images: 260 };
 const cachedEdgeSearchGet = createCachedSearchGet((request) => fetch(request.url));
 const cachedGoogleSearchGet = createCachedSearchGet((request) => handleGoogleSearchRequest(request));
 
@@ -190,13 +189,9 @@ function performSearch(query: string) {
     images.reset();
     infobox.reset();
     ai.reset();
-    setTimeout(() => searchResults.fetchGoogle(query), INITIAL_FETCH_STAGGER_MS.google);
-    setTimeout(() => {
-        if (searchResults.getCurrentQuery() === query) void infobox.fetchInfobox(query);
-    }, INITIAL_FETCH_STAGGER_MS.infobox);
-    setTimeout(() => {
-        if (searchResults.getCurrentQuery() === query) void images.fetchImages(query, 1);
-    }, INITIAL_FETCH_STAGGER_MS.images);
+    searchResults.fetchGoogle(query);
+    void infobox.fetchInfobox(query);
+    void images.fetchImages(query, 1);
 }
 
 function restoreSearchState() {
