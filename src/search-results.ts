@@ -1,19 +1,11 @@
-type SearchResultsElements = {
-    commercialResults: HTMLElement;
-    noncommercialResults: HTMLElement;
-    mergedResults: HTMLElement;
-    commercialCount: HTMLElement;
-    noncommercialCount: HTMLElement;
-};
-
-type SearchDeps = {
-    apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia', query: string) => Promise<Response | null>;
-    isMergedView: () => boolean;
-    openApiSettingsDialog: (message?: string) => void;
-};
-
-type SourceState = { page: number; hasMore: boolean; loading: boolean; results: any[]; error: string | null };
+import type {
+    MergedItem,
+    SearchApiResponse,
+    SearchDeps,
+    SearchResult,
+    SearchResultsElements,
+    SourceState,
+} from './types';
 
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
@@ -44,7 +36,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function initInfiniteScroll() {
-        const observerOptions = { root: null, rootMargin: '100px', threshold: 0 };
+        const observerOptions: IntersectionObserverInit = { root: null, rootMargin: '100px', threshold: 0 };
         const commercialSentinel = document.createElement('div');
         commercialSentinel.className = 'scroll-sentinel';
         const noncommercialSentinel = document.createElement('div');
@@ -88,7 +80,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                 response = await deps.apiFetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`);
             }
             if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-            const data = await response.json();
+            const data = (await response.json()) as SearchApiResponse;
             if (sessionId !== searchSessionId || query !== currentQuery) return;
             const sourceData = data[source];
             if (sourceData?.error) {
@@ -250,7 +242,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function renderMergedResults() {
-        const allResults: any[] = [];
+        const allResults: MergedItem[] = [];
         const seen = new Set<string>();
         const maxLen = Math.max(googleState.results.length, marginaliaState.results.length, braveState.results.length);
         for (let i = 0; i < maxLen; i++) {
@@ -285,7 +277,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (braveState.hasMore || googleState.hasMore || marginaliaState.hasMore) attachSentinel(elements.mergedResults, 'merged');
     }
 
-    function maybePushMerged(type: 'commercial' | 'noncommercial', result: any, seen: Set<string>, allResults: any[]) {
+    function maybePushMerged(type: 'commercial' | 'noncommercial', result: SearchResult, seen: Set<string>, allResults: MergedItem[]) {
         const key = getDedupeKey(result.url);
         if (seen.has(key)) return;
         seen.add(key);
@@ -314,8 +306,8 @@ function isAuthLikeApiError(message: string): boolean {
     return false;
 }
 
-function interleaveArrays(arr1: any[], arr2: any[]) {
-    const result = [];
+function interleaveArrays(arr1: SearchResult[], arr2: SearchResult[]): SearchResult[] {
+    const result: SearchResult[] = [];
     const maxLen = Math.max(arr1.length, arr2.length);
     for (let i = 0; i < maxLen; i++) {
         if (i < arr1.length) result.push(arr1[i]);
@@ -324,7 +316,7 @@ function interleaveArrays(arr1: any[], arr2: any[]) {
     return result;
 }
 
-function deduplicateResults(results: any[]) {
+function deduplicateResults(results: SearchResult[]): SearchResult[] {
     const seen = new Set<string>();
     return results.filter((result) => {
         try {
@@ -398,7 +390,7 @@ function sanitizeSnippet(html: string) {
 }
 
 function renderStandardResultArticle(
-    result: any,
+    result: SearchResult,
     index: number,
     dataSource: string,
     sourceLabel: string,

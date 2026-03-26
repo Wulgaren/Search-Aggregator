@@ -1,24 +1,4 @@
-type InfoboxElements = {
-    infobox: HTMLElement;
-    infoboxImage: HTMLImageElement;
-    infoboxTitle: HTMLElement;
-    infoboxDescription: HTMLElement;
-    infoboxLinks: HTMLElement;
-    infoboxSource: HTMLAnchorElement;
-};
-
-type InfoboxDeps = {
-    apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (key: 'infobox', query: string) => Promise<Response | null>;
-    storeElementPositionBeforeContent: () => void;
-    maintainMousePosition: () => void;
-    openImagePreview: (img: any) => void;
-};
-
-type InfoboxState = {
-    data: any;
-    loading: boolean;
-};
+import type { InfoboxData, InfoboxDeps, InfoboxElements, InfoboxLink, InfoboxState } from './types';
 
 export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxDeps) {
     const state: InfoboxState = { data: null, loading: false };
@@ -55,7 +35,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         }
     }
 
-    function renderInfobox(data: any) {
+    function renderInfobox(data: InfoboxData) {
         if (!data) {
             elements.infobox.style.display = 'none';
             return;
@@ -99,7 +79,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
 
         elements.infoboxLinks.innerHTML = '';
         if (data.links && data.links.length > 0) {
-            data.links.forEach((link: any) => {
+            data.links.forEach((link: InfoboxLink) => {
                 const linkEl = document.createElement('a');
                 linkEl.href = link.url;
                 linkEl.target = '_blank';

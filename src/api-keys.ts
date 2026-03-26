@@ -1,5 +1,6 @@
 /** Google Custom Search credentials + OAuth token cache (localStorage). */
 import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
+import type { ApiSecretsFields, ApplyApiSecretsResult, StoredGoogleToken } from './types';
 
 export const LS_KEYS = {
     GOOGLE_SERVICE_ACCOUNT: 'searchApiGoogleServiceAccount',
@@ -31,8 +32,6 @@ export function setApiSecrets(values: Partial<Record<ApiSecretId, string>>): voi
         }
     }
 }
-
-type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
 
 export function getStoredGoogleTokenState(): StoredGoogleToken | null {
     try {
@@ -75,7 +74,7 @@ export function clearStoredGoogleAccessToken(): void {
     }
 }
 
-export function getApiSecretsFields(): { googleCx: string; googleServiceAccount: string } {
+export function getApiSecretsFields(): ApiSecretsFields {
     const saRaw = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
     let googleServiceAccount = '';
     if (saRaw) {
@@ -91,10 +90,7 @@ export function getApiSecretsFields(): { googleCx: string; googleServiceAccount:
     };
 }
 
-export function applyApiSecretsFromFields(fields: {
-    googleCx: string;
-    googleServiceAccount: string;
-}): { ok: true } | { ok: false; error: string } {
+export function applyApiSecretsFromFields(fields: ApiSecretsFields): ApplyApiSecretsResult {
     const googleCx = fields.googleCx.trim();
     const googleServiceAccount = fields.googleServiceAccount.trim();
 

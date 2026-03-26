@@ -1,30 +1,4 @@
-type ImageElements = {
-    imageSection: HTMLElement;
-    sliderTrack: HTMLElement;
-    imagePreview: HTMLElement;
-    previewImage: HTMLImageElement;
-    previewInfo: HTMLElement;
-    previewClose: HTMLButtonElement;
-    previewOverlay: HTMLElement;
-    previewPrev: HTMLButtonElement;
-    previewNext: HTMLButtonElement;
-    previewCounter: HTMLElement;
-};
-
-type ImageDeps = {
-    apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (key: 'images', query: string) => Promise<Response | null>;
-    escapeHtml: (text: string) => string;
-    storeElementPositionBeforeContent: () => void;
-    maintainMousePosition: () => void;
-};
-
-type ImageState = {
-    images: any[];
-    loading: boolean;
-    page: number;
-    hasMore: boolean;
-};
+import type { ImageDeps, ImageElements, ImageItem, ImageState } from './types';
 
 export function createImagesComponent(elements: ImageElements, deps: ImageDeps) {
     const state: ImageState = { images: [], loading: false, page: 1, hasMore: true };
@@ -37,11 +11,11 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     let activeRequestId = 0;
     let braveTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    function normalizeImageKey(img: any): string {
+    function normalizeImageKey(img: ImageItem): string {
         return String(img?.full || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
     }
 
-    function uniqueImages(images: any[], existing: any[] = []): any[] {
+    function uniqueImages(images: ImageItem[], existing: ImageItem[] = []): ImageItem[] {
         const seen = new Set<string>(existing.map((img) => normalizeImageKey(img)).filter(Boolean));
         return images.filter((img) => {
             const key = normalizeImageKey(img);
@@ -136,7 +110,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 if (googleResponse.ok) {
                     const googleData = await googleResponse.json();
                     if (requestId !== activeRequestId || query !== activeQuery) return;
-                    state.images = uniqueImages(googleData.images || []);
+                    state.images = uniqueImages((googleData.images || []) as ImageItem[]);
                     if (state.images.length > 0) {
                         const wasHidden = elements.imageSection.style.display === 'none';
                         if (wasHidden) deps.storeElementPositionBeforeContent();
@@ -153,7 +127,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
                 const data = await response.json();
                 if (requestId !== activeRequestId || query !== activeQuery) return;
-                const newImages = data.images || [];
+                const newImages = (data.images || []) as ImageItem[];
                 state.hasMore = data.hasMore ?? false;
                 state.page = page;
                 const uniqueNewImages = uniqueImages(newImages, state.images);
@@ -178,7 +152,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 if (!braveResponse.ok) return;
                 const braveData = await braveResponse.json();
                 if (requestId !== activeRequestId || query !== activeQuery) return;
-                const braveImages = braveData.images || [];
+                const braveImages = (braveData.images || []) as ImageItem[];
                 const uniqueBraveImages = uniqueImages(braveImages, state.images);
                 if (uniqueBraveImages.length === 0) return;
                 state.images = [...state.images, ...uniqueBraveImages];
@@ -226,7 +200,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         if (loader) loader.remove();
     }
 
-    function appendImagesToSlider(newImages: any[]) {
+    function appendImagesToSlider(newImages: ImageItem[]) {
         removeImageLoadingIndicator();
         const startIndex = state.images.length - newImages.length;
         const html = newImages
@@ -271,8 +245,8 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         });
     }
 
-    function openImagePreview(imgOrIndex: any) {
-        let img;
+    function openImagePreview(imgOrIndex: ImageItem | number) {
+        let img: ImageItem | undefined;
         let index = -1;
         if (typeof imgOrIndex === 'number') {
             index = imgOrIndex;

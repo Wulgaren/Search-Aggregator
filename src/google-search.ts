@@ -9,11 +9,17 @@ import {
     getStoredGoogleAccessToken,
     setStoredGoogleAccessToken,
 } from "./api-keys";
-
-type ServiceAccountConfig = {
-    client_email: string;
-    private_key: string;
-};
+import type {
+    GoogleApiErrorData,
+    GoogleImageCandidate,
+    GoogleImageItem,
+    GoogleWebItem,
+    ImageItem,
+    OAuthTokenErrorData,
+    PartialServiceAccountConfig,
+    SearchHandler,
+    ServiceAccountConfig,
+} from "./types";
 
 let googleServiceAccountConfig: ServiceAccountConfig | null = null;
 let googlePrivateCryptoKey: CryptoKey | null = null;
@@ -62,8 +68,6 @@ async function readFromGoogleSearchCache(cache: Cache, request: Request): Promis
     }
     return hit;
 }
-
-type SearchHandler = (request: Request) => Promise<Response>;
 
 export async function invalidateGoogleSearchCache(): Promise<void> {
     if (typeof caches === "undefined") return;
@@ -163,7 +167,7 @@ async function getGoogleAccessToken(): Promise<string> {
             throw new Error("Google service account not configured");
         }
 
-        let serviceAccount: { client_email?: string; private_key?: string };
+        let serviceAccount: PartialServiceAccountConfig;
         try {
             serviceAccount = JSON.parse(serviceAccountJson);
         } catch {
@@ -219,7 +223,7 @@ async function getGoogleAccessToken(): Promise<string> {
     if (!tokenResponse.ok) {
         const errorData = await tokenResponse.json().catch(() => ({}));
         throw new Error(
-            (errorData as { error_description?: string }).error_description ||
+            (errorData as OAuthTokenErrorData).error_description ||
                 `Token exchange failed: ${tokenResponse.status}`
         );
     }
@@ -265,7 +269,7 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number) 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
-            (errorData as { error?: { message?: string } }).error?.message ||
+            (errorData as GoogleApiErrorData).error?.message ||
                 `Google API error: ${response.status}`
         );
     }
@@ -273,7 +277,7 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number) 
     const data = await response.json();
     const items = data.items || [];
 
-    const results = items.map((item: { title: string; link: string; displayLink: string; snippet?: string }) => ({
+    const results = items.map((item: GoogleWebItem) => ({
         title: item.title,
         url: item.link,
         displayUrl: item.displayLink,
@@ -326,11 +330,7 @@ async function fetchGoogleImages(query: string, page = 1) {
 
         return items
             .map(
-                (item: {
-                    title?: string;
-                    link?: string;
-                    image?: { thumbnailLink?: string; width?: number; height?: number; contextLink?: string };
-                }) => ({
+                (item: GoogleImageItem) => ({
                     thumbnail: item.image?.thumbnailLink || item.link,
                     full: item.link,
                     title: item.title || "",
@@ -340,7 +340,7 @@ async function fetchGoogleImages(query: string, page = 1) {
                     source: "google",
                 })
             )
-            .filter((img: { thumbnail?: string; full?: string }) => img.thumbnail && img.full);
+            .filter((img: GoogleImageCandidate): img is ImageItem => Boolean(img.thumbnail && img.full));
     } catch {
         return [];
     }
@@ -350,17 +350,7 @@ async function fetchBraveImagesViaEdge(
     searchQuery: string,
     page: number,
     origin: string
-): Promise<
-    Array<{
-        thumbnail: string;
-        full: string;
-        title: string;
-        sourceUrl: string;
-        width?: number;
-        height?: number;
-        source: string;
-    }>
-> {
+): Promise<ImageItem[]> {
     const u = new URL("/api/search", origin);
     u.searchParams.set("q", searchQuery);
     u.searchParams.set("source", "images");

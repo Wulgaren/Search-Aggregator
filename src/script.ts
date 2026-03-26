@@ -4,14 +4,13 @@ import {
     handleGoogleSearchRequest,
     isGoogleClientSearchUrl,
 } from './google-search';
+import type { EarlyFetchKey, ElementPositionBeforeContent, MousePosition } from './types';
 import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
 const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
-
-type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'images' | 'infobox';
 
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     const el = document.getElementById(id);
@@ -46,9 +45,9 @@ function maybeClearEarlyFetch(): void {
 function takeEarlyFetchPromise(key: EarlyFetchKey, query: string): Promise<Response> | null {
     const early = window.__earlyFetch;
     if (!early || early.query !== query) return null;
-    const promise = (early as any)[key] as Promise<Response> | undefined;
+    const promise = early[key];
     if (!promise) return null;
-    delete (early as any)[key];
+    delete early[key];
     maybeClearEarlyFetch();
     return promise;
 }
@@ -99,8 +98,8 @@ const searchResults = createSearchResultsComponent(
     }
 );
 
-let mousePosition = { x: null as number | null, y: null as number | null, isInsideResults: false };
-let elementPositionBeforeContent: { element: Element; viewportTop: number } | null = null;
+let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
+let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
 
 function setupMouseTracking() {
     document.addEventListener('mousemove', (e) => {

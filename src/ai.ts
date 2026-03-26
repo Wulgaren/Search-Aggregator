@@ -1,22 +1,4 @@
-type AIElements = {
-    aiBtn: HTMLButtonElement;
-    aiPanel: HTMLElement;
-    aiPanelClose: HTMLButtonElement;
-    aiLoading: HTMLElement;
-    aiAnswer: HTMLElement;
-    aiPanelFooter: HTMLElement;
-    aiSources: HTMLElement;
-};
-
-type AIDeps = {
-    apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    escapeHtml: (text: string) => string;
-};
-
-type AIState = {
-    loading: boolean;
-    abortController: AbortController | null;
-};
+import type { AIDeps, AIElements, AISource, AIState, AIStreamChunk } from './types';
 
 export function createAIComponent(elements: AIElements, deps: AIDeps) {
     const state: AIState = { loading: false, abortController: null };
@@ -65,7 +47,7 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
             const decoder = new TextDecoder();
             let buffer = '';
             let fullContent = '';
-            let webSearchSources: any[] | null = null;
+            let webSearchSources: AISource[] | null = null;
             let hasReceivedContent = false;
 
             while (true) {
@@ -78,11 +60,11 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
                 for (const line of lines) {
                     const trimmed = line.trim();
                     if (!trimmed || trimmed === 'data: [DONE]' || !trimmed.startsWith('data: ')) continue;
-                    let json: any;
+                    let json: AIStreamChunk;
                     try {
                         json = JSON.parse(trimmed.slice(6));
-                    } catch (e: any) {
-                        if (e.message !== 'Unexpected end of JSON input') console.error('Parse error:', e);
+                    } catch (e: unknown) {
+                        if (!(e instanceof Error) || e.message !== 'Unexpected end of JSON input') console.error('Parse error:', e);
                         continue;
                     }
                     if (json.content) {
@@ -112,14 +94,15 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
                     webSearchSources.some((source) => fullContent.includes(source.url) || fullContent.includes(source.title));
                 if (hasCitations) renderAISources(webSearchSources);
             }
-        } catch (error: any) {
-            if (error.name === 'AbortError') return;
+        } catch (error: unknown) {
+            if (error instanceof Error && error.name === 'AbortError') return;
             elements.aiLoading.style.display = 'none';
             elements.aiAnswer.style.display = 'block';
+            const message = error instanceof Error ? error.message : String(error);
             elements.aiAnswer.innerHTML = `
                 <div class="ai-error">
                     <span class="ai-error-icon">⚠</span>
-                    <span class="ai-error-message">${deps.escapeHtml(error.message)}</span>
+                    <span class="ai-error-message">${deps.escapeHtml(message)}</span>
                 </div>
             `;
         } finally {
@@ -128,7 +111,7 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
         }
     }
 
-    function renderAISources(sources: any[]) {
+    function renderAISources(sources: AISource[]) {
         if (!sources || sources.length === 0) return;
         elements.aiPanelFooter.style.display = 'block';
         elements.aiSources.innerHTML = sources
