@@ -862,7 +862,7 @@ a:hover {
 .slider-track {
   display: flex;
   gap: 0.5rem;
-  overflow-x: auto;
+  overflow-x: scroll;
   scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
