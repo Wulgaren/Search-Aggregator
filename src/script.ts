@@ -102,20 +102,56 @@ let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
 let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
 
 function setupMouseTracking() {
-    document.addEventListener('mousemove', (e) => {
+    const updateTrackedPoint = (clientX: number, clientY: number) => {
         const rect = resultsContainer.getBoundingClientRect();
-        const isInside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-        mousePosition = { x: isInside ? e.clientX : null, y: isInside ? e.clientY : null, isInsideResults: isInside };
+        const isInside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+        mousePosition = { x: isInside ? clientX : null, y: isInside ? clientY : null, isInsideResults: isInside };
+    };
+
+    document.addEventListener('mousemove', (e) => {
+        updateTrackedPoint(e.clientX, e.clientY);
     });
+
+    document.addEventListener(
+        'touchstart',
+        (e) => {
+            const t = e.touches[0] ?? e.changedTouches[0];
+            if (!t) return;
+            updateTrackedPoint(t.clientX, t.clientY);
+        },
+        { passive: true }
+    );
+
+    document.addEventListener(
+        'touchmove',
+        (e) => {
+            const t = e.touches[0] ?? e.changedTouches[0];
+            if (!t) return;
+            updateTrackedPoint(t.clientX, t.clientY);
+        },
+        { passive: true }
+    );
+
+    document.addEventListener(
+        'touchend',
+        (e) => {
+            const t = e.changedTouches[0];
+            if (!t) return;
+            updateTrackedPoint(t.clientX, t.clientY);
+        },
+        { passive: true }
+    );
 }
 
 function storeElementPositionBeforeContent() {
-    if (!mousePosition.isInsideResults || !mousePosition.x || !mousePosition.y) {
+    const elementAtMouse =
+        mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
+            ? document.elementFromPoint(mousePosition.x, mousePosition.y)
+            : null;
+    if (!elementAtMouse) {
         elementPositionBeforeContent = null;
         return;
     }
-    const elementAtMouse = document.elementFromPoint(mousePosition.x, mousePosition.y);
-    if (!elementAtMouse) return;
     elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
 }
 
