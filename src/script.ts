@@ -1,61 +1,39 @@
+import { apiSettings, getApiSecret } from './api-keys';
 import {
-    applyApiSecretsFromFields,
-    getApiSecret,
-    getApiSecretsFields,
-} from './api-keys';
-import { clearGoogleClientCaches, handleGoogleSearchRequest, isGoogleClientSearchUrl } from './google-search';
-import { createCachedSearchGet, invalidateSearchCache } from './search-cache';
+    createCachedGoogleSearchGet,
+    handleGoogleSearchRequest,
+    isGoogleClientSearchUrl,
+} from './google-search';
+import type { EarlyFetchKey, ElementPositionBeforeContent, MousePosition } from './types';
+import { createAIComponent } from './ai';
+import { createImagesComponent } from './images';
+import { createInfoboxComponent } from './infobox';
+import { createSearchResultsComponent } from './search-results';
 
-/** Stagger only for performSearch (matches pre–split early-fetch era: e388c44). Early fetch runs all requests in parallel. */
-const INITIAL_FETCH_STAGGER_MS = {
-    google: 120,
-    infobox: 180,
-    images: 260,
-};
+const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
 
-const cachedEdgeSearchGet = createCachedSearchGet((request) => fetch(request.url));
-const cachedGoogleSearchGet = createCachedSearchGet((request) => handleGoogleSearchRequest(request));
+function byId<T extends HTMLElement = HTMLElement>(id: string): T {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`Missing #${id}`);
+    return el as T;
+}
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
     if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
-        if (isGoogleClientSearchUrl(url)) {
-            return cachedGoogleSearchGet(url.pathname + url.search);
-        }
-        return cachedEdgeSearchGet(url.pathname + url.search);
+        if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
+        return fetch(url.toString());
     }
     return fetch(url.toString(), init);
 }
 
-(function startEarlyClientFetch() {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get('q');
-    if (!q) return;
-    if (detectBang(q)) {
-        handleBangRedirect(q);
-        return;
-    }
-    const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
-    const hasGoogle =
-        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
-    const enc = encodeURIComponent(q);
-    const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
-    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
-    window.__earlyFetch = {
-        query: q,
-        brave: apiFetch(base + 'brave'),
-        ...(hasGoogle && imgGooglePromise
-            ? {
-                  google: apiFetch(base + 'google'),
-                  images: imgGooglePromise,
-              }
-            : {}),
-        marginalia: apiFetch(base + 'marginalia'),
-        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
-    };
-})();
+function detectBang(query: string) {
+    return /^![\w]+(?:\s|$)|\s![\w]+$/.test(query);
+}
 
-type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'images' | 'infobox';
+function handleBangRedirect(query: string) {
+    window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
+}
 
 function maybeClearEarlyFetch(): void {
     const early = window.__earlyFetch;
@@ -67,11 +45,9 @@ function maybeClearEarlyFetch(): void {
 function takeEarlyFetchPromise(key: EarlyFetchKey, query: string): Promise<Response> | null {
     const early = window.__earlyFetch;
     if (!early || early.query !== query) return null;
-
-    const promise = (early as any)[key] as Promise<Response> | undefined;
+    const promise = early[key];
     if (!promise) return null;
-
-    delete (early as any)[key];
+    delete early[key];
     maybeClearEarlyFetch();
     return promise;
 }
@@ -81,323 +57,195 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
     return promise ? await promise : null;
 }
 
-const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
-
-function hasCommercialApiKeys(): boolean {
-    return (
-        Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'))
-    );
-}
-
-function isAuthLikeApiError(message: string): boolean {
-    if (!message || typeof message !== 'string') return false;
-    const m = message.toLowerCase();
-    if (m.includes('401') || m.includes('403')) return true;
-    if (m.includes('unauthorized') || m.includes('forbidden')) return true;
-    if (m.includes('not configured')) return true;
-    if (m.includes('invalid') && (m.includes('key') || m.includes('token') || m.includes('credential'))) return true;
-    if (m.includes('token exchange failed')) return true;
-    if (m.includes('api key')) return true;
-    if (m.includes('authentication')) return true;
-    return false;
-}
-
-function loadApiSettingsFields() {
-    const f = getApiSecretsFields();
-    const cx = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
-    const sa = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    if (cx) cx.value = f.googleCx;
-    if (sa) sa.value = f.googleServiceAccount;
-}
-
-function openApiSettingsDialog(contextMessage?: string) {
-    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const contextEl = document.getElementById('api-settings-context');
-    const errEl = document.getElementById('api-settings-json-error');
-    if (!dialog || dialog.open) return;
-    if (errEl) {
-        errEl.textContent = '';
-        errEl.hidden = true;
+(function startEarlyClientFetch() {
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (!q) return;
+    if (detectBang(q)) {
+        handleBangRedirect(q);
+        return;
     }
-    if (contextEl) {
-        if (contextMessage) {
-            contextEl.textContent = contextMessage;
-            contextEl.hidden = false;
-        } else {
-            contextEl.textContent = '';
-            contextEl.hidden = true;
-        }
-    }
-    loadApiSettingsFields();
-    dialog.showModal();
-}
+    const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
+    const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    const enc = encodeURIComponent(q);
+    const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
+    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
+    window.__earlyFetch = {
+        query: q,
+        brave: apiFetch(base + 'brave'),
+        ...(hasGoogle && imgGooglePromise ? { google: apiFetch(base + 'google'), images: imgGooglePromise } : {}),
+        marginalia: apiFetch(base + 'marginalia'),
+        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
+    };
+})();
 
-function maybeNotifyMissingCommercialKeys() {
-    if (hasCommercialApiKeys()) return;
-    if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
-    sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
-    openApiSettingsDialog(
-        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq run on Netlify (env vars).'
-    );
-}
-
-function setupApiSettingsPanel() {
-    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const cxField = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
-    const saField = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    const errEl = document.getElementById('api-settings-json-error');
-    const closeBtn = document.getElementById('api-settings-close');
-    const saveBtn = document.getElementById('api-settings-save');
-    const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
-    if (!dialog || !cxField || !saField || !closeBtn || !saveBtn) return;
-
-    closeBtn.addEventListener('click', () => dialog.close());
-    dialog.addEventListener('click', (e) => {
-        if (e.target === dialog) dialog.close();
-    });
-
-    saveBtn.addEventListener('click', () => {
-        const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
-        const beforeCx = getApiSecret('GOOGLE_CX');
-        const result = applyApiSecretsFromFields({
-            googleCx: cxField.value,
-            googleServiceAccount: saField.value,
-        });
-        if (result.ok === false) {
-            if (errEl) {
-                errEl.textContent = result.error;
-                errEl.hidden = false;
-            }
-            return;
-        }
-        if (errEl) {
-            errEl.textContent = '';
-            errEl.hidden = true;
-        }
-        if (
-            getApiSecret('GOOGLE_SERVICE_ACCOUNT') !== beforeSa ||
-            getApiSecret('GOOGLE_CX') !== beforeCx
-        ) {
-            clearGoogleClientCaches();
-        }
-        void invalidateSearchCache();
-        sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
-        dialog.close();
-    });
-
-    clearGoogleBtn?.addEventListener('click', () => {
-        clearGoogleClientCaches();
-        void invalidateSearchCache();
-    });
-}
-
-function byId<T extends HTMLElement = HTMLElement>(id: string): T {
-    const el = document.getElementById(id);
-    if (!el) throw new Error(`Missing #${id}`);
-    return el as T;
-}
-
-// DOM Elements
 const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
-const commercialResults = byId('commercial-results');
-const noncommercialResults = byId('noncommercial-results');
-const mergedResults = byId('merged-results');
-const commercialCount = byId('commercial-count');
-const noncommercialCount = byId('noncommercial-count');
-const aiBtn = byId<HTMLButtonElement>('ai-btn');
-const aiPanel = byId('ai-panel');
-const aiPanelClose = byId<HTMLButtonElement>('ai-panel-close');
-const aiLoading = byId('ai-loading');
-const aiAnswer = byId('ai-answer');
-const aiPanelFooter = byId('ai-panel-footer');
-const aiSources = byId('ai-sources');
-
-// DDG Bang detection - matches !bang with space before/after or at start/end
-function detectBang(query) {
-    // Pattern: !word at start (followed by space) or at end (preceded by space)
-    // Valid: "!g test", "test !g", "!yt video", "!g"
-    // Invalid: "test !g query" (middle), "test!g"
-    const bangPattern = /^![\w]+(?:\s|$)|\s![\w]+$/;
-    return bangPattern.test(query);
-}
-
-// Redirect to unduck.link for bang handling
-function handleBangRedirect(query) {
-    window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
-}
-
-// Prefetch link on mousedown/touchstart for faster navigation
-const prefetchedUrls = new Set();
-function prefetchLink(url) {
-    if (prefetchedUrls.has(url)) return;
-    prefetchedUrls.add(url);
-
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    document.head.appendChild(link);
-}
-
-function attachPrefetchListeners(container) {
-    container.querySelectorAll('.result-title a').forEach(link => {
-        const url = link.href;
-        link.addEventListener('mousedown', () => prefetchLink(url), { once: true });
-        // Safari can be finicky about synchronous DOM work during `touchstart` on taps.
-        // Defer prefetch to the next task so the initial tap reliably triggers navigation.
-        link.addEventListener('touchstart', () => setTimeout(() => prefetchLink(url), 0), { once: true, passive: true });
-    });
-}
-
-// Image elements
-const imageSection = byId('image-section');
-const sliderTrack = byId('slider-track');
-const imagePreview = byId('image-preview');
-const previewImage = byId<HTMLImageElement>('preview-image');
-const previewInfo = byId('preview-info');
-const previewClose = byId<HTMLButtonElement>('preview-close');
-const previewOverlay = byId('preview-overlay');
-
-// Infobox elements
-const infobox = byId('infobox');
-const infoboxImage = byId<HTMLImageElement>('infobox-image');
-const infoboxTitle = byId('infobox-title');
-const infoboxDescription = byId('infobox-description');
-const infoboxLinks = byId('infobox-links');
-const infoboxSource = byId<HTMLAnchorElement>('infobox-source');
-
-// Results container for mouse tracking
 const resultsContainer = byId('results');
 
-// Mouse position tracking for scroll compensation
-let mousePosition = { x: null, y: null, element: null, isInsideResults: false };
-let elementPositionBeforeContent = null;
+const searchResults = createSearchResultsComponent(
+    {
+        commercialResults: byId('commercial-results'),
+        noncommercialResults: byId('noncommercial-results'),
+        mergedResults: byId('merged-results'),
+        commercialCount: byId('commercial-count'),
+        noncommercialCount: byId('noncommercial-count'),
+    },
+    {
+        apiFetch,
+        takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
+        isMergedView: () => window.innerWidth <= 900,
+        openApiSettingsDialog: apiSettings.openApiSettingsDialog,
+    }
+);
 
-// State - track each source separately
-let currentQuery = '';
-let braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-let googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-let marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-let mergedState = { loading: false };
-let imageState = { images: [], loading: false, page: 1, hasMore: true };
-let infoboxState = { data: null, loading: false };
-let aiState = { loading: false, abortController: null };
+let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
+let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
 
-// Track rendered URLs to prevent animation replay on re-render
-let renderedCommercialUrls = new Set();
-let renderedNoncommercialUrls = new Set();
-let renderedMergedUrls = new Set();
-
-/** Avoid duplicate scroll listeners on the image strip */
-let imageSliderScrollBound = false;
-
-// Check if we're in mobile merged view
-function isMergedView() {
-    return window.innerWidth <= 900;
-}
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    setupApiSettingsPanel();
-    maybeNotifyMissingCommercialKeys();
-    restoreSearchState();
-    setupInfiniteScroll();
-    setupMouseTracking();
-
-    let wasMerged = isMergedView();
-    window.addEventListener('resize', () => {
-        const nowMerged = isMergedView();
-        if (wasMerged !== nowMerged && currentQuery) {
-            if (nowMerged) renderMergedResults();
-            wasMerged = nowMerged;
-        }
-    });
-});
-
-// Track mouse position inside #results container
 function setupMouseTracking() {
     document.addEventListener('mousemove', (e) => {
-        if (resultsContainer) {
-            const rect = resultsContainer.getBoundingClientRect();
-            const isInside = (
-                e.clientX >= rect.left &&
-                e.clientX <= rect.right &&
-                e.clientY >= rect.top &&
-                e.clientY <= rect.bottom
-            );
-            
-            if (isInside) {
-                mousePosition.x = e.clientX;
-                mousePosition.y = e.clientY;
-                mousePosition.isInsideResults = true;
-                // Get the element under the cursor
-                mousePosition.element = document.elementFromPoint(e.clientX, e.clientY);
-            } else {
-                mousePosition.isInsideResults = false;
-                mousePosition.element = null;
-            }
-        }
+        const rect = resultsContainer.getBoundingClientRect();
+        const isInside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+        mousePosition = { x: isInside ? e.clientX : null, y: isInside ? e.clientY : null, isInsideResults: isInside };
     });
 }
 
-// Store element position before content is added
 function storeElementPositionBeforeContent() {
     if (!mousePosition.isInsideResults || !mousePosition.x || !mousePosition.y) {
         elementPositionBeforeContent = null;
         return;
     }
-
     const elementAtMouse = document.elementFromPoint(mousePosition.x, mousePosition.y);
-    if (!elementAtMouse) {
-        elementPositionBeforeContent = null;
-        return;
-    }
-
-    const rect = elementAtMouse.getBoundingClientRect();
-    elementPositionBeforeContent = {
-        element: elementAtMouse,
-        viewportTop: rect.top,
-        absoluteTop: rect.top + window.scrollY,
-        mouseOffset: mousePosition.y - rect.top
-    };
+    if (!elementAtMouse) return;
+    elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
 }
 
-// Scroll to maintain mouse position when content is added above
 function maintainMousePosition() {
-    if (!elementPositionBeforeContent) {
-        return;
-    }
-
-    // Find the element again (it may have moved in the DOM)
+    if (!elementPositionBeforeContent) return;
     const element = elementPositionBeforeContent.element;
     if (!element || !document.contains(element)) {
         elementPositionBeforeContent = null;
         return;
     }
-
-    // Get the element's new position after content was added
-    const rect = element.getBoundingClientRect();
-    const newViewportTop = rect.top;
-    const oldViewportTop = elementPositionBeforeContent.viewportTop;
-    
-    // Calculate how much the element moved down
-    const elementMovedDown = newViewportTop - oldViewportTop;
-    
-    // If the element moved down, scroll to compensate
-    if (elementMovedDown > 1) {
-        const currentScroll = window.scrollY;
-        const targetScroll = currentScroll + elementMovedDown;
-        window.scrollTo({
-            top: targetScroll,
-            behavior: 'auto'
-        });
-    }
-    
-    // Clear the stored position
+    const moved = element.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
+    if (moved > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
     elementPositionBeforeContent = null;
 }
 
-// Keyboard shortcut: / to focus search
+function escapeHtml(text: string) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+const images = createImagesComponent(
+    {
+        imageSection: byId('image-section'),
+        sliderTrack: byId('slider-track'),
+        imagePreview: byId('image-preview'),
+        previewImage: byId<HTMLImageElement>('preview-image'),
+        previewInfo: byId('preview-info'),
+        previewClose: byId<HTMLButtonElement>('preview-close'),
+        previewOverlay: byId('preview-overlay'),
+        previewPrev: byId<HTMLButtonElement>('preview-prev'),
+        previewNext: byId<HTMLButtonElement>('preview-next'),
+        previewCounter: byId('preview-counter'),
+    },
+    { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q), escapeHtml, storeElementPositionBeforeContent, maintainMousePosition }
+);
+
+const infobox = createInfoboxComponent(
+    {
+        infobox: byId('infobox'),
+        infoboxImage: byId<HTMLImageElement>('infobox-image'),
+        infoboxTitle: byId('infobox-title'),
+        infoboxDescription: byId('infobox-description'),
+        infoboxLinks: byId('infobox-links'),
+        infoboxSource: byId<HTMLAnchorElement>('infobox-source'),
+    },
+    {
+        apiFetch,
+        takeEarlyFetch: (k, q) => takeEarlyFetch(k, q),
+        storeElementPositionBeforeContent,
+        maintainMousePosition,
+        openImagePreview: images.openImagePreview,
+    }
+);
+
+const ai = createAIComponent(
+    {
+        aiBtn: byId<HTMLButtonElement>('ai-btn'),
+        aiPanel: byId('ai-panel'),
+        aiPanelClose: byId<HTMLButtonElement>('ai-panel-close'),
+        aiLoading: byId('ai-loading'),
+        aiAnswer: byId('ai-answer'),
+        aiPanelFooter: byId('ai-panel-footer'),
+        aiSources: byId('ai-sources'),
+    },
+    { apiFetch, escapeHtml }
+);
+
+function performSearch(query: string) {
+    searchResults.startSearch(query);
+    images.reset();
+    infobox.reset();
+    ai.reset();
+    searchResults.fetchGoogle(query);
+    void infobox.fetchInfobox(query);
+    void images.fetchImages(query, 1);
+}
+
+function restoreSearchState() {
+    const query = new URLSearchParams(window.location.search).get('q');
+    const setInputValue = (value: string, focus: boolean) => {
+        const doSet = () => {
+            searchInput.value = value;
+            if (focus && value) {
+                searchInput.focus();
+                const len = value.length;
+                searchInput.setSelectionRange(len, len);
+            } else searchInput.blur();
+        };
+        doSet();
+        requestAnimationFrame(() => requestAnimationFrame(() => searchInput.value !== value && doSet()));
+    };
+
+    if (query) {
+        if (detectBang(query)) {
+            handleBangRedirect(query);
+            return;
+        }
+        setInputValue(query, false);
+        document.title = `${query} - Search`;
+        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== query) performSearch(query);
+    } else {
+        setInputValue('', true);
+        document.title = 'Search';
+        searchResults.reset();
+        images.reset();
+        infobox.reset();
+        ai.reset();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    apiSettings.setupApiSettingsPanel();
+    apiSettings.maybeNotifyMissingCommercialKeys();
+    searchResults.initInfiniteScroll();
+    setupMouseTracking();
+    ai.setupEvents(() => searchInput.value);
+    images.setupEvents(() => searchResults.getCurrentQuery());
+    restoreSearchState();
+    let wasMerged = window.innerWidth <= 900;
+    window.addEventListener('resize', () => {
+        const nowMerged = window.innerWidth <= 900;
+        if (wasMerged !== nowMerged && searchResults.getCurrentQuery()) {
+            searchResults.forceRenderMergedIfNeeded();
+            wasMerged = nowMerged;
+        }
+    });
+});
+
 document.addEventListener('keydown', (e) => {
     if (e.key === '/' && document.activeElement !== searchInput) {
         e.preventDefault();
@@ -405,1543 +253,21 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Form submission
 searchForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const query = searchInput.value.trim();
-    if (query) {
-        // Handle bangs before updating URL (so back button doesn't cause redirect loop)
-        if (detectBang(query)) {
-            handleBangRedirect(query);
-            return;
-        }
-        const url = new URL(window.location.href);
-        url.searchParams.set('q', query);
-        window.history.pushState({}, '', url);
-        restoreSearchState();
-    }
-});
-
-// AI Answer button
-aiBtn.addEventListener('click', () => {
-    const query = searchInput.value.trim();
-    if (query) {
-        fetchAIAnswer(query);
-    }
-});
-
-// AI Panel close button
-aiPanelClose.addEventListener('click', () => {
-    closeAIPanel();
-});
-
-// Close AI panel with Escape key
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && aiPanel.style.display !== 'none') {
-        closeAIPanel();
-    }
-});
-
-// Handle clicks on source references in AI answer
-aiAnswer.addEventListener('click', (e) => {
-    const t = e.target;
-    if (t instanceof HTMLElement && t.classList.contains('source-ref')) {
-        const sourceNum = parseInt(t.dataset.source ?? '', 10);
-        const sourceItem = aiSources.querySelector(`.ai-source-item:nth-child(${sourceNum})`);
-        if (sourceItem instanceof HTMLElement) {
-            sourceItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            sourceItem.style.animation = 'none';
-            sourceItem.offsetHeight; // Trigger reflow
-            sourceItem.style.animation = 'highlightSource 1s ease';
-        }
-    }
-});
-
-function closeAIPanel() {
-    // Abort any ongoing request
-    if (aiState.abortController) {
-        aiState.abortController.abort();
-        aiState.abortController = null;
-    }
-    aiPanel.style.display = 'none';
-    aiBtn.classList.remove('active');
-    aiState.loading = false;
-}
-
-async function fetchAIAnswer(query) {
-    // If already loading, abort and close
-    if (aiState.loading) {
-        closeAIPanel();
+    if (!query) return;
+    if (detectBang(query)) {
+        handleBangRedirect(query);
         return;
     }
-
-    // Show panel and loading state
-    aiPanel.style.display = 'block';
-    aiBtn.classList.add('active');
-    aiLoading.style.display = 'flex';
-    aiAnswer.innerHTML = '';
-    aiAnswer.style.display = 'none';
-    aiPanelFooter.style.display = 'none';
-    aiState.loading = true;
-
-    // Scroll to make AI panel visible
-    aiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    // Create abort controller for this request
-    aiState.abortController = new AbortController();
-
-    try {
-        const response = await apiFetch('/api/ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query }),
-            signal: aiState.abortController.signal,
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            const errMsg = errorData.error || `Request failed: ${response.status}`;
-            throw new Error(errMsg);
-        }
-
-        // Start streaming - keep loading visible until first content arrives
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullContent = '';
-        let webSearchSources = null;
-        let hasReceivedContent = false;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed === 'data: [DONE]') continue;
-                if (!trimmed.startsWith('data: ')) continue;
-
-                try {
-                    const json = JSON.parse(trimmed.slice(6));
-                    if (json.content) {
-                        // Hide loading and show answer area on first content
-                        if (!hasReceivedContent) {
-                            aiLoading.style.display = 'none';
-                            aiAnswer.style.display = 'block';
-                            hasReceivedContent = true;
-                        }
-                        
-                        fullContent += json.content;
-                        // Render markdown and add cursor
-                        aiAnswer.innerHTML = renderMarkdown(fullContent) + '<span class="ai-cursor"></span>';
-                    }
-                    if (json.sources) {
-                        // Store sources from web search
-                        webSearchSources = json.sources;
-                    }
-                    if (json.error) {
-                        throw new Error(json.error);
-                    }
-                } catch (e) {
-                    if (e.message !== 'Unexpected end of JSON input') {
-                        console.error('Parse error:', e);
-                    }
-                }
-            }
-        }
-
-        // Hide loading if we never received content (shouldn't happen, but safety check)
-        if (!hasReceivedContent) {
-            aiLoading.style.display = 'none';
-            aiAnswer.style.display = 'block';
-        }
-        
-        // Final render without cursor
-        aiAnswer.innerHTML = renderMarkdown(fullContent);
-
-        // Only show sources if they're actually referenced in the response
-        // Check for citation patterns like [1], [2], or explicit source mentions
-        if (webSearchSources && webSearchSources.length > 0) {
-            const hasCitations = /\[\d+\]/.test(fullContent) || 
-                                /source|reference|cited|according to/i.test(fullContent) ||
-                                webSearchSources.some(source => fullContent.includes(source.url) || fullContent.includes(source.title));
-            
-            if (hasCitations) {
-                renderAISources(webSearchSources);
-            }
-        }
-
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            // Request was aborted, do nothing
-            return;
-        }
-        aiLoading.style.display = 'none';
-        aiAnswer.style.display = 'block';
-        aiAnswer.innerHTML = `
-            <div class="ai-error">
-                <span class="ai-error-icon">⚠</span>
-                <span class="ai-error-message">${escapeHtml(error.message)}</span>
-            </div>
-        `;
-    } finally {
-        aiState.loading = false;
-        aiState.abortController = null;
-    }
-}
-
-function renderAISources(sources) {
-    if (!sources || sources.length === 0) return;
-
-    aiPanelFooter.style.display = 'block';
-    aiSources.innerHTML = sources.map((source, index) => `
-        <a href="${escapeHtml(source.url)}" class="ai-source-item" target="_blank" rel="noopener">
-            <span class="ai-source-num">${index + 1}</span>
-            <span class="ai-source-title">${escapeHtml(source.title)}</span>
-        </a>
-    `).join('');
-}
-
-// Simple markdown renderer
-function renderMarkdown(text) {
-    if (!text) return '';
-
-    // First, handle HTML tags that the AI might output directly
-    // Convert common HTML tags to markdown equivalents before escaping
-    let html = text
-        .replace(/<br\s*\/?>/gi, '\n')  // Convert <br> to newline
-        .replace(/<br>/gi, '\n')        // Also handle <br> without slash
-        .replace(/<\/?p>/gi, '\n\n')   // Convert <p> tags to double newlines
-        .replace(/<\/?div>/gi, '\n')   // Convert <div> tags to newlines
-        .replace(/<strong>(.+?)<\/strong>/gi, '**$1**')  // Convert <strong> to **
-        .replace(/<b>(.+?)<\/b>/gi, '**$1**')            // Convert <b> to **
-        .replace(/<em>(.+?)<\/em>/gi, '*$1*')            // Convert <em> to *
-        .replace(/<i>(.+?)<\/i>/gi, '*$1*')             // Convert <i> to *
-        .replace(/<code>(.+?)<\/code>/gi, '`$1`')        // Convert <code> to `
-        .replace(/<a\s+href=["']([^"']+)["'][^>]*>(.+?)<\/a>/gi, '[$2]($1)') // Convert links
-        .replace(/<h1>(.+?)<\/h1>/gi, '# $1')           // Convert headers
-        .replace(/<h2>(.+?)<\/h2>/gi, '## $1')
-        .replace(/<h3>(.+?)<\/h3>/gi, '### $1')
-        .replace(/<h4>(.+?)<\/h4>/gi, '#### $1')
-        .replace(/<h5>(.+?)<\/h5>/gi, '##### $1')
-        .replace(/<h6>(.+?)<\/h6>/gi, '###### $1')
-        .replace(/<ul>/gi, '\n')
-        .replace(/<\/ul>/gi, '\n')
-        .replace(/<ol>/gi, '\n')
-        .replace(/<\/ol>/gi, '\n')
-        .replace(/<li>(.+?)<\/li>/gi, '- $1\n')
-        .replace(/<blockquote>(.+?)<\/blockquote>/gi, '> $1');
-
-    // Now escape remaining HTML
-    html = escapeHtml(html);
-
-    // Code blocks (must be first to prevent other replacements inside)
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
-        return `<pre><code>${code.trim()}</code></pre>`;
-    });
-
-    // Tables - process markdown tables
-    // Match table blocks: consecutive lines starting/ending with |
-    html = html.replace(/((?:^\|.+\|\s*\n)+)/gm, (match) => {
-        const lines = match.trim().split('\n').filter(l => l.trim());
-        if (lines.length < 2) return match; // Need at least 2 rows
-        
-        let tableHtml = '<table>';
-        let isFirstRow = true;
-        
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
-            
-            // Check if it's a separator row (contains only dashes, pipes, colons, spaces)
-            if (/^[\s\|:\-]+$/.test(trimmed)) {
-                if (isFirstRow) isFirstRow = false;
-                continue;
-            }
-            
-            // Parse cells
-            const cells = trimmed.slice(1, -1).split('|').map(cell => cell.trim());
-            if (cells.length < 2) continue; // Need at least 2 cells
-            
-            const tag = isFirstRow ? 'th' : 'td';
-            tableHtml += '<tr>' + cells.map(cell => `<${tag}>${cell}</${tag}>`).join('') + '</tr>';
-            
-            if (isFirstRow) isFirstRow = false;
-        }
-        
-        tableHtml += '</table>';
-        return tableHtml;
-    });
-
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // Headers (must go from most # to least to avoid partial matches)
-    // Match headers at start of line (after optional whitespace), must have space after #
-    html = html.replace(/^(\s*)######\s+(.+?)\s*$/gm, '$1<h6>$2</h6>');
-    html = html.replace(/^(\s*)#####\s+(.+?)\s*$/gm, '$1<h5>$2</h5>');
-    html = html.replace(/^(\s*)####\s+(.+?)\s*$/gm, '$1<h4>$2</h4>');
-    html = html.replace(/^(\s*)###\s+(.+?)\s*$/gm, '$1<h3>$2</h3>');
-    html = html.replace(/^(\s*)##\s+(.+?)\s*$/gm, '$1<h2>$2</h2>');
-    html = html.replace(/^(\s*)#\s+(.+?)\s*$/gm, '$1<h1>$2</h1>');
-
-    // Bold and italic
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-    // Links
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-    // Source references [1], [2], etc.
-    html = html.replace(/\[(\d+)\]/g, '<span class="source-ref" data-source="$1">$1</span>');
-
-    // Blockquotes
-    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-    // Unordered lists
-    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-    // Ordered lists
-    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-    // Paragraphs (double newlines)
-    html = html.replace(/\n\n+/g, '</p><p>');
-    html = '<p>' + html + '</p>';
-
-    // Clean up empty paragraphs and fix structure
-    html = html.replace(/<p><\/p>/g, '');
-    // Unwrap headers from paragraphs - handle both opening and closing
-    html = html.replace(/<p>\s*(<h[1-6]>)/g, '$1');
-    html = html.replace(/(<\/h[1-6]>)\s*<\/p>/g, '$1');
-    html = html.replace(/<p>(<ul>)/g, '$1');
-    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<pre>)/g, '$1');
-    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<blockquote>)/g, '$1');
-    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<table>)/g, '$1');
-    html = html.replace(/(<\/table>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<ul>)/g, '$1');
-    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<pre>)/g, '$1');
-    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<blockquote>)/g, '$1');
-    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<table>)/g, '$1');
-    html = html.replace(/(<\/table>)<\/p>/g, '$1');
-
-    // Single newlines to <br> within paragraphs
-    html = html.replace(/([^>])\n([^<])/g, '$1<br>$2');
-
-    return html;
-}
-
-// Preview navigation elements
-const previewPrev = byId<HTMLButtonElement>('preview-prev');
-const previewNext = byId<HTMLButtonElement>('preview-next');
-const previewCounter = byId('preview-counter');
-
-// Preview state
-let currentPreviewIndex = -1;
-
-// Preview close handlers
-previewClose.addEventListener('click', closeImagePreview);
-previewOverlay.addEventListener('click', closeImagePreview);
-
-// Preview navigation handlers
-previewPrev.addEventListener('click', (e) => {
-    e.stopPropagation();
-    navigatePreview(-1);
-});
-previewNext.addEventListener('click', (e) => {
-    e.stopPropagation();
-    navigatePreview(1);
-});
-
-// Keyboard navigation for preview
-document.addEventListener('keydown', (e) => {
-    if (imagePreview.classList.contains('active')) {
-        if (e.key === 'Escape') {
-            closeImagePreview();
-        } else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            navigatePreview(-1);
-        } else if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            navigatePreview(1);
-        }
-    }
-});
-
-// Touch swipe support for preview
-let touchStartX = 0;
-let touchStartY = 0;
-let touchEndX = 0;
-
-imagePreview.addEventListener('touchstart', (e) => {
-    touchStartX = e.changedTouches[0].screenX;
-    touchStartY = e.changedTouches[0].screenY;
-}, { passive: true });
-
-imagePreview.addEventListener('touchend', (e) => {
-    touchEndX = e.changedTouches[0].screenX;
-    const touchEndY = e.changedTouches[0].screenY;
-    handleSwipe(touchStartX, touchEndX, touchStartY, touchEndY);
-}, { passive: true });
-
-function handleSwipe(startX, endX, startY, endY) {
-    const deltaX = endX - startX;
-    const deltaY = Math.abs(endY - startY);
-    const minSwipeDistance = 50;
-    
-    // Only trigger if horizontal swipe is dominant and significant
-    if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > deltaY) {
-        if (deltaX > 0) {
-            navigatePreview(-1); // Swipe right = previous
-        } else {
-            navigatePreview(1); // Swipe left = next
-        }
-    }
-}
-
-async function navigatePreview(direction) {
-    if (imageState.images.length === 0) return;
-    
-    const newIndex = currentPreviewIndex + direction;
-    
-    if (newIndex >= 0 && newIndex < imageState.images.length) {
-        openImagePreview(newIndex);
-    } else if (newIndex >= imageState.images.length && imageState.hasMore && !imageState.loading) {
-        // At the end but more images available - load them
-        previewNext.classList.add('loading');
-        const previousCount = imageState.images.length;
-        await fetchImages(currentQuery, imageState.page + 1);
-        previewNext.classList.remove('loading');
-        
-        // If new images were loaded, navigate to the first new one
-        if (imageState.images.length > previousCount) {
-            openImagePreview(previousCount);
-        }
-    }
-}
-
-// Handle browser back/forward
-window.addEventListener('popstate', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', query);
+    window.history.pushState({}, '', url);
     restoreSearchState();
 });
 
-// Handle bfcache restoration (Safari)
+window.addEventListener('popstate', restoreSearchState);
 window.addEventListener('pageshow', (e) => {
-    if (e.persisted) {
-        restoreSearchState();
-    }
+    if (e.persisted) restoreSearchState();
 });
-
-function restoreSearchState() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const query = urlParams.get('q');
-
-    // Safari bfcache restores form values after JS runs - use multiple strategies
-    const setInputValue = (value, focus) => {
-        const doSet = () => {
-            searchInput.value = value;
-            if (focus && value) {
-                searchInput.focus();
-                const len = value.length;
-                searchInput.setSelectionRange(len, len);
-            }
-	    else searchInput.blur();
-        };
-        // Immediate attempt
-        doSet();
-        // After next frame (standard browsers)
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (searchInput.value !== value) doSet();
-            });
-        });
-    };
-
-    if (query) {
-        // Check for DDG bang and redirect if found
-        if (detectBang(query)) {
-            handleBangRedirect(query);
-            return;
-        }
-
-        setInputValue(query, false);
-
-        document.title = `${query} - Search`;
-        // Only re-search if results are empty (page was restored from bfcache)
-        if (!currentQuery || currentQuery !== query) {
-            performSearch(query);
-        }
-    } else {
-        setInputValue('', true);
-        document.title = 'Search';
-        resetResults();
-    }
-}
-
-function setupInfiniteScroll() {
-    const observerOptions = { root: null, rootMargin: '100px', threshold: 0 };
-
-    const commercialSentinel = document.createElement('div');
-    commercialSentinel.className = 'scroll-sentinel';
-    commercialSentinel.id = 'commercial-sentinel';
-
-    const noncommercialSentinel = document.createElement('div');
-    noncommercialSentinel.className = 'scroll-sentinel';
-    noncommercialSentinel.id = 'noncommercial-sentinel';
-
-    const mergedSentinel = document.createElement('div');
-    mergedSentinel.className = 'scroll-sentinel';
-    mergedSentinel.id = 'merged-sentinel';
-
-    const commercialObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting && currentQuery && !isMergedView()) {
-                loadMoreCommercial();
-            }
-        });
-    }, observerOptions);
-
-    const noncommercialObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting && !marginaliaState.loading && marginaliaState.hasMore && currentQuery && !isMergedView()) {
-                loadMoreMarginalia();
-            }
-        });
-    }, observerOptions);
-
-    const mergedObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting && !mergedState.loading && currentQuery && isMergedView()) {
-                loadMoreMergedResults();
-            }
-        });
-    }, observerOptions);
-
-    window.scrollObservers = { commercialObserver, noncommercialObserver, mergedObserver };
-    window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
-}
-
-async function performSearch(query) {
-    // Reset all state
-    currentQuery = query;
-    braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    mergedState = { loading: false };
-    imageState = { images: [], loading: false, page: 1, hasMore: true };
-    infoboxState = { data: null, loading: false };
-
-    // Reset AI state
-    if (aiState.abortController) {
-        aiState.abortController.abort();
-        aiState.abortController = null;
-    }
-    aiState = { loading: false, abortController: null };
-
-    // Reset rendered URL tracking for new search
-    renderedCommercialUrls = new Set();
-    renderedNoncommercialUrls = new Set();
-    renderedMergedUrls = new Set();
-
-    // Show loading states
-    showLoading(commercialResults);
-    showLoading(noncommercialResults);
-    showLoading(mergedResults);
-    commercialCount.textContent = '';
-    noncommercialCount.textContent = '';
-
-    // Hide image section, infobox, and AI panel initially
-    imageSection.style.display = 'none';
-    infobox.style.display = 'none';
-    aiPanel.style.display = 'none';
-    aiBtn.classList.remove('active');
-
-    fetchSource('brave', query, 1);
-    fetchSource('marginalia', query, 1);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchSource('google', query, 1);
-    }, INITIAL_FETCH_STAGGER_MS.google);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchInfobox(query);
-    }, INITIAL_FETCH_STAGGER_MS.infobox);
-
-    setTimeout(() => {
-        if (currentQuery === query) fetchImages(query, 1);
-    }, INITIAL_FETCH_STAGGER_MS.images);
-}
-
-/** Brave images page 1 — 1s after fetchImages starts (rate-limit friendly); not in early fetch (same as e388c44). */
-function scheduleBraveImagesDelayed(query) {
-    setTimeout(async () => {
-        try {
-            const braveResponse = await apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
-            );
-            if (braveResponse.ok) {
-                const braveData = await braveResponse.json();
-                const braveImages = braveData.images || [];
-                const existingUrls = new Set(imageState.images.map(img => img.full));
-                const uniqueBraveImages = braveImages.filter(img => !existingUrls.has(img.full));
-                if (uniqueBraveImages.length > 0) {
-                    imageState.images = [...imageState.images, ...uniqueBraveImages];
-                    if (imageSection.style.display === 'none' && imageState.images.length > 0) {
-                        storeElementPositionBeforeContent();
-                        renderImageSlider();
-                        imageSection.style.display = 'block';
-                        setupImageSliderScroll();
-                        requestAnimationFrame(() => {
-                            maintainMousePosition();
-                        });
-                    } else {
-                        appendImagesToSlider(uniqueBraveImages);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching Brave images:', error);
-        }
-    }, 1000);
-}
-
-async function fetchSource(source, query, page) {
-    const state = getState(source);
-    state.loading = true;
-
-    try {
-        let response: Response;
-        if (page === 1 && (source === 'brave' || source === 'google' || source === 'marginalia')) {
-            const early = await takeEarlyFetch(source as EarlyFetchKey, query);
-            if (early) {
-                response = early;
-            } else {
-                response = await apiFetch(
-                    `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
-                );
-            }
-        } else {
-            response = await apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`
-            );
-        }
-
-        if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-
-        const data = await response.json();
-        const sourceData = data[source];
-
-        if (sourceData?.error) {
-            state.hasMore = false;
-            state.error = sourceData.error;
-            console.error(`Error from ${source}:`, sourceData.error);
-            if (source === 'google' && isAuthLikeApiError(String(sourceData.error))) {
-                openApiSettingsDialog(String(sourceData.error));
-            }
-        } else if (sourceData) {
-            state.hasMore = sourceData.hasMore;
-            state.results = [...state.results, ...sourceData.results];
-            state.error = null;
-        }
-
-    } catch (error) {
-        console.error(`Error fetching ${source}:`, error);
-        state.hasMore = false;
-        const errMsg = error instanceof Error ? error.message : String(error);
-        state.error = errMsg;
-        if (source === 'google' && isAuthLikeApiError(errMsg)) {
-            openApiSettingsDialog(errMsg);
-        }
-    } finally {
-        state.loading = false;
-    }
-
-    // Render after loading state is updated
-    if (source === 'marginalia') {
-        renderNoncommercialResults();
-    } else {
-        renderCommercialResults();
-        // Re-render Marginalia to filter out any new duplicates from commercial results
-        if (!isMergedView() && marginaliaState.results.length > 0) {
-            renderNoncommercialResults();
-        }
-    }
-
-    if (isMergedView()) {
-        renderMergedResults();
-    }
-}
-
-function getState(source) {
-    if (source === 'brave') return braveState;
-    if (source === 'google') return googleState;
-    return marginaliaState;
-}
-
-function applyNoAnimateToRenderedItems(container: HTMLElement, renderedUrls: Set<unknown>): void {
-    // Disable animation on already-rendered items, track new ones
-    container.querySelectorAll('.result-item').forEach((item) => {
-        const el = item as HTMLElement;
-        const urlKey = el.dataset.urlKey;
-        if (!urlKey) return;
-        if (renderedUrls.has(urlKey)) {
-            el.classList.add('no-animate');
-        } else {
-            renderedUrls.add(urlKey);
-        }
-    });
-}
-
-function renderStandardResultArticle(
-    result: any,
-    index: number,
-    dataSource: string,
-    sourceLabel: string,
-    sourceClassName: string = 'result-source-tag'
-): string {
-    const faviconUrl = getFaviconUrl(result.url);
-    const urlKey = getDedupeKey(result.url);
-    return `
-        <article class="result-item" data-source="${dataSource}" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
-            <div class="result-url-row">
-                <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
-                <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
-                <div class="${sourceClassName}">${sourceLabel}</div>
-            </div>
-            <h3 class="result-title">
-                <a href="${escapeHtml(result.url)}">${escapeHtml(result.title)}</a>
-            </h3>
-            ${result.snippet ? `<p class="result-snippet">${sanitizeSnippet(result.snippet)}</p>` : ''}
-        </article>
-    `;
-}
-
-function renderEmptyOrErrorState(
-    container: HTMLElement,
-    opts: { anyLoading: boolean; hasError: boolean; errorHtml: string; emptyHtml: string }
-): boolean {
-    if (opts.anyLoading) return false; // keep skeletons; caller should return
-    container.innerHTML = opts.hasError ? opts.errorHtml : opts.emptyHtml;
-    return true;
-}
-
-function renderCommercialResults() {
-    // Interleave Google first, then Brave (order: Google, Brave)
-    const interleaved = deduplicateResults(interleaveArrays(googleState.results, braveState.results));
-    const anyLoading = braveState.loading || googleState.loading;
-
-    // Log errors to console
-    if (googleState.error) {
-        console.log('Google error:', googleState.error);
-    }
-    if (braveState.error) {
-        console.log('Brave error:', braveState.error);
-    }
-
-    if (interleaved.length === 0) {
-        const rendered = renderEmptyOrErrorState(commercialResults, {
-            anyLoading,
-            hasError: Boolean(googleState.error && braveState.error),
-            errorHtml: `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`,
-            emptyHtml: `<div class="empty-state"><p>No results found</p></div>`,
-        });
-        if (!rendered) return; // loading: keep skeletons
-        return;
-    }
-
-    const html = interleaved
-        .map((result, index) => {
-            const dataSource = result.source || 'brave';
-            const sourceLabel = dataSource === 'google' ? 'Google' : 'Brave';
-            return renderStandardResultArticle(result, index, dataSource, sourceLabel);
-        })
-        .join('');
-
-    commercialResults.innerHTML = html;
-
-    applyNoAnimateToRenderedItems(commercialResults, renderedCommercialUrls);
-
-    attachPrefetchListeners(commercialResults);
-
-    const totalResults = braveState.results.length + googleState.results.length;
-    const hasMore = braveState.hasMore || googleState.hasMore;
-    updateCount(commercialCount, totalResults, hasMore);
-
-    if (hasMore) {
-        attachSentinel(commercialResults, 'commercial');
-    }
-}
-
-function renderNoncommercialResults() {
-    // Build set of commercial URLs to exclude duplicates
-    const commercialUrls = new Set();
-    for (const result of googleState.results) {
-        commercialUrls.add(getDedupeKey(result.url));
-    }
-    for (const result of braveState.results) {
-        commercialUrls.add(getDedupeKey(result.url));
-    }
-
-    // Filter out Marginalia results that duplicate commercial results
-    const results = marginaliaState.results.filter(result => {
-        return !commercialUrls.has(getDedupeKey(result.url));
-    });
-
-    // Log errors to console
-    if (marginaliaState.error) {
-        console.log('Marginalia error:', marginaliaState.error);
-    }
-
-    if (results.length === 0) {
-        if (marginaliaState.loading) {
-            // Still loading, keep showing skeletons
-            return;
-        }
-        if (marginaliaState.error) {
-            noncommercialResults.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`;
-        } else if (marginaliaState.results.length > 0) {
-            // Has results but all are duplicates
-            noncommercialResults.innerHTML = `<div class="empty-state"><p>All results match commercial results</p></div>`;
-        } else {
-            noncommercialResults.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
-        }
-        return;
-    }
-
-    const html = results
-        .map((result, index) => renderStandardResultArticle(result, index, 'marginalia', 'Marginalia'))
-        .join('');
-
-    noncommercialResults.innerHTML = html;
-
-    applyNoAnimateToRenderedItems(noncommercialResults, renderedNoncommercialUrls);
-
-    attachPrefetchListeners(noncommercialResults);
-    updateCount(noncommercialCount, results.length, marginaliaState.hasMore);
-
-    if (marginaliaState.hasMore) {
-        attachSentinel(noncommercialResults, 'noncommercial');
-    }
-}
-
-function interleaveArrays(arr1, arr2) {
-    const result = [];
-    const maxLen = Math.max(arr1.length, arr2.length);
-
-    for (let i = 0; i < maxLen; i++) {
-        if (i < arr1.length) result.push(arr1[i]);
-        if (i < arr2.length) result.push(arr2[i]);
-    }
-
-    return result;
-}
-
-// Deduplicate results based on URL domain + path (ignoring protocol and query params)
-function deduplicateResults(results) {
-    const seen = new Set();
-    return results.filter(result => {
-        try {
-            const url = new URL(result.url);
-            const key = url.hostname + url.pathname.replace(/\/$/, '');
-            if (seen.has(key)) {
-                return false;
-            }
-            seen.add(key);
-            return true;
-        } catch {
-            return true;
-        }
-    });
-}
-
-async function loadMoreCommercial() {
-    const braveNeedsMore = braveState.hasMore && !braveState.loading;
-    const googleNeedsMore = googleState.hasMore && !googleState.loading;
-
-    if (!braveNeedsMore && !googleNeedsMore) return;
-
-    showLoadingMore(commercialResults);
-
-    const promises = [];
-    if (braveNeedsMore) {
-        braveState.page += 1;
-        promises.push(fetchSource('brave', currentQuery, braveState.page));
-    }
-    if (googleNeedsMore) {
-        googleState.page += 1;
-        promises.push(fetchSource('google', currentQuery, googleState.page));
-    }
-
-    await Promise.all(promises);
-    removeLoadingMore(commercialResults);
-}
-
-async function loadMoreMarginalia() {
-    if (marginaliaState.loading || !marginaliaState.hasMore) return;
-
-    showLoadingMore(noncommercialResults);
-    marginaliaState.page += 1;
-    await fetchSource('marginalia', currentQuery, marginaliaState.page);
-    removeLoadingMore(noncommercialResults);
-}
-
-async function loadMoreMergedResults() {
-    const braveNeedsMore = braveState.hasMore && !braveState.loading;
-    const googleNeedsMore = googleState.hasMore && !googleState.loading;
-    const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
-
-    if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
-
-    mergedState.loading = true;
-    showLoadingMore(mergedResults);
-
-    const promises = [];
-    if (braveNeedsMore) {
-        braveState.page += 1;
-        promises.push(fetchSource('brave', currentQuery, braveState.page));
-    }
-    if (googleNeedsMore) {
-        googleState.page += 1;
-        promises.push(fetchSource('google', currentQuery, googleState.page));
-    }
-    if (marginaliaNeedsMore) {
-        marginaliaState.page += 1;
-        promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page));
-    }
-
-    await Promise.all(promises);
-    removeLoadingMore(mergedResults);
-    mergedState.loading = false;
-}
-
-function renderMergedResults() {
-    // Interleave in order: Google, Marginalia, Brave (and deduplicate)
-    const allResults = [];
-    const seen = new Set();
-    const maxLen = Math.max(googleState.results.length, marginaliaState.results.length, braveState.results.length);
-
-    for (let i = 0; i < maxLen; i++) {
-        // Google first
-        if (i < googleState.results.length) {
-            const result = googleState.results[i];
-            const key = getDedupeKey(result.url);
-            if (!seen.has(key)) {
-                seen.add(key);
-                allResults.push({ type: 'commercial', result, urlKey: key });
-            }
-        }
-        // Marginalia second
-        if (i < marginaliaState.results.length) {
-            const result = marginaliaState.results[i];
-            const key = getDedupeKey(result.url);
-            if (!seen.has(key)) {
-                seen.add(key);
-                allResults.push({ type: 'noncommercial', result, urlKey: key });
-            }
-        }
-        // Brave third
-        if (i < braveState.results.length) {
-            const result = braveState.results[i];
-            const key = getDedupeKey(result.url);
-            if (!seen.has(key)) {
-                seen.add(key);
-                allResults.push({ type: 'commercial', result, urlKey: key });
-            }
-        }
-    }
-
-    // Log errors to console
-    if (googleState.error) console.log('Google error:', googleState.error);
-    if (marginaliaState.error) console.log('Marginalia error:', marginaliaState.error);
-    if (braveState.error) console.log('Brave error:', braveState.error);
-
-    const anyLoading = braveState.loading || googleState.loading || marginaliaState.loading;
-    const allErrors = googleState.error && marginaliaState.error && braveState.error;
-
-    if (allResults.length === 0) {
-        const rendered = renderEmptyOrErrorState(mergedResults, {
-            anyLoading,
-            hasError: Boolean(allErrors),
-            errorHtml: `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`,
-            emptyHtml: `<div class="empty-state"><p>No results found</p></div>`,
-        });
-        if (!rendered) return; // loading: keep skeletons
-        return;
-    }
-
-    const html = allResults
-        .map((item, index) => {
-            const sourceLabel =
-                item.type === 'commercial'
-                    ? (item.result.source === 'google' ? 'Google' : 'Brave')
-                    : 'Marginalia';
-            const dataSource = item.type === 'commercial' ? 'commercial' : 'noncommercial';
-            // Keep merged markup identical: use `.result-source` class instead of `.result-source-tag`
-            return renderStandardResultArticle(item.result, index, dataSource, sourceLabel, 'result-source');
-        })
-        .join('');
-
-    mergedResults.innerHTML = html;
-
-    applyNoAnimateToRenderedItems(mergedResults, renderedMergedUrls);
-
-    attachPrefetchListeners(mergedResults);
-
-    const hasMore = braveState.hasMore || googleState.hasMore || marginaliaState.hasMore;
-    if (hasMore) {
-        attachSentinel(mergedResults, 'merged');
-    }
-}
-
-function getDedupeKey(url) {
-    try {
-        const parsed = new URL(url);
-        return parsed.hostname + parsed.pathname.replace(/\/$/, '');
-    } catch {
-        return url;
-    }
-}
-
-async function fetchImages(query, page = 1) {
-    if (imageState.loading) return;
-    imageState.loading = true;
-
-    try {
-        if (page === 1) {
-            // First page: fetch Google immediately, Brave after 1s delay (avoid rate limit)
-            imageState.images = [];
-            imageState.page = 1;
-
-            let googleResponse: Response;
-            const earlyImages = await takeEarlyFetch('images', query);
-            if (earlyImages) {
-                googleResponse = earlyImages;
-            } else {
-                googleResponse = await apiFetch(
-                    `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
-                );
-            }
-            if (googleResponse.ok) {
-                const googleData = await googleResponse.json();
-                const googleImages = googleData.images || [];
-                imageState.images = googleImages;
-                if (googleImages.length > 0) {
-                    // Store element position before showing images (if mouse is in results)
-                    const wasHidden = imageSection.style.display === 'none';
-                    if (wasHidden) {
-                        storeElementPositionBeforeContent();
-                    }
-                    renderImageSlider();
-                    imageSection.style.display = 'block';
-                    setupImageSliderScroll();
-                    // Maintain mouse position after showing images
-                    if (wasHidden) {
-                        requestAnimationFrame(() => {
-                            maintainMousePosition();
-                        });
-                    }
-                }
-            }
-
-            scheduleBraveImagesDelayed(query);
-
-            imageState.hasMore = true;
-        } else {
-            // Subsequent pages: fetch both together (user-triggered, rate limit not an issue)
-            const response = await apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&page=${page}`
-            );
-
-            if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
-
-            const data = await response.json();
-            const newImages = data.images || [];
-            imageState.hasMore = data.hasMore ?? false;
-            imageState.page = page;
-
-            // Deduplicate against existing images
-            const existingUrls = new Set(imageState.images.map(img => img.full));
-            const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.full));
-            imageState.images = [...imageState.images, ...uniqueNewImages];
-            appendImagesToSlider(uniqueNewImages);
-        }
-    } catch (error) {
-        console.error('Error fetching images:', error);
-    } finally {
-        imageState.loading = false;
-    }
-}
-
-function setupImageSliderScroll() {
-    if (imageSliderScrollBound) return;
-    imageSliderScrollBound = true;
-    sliderTrack.addEventListener('scroll', () => {
-        if (imageState.loading || !imageState.hasMore) return;
-
-        // Check if scrolled near the end (within 200px)
-        const scrollRight = sliderTrack.scrollWidth - sliderTrack.scrollLeft - sliderTrack.clientWidth;
-        if (scrollRight < 200) {
-            showImageLoadingIndicator();
-            fetchImages(currentQuery, imageState.page + 1);
-        }
-    });
-}
-
-function showImageLoadingIndicator() {
-    if (sliderTrack.querySelector('.image-loading')) return;
-    const loader = document.createElement('div');
-    loader.className = 'image-loading';
-    loader.innerHTML = '<div class="loading-spinner small"></div>';
-    sliderTrack.appendChild(loader);
-}
-
-function removeImageLoadingIndicator() {
-    const loader = sliderTrack.querySelector('.image-loading');
-    if (loader) loader.remove();
-}
-
-function appendImagesToSlider(newImages) {
-    // Note: appendImagesToSlider is called when adding more images to existing slider
-    // We don't need to track position here as the slider is already visible
-    // and new images are appended to the end, not inserted above
-    
-    removeImageLoadingIndicator();
-
-    const startIndex = imageState.images.length - newImages.length;
-    const html = newImages.map((img, i) => `
-        <img 
-            class="slider-image" 
-            src="${escapeHtml(img.thumbnail)}" 
-            alt="${escapeHtml(img.title)}"
-            data-index="${startIndex + i}"
-            loading="lazy"
-        >
-    `).join('');
-
-    sliderTrack.insertAdjacentHTML('beforeend', html);
-
-    // Add click and error handlers to new images
-    const newImgElements = sliderTrack.querySelectorAll('.slider-image:not([data-bound])');
-    newImgElements.forEach((node) => {
-        const img = node as HTMLImageElement;
-        img.setAttribute('data-bound', 'true');
-        img.addEventListener('click', () => {
-            const index = parseInt(img.dataset.index ?? '', 10);
-            openImagePreview(index);
-        });
-        // Hide broken images
-        img.addEventListener('error', () => {
-            img.style.display = 'none';
-        });
-        img.addEventListener('load', () => {
-            if (img.naturalWidth === 0) {
-                img.style.display = 'none';
-            }
-        });
-    });
-}
-
-function renderImageSlider() {
-    const images = imageState.images;
-    sliderTrack.innerHTML = images.map((img, index) => `
-        <img 
-            class="slider-image" 
-            src="${escapeHtml(img.thumbnail)}" 
-            alt="${escapeHtml(img.title)}"
-            data-index="${index}"
-            data-bound="true"
-            loading="lazy"
-        >
-    `).join('');
-
-    // Add click and error handlers
-    sliderTrack.querySelectorAll('.slider-image').forEach((node) => {
-        const img = node as HTMLImageElement;
-        img.addEventListener('click', () => {
-            const index = parseInt(img.dataset.index ?? '', 10);
-            openImagePreview(index);
-        });
-        // Hide broken images
-        img.addEventListener('error', () => {
-            img.style.display = 'none';
-        });
-        // Also check for images that "load" but are actually broken (0x0)
-        img.addEventListener('load', () => {
-            if (img.naturalWidth === 0) {
-                img.style.display = 'none';
-            }
-        });
-    });
-}
-
-function openImagePreview(imgOrIndex) {
-    // Accept either an index (for image slider) or an image object directly
-    let img;
-    let index = -1;
-    
-    if (typeof imgOrIndex === 'number') {
-        index = imgOrIndex;
-        img = imageState.images[index];
-        currentPreviewIndex = index;
-    } else {
-        // It's an image object (e.g., from infobox), not from the slider
-        img = imgOrIndex;
-        currentPreviewIndex = -1; // Not navigable
-    }
-    
-    if (!img) return;
-
-    // Show loading state
-    imagePreview.classList.add('active', 'loading');
-    previewImage.style.opacity = '0';
-    previewImage.alt = img.title;
-
-    // Store thumbnail as fallback
-    previewImage.dataset.thumbnail = img.thumbnail;
-
-    // Handle successful load
-    previewImage.onload = () => {
-        imagePreview.classList.remove('loading');
-        previewImage.style.opacity = '1';
-    };
-
-    // Handle error - fallback to thumbnail
-    previewImage.onerror = () => {
-        if (previewImage.src !== img.thumbnail) {
-            previewImage.src = img.thumbnail;
-        } else {
-            // Even thumbnail failed, just show what we have
-            imagePreview.classList.remove('loading');
-            previewImage.style.opacity = '1';
-        }
-    };
-
-    previewImage.src = img.full;
-    previewInfo.innerHTML = `
-        <div>${escapeHtml(img.title)}</div>
-        ${img.sourceUrl ? `<a href="${escapeHtml(img.sourceUrl)}" target="_blank" rel="noopener">${img.sourceLinkText || 'Visit page'}</a>` : ''}
-    `;
-
-    // Update navigation visibility and counter
-    updatePreviewNavigation();
-
-    document.body.style.overflow = 'hidden';
-}
-
-function updatePreviewNavigation() {
-    const totalImages = imageState.images.length;
-    const isNavigable = currentPreviewIndex >= 0 && totalImages > 1;
-    
-    // Show/hide navigation buttons
-    // Show prev if not at start
-    previewPrev.style.display = isNavigable && currentPreviewIndex > 0 ? 'flex' : 'none';
-    // Show next if not at end, OR if more images can be loaded
-    const canGoNext = currentPreviewIndex < totalImages - 1 || imageState.hasMore;
-    previewNext.style.display = isNavigable && canGoNext ? 'flex' : 'none';
-    
-    // Update counter - show "+" if more images available
-    if (isNavigable) {
-        const suffix = imageState.hasMore ? '+' : '';
-        previewCounter.textContent = `${currentPreviewIndex + 1} / ${totalImages}${suffix}`;
-        previewCounter.style.display = 'block';
-    } else {
-        previewCounter.style.display = 'none';
-    }
-}
-
-function closeImagePreview() {
-    imagePreview.classList.remove('active', 'loading');
-    previewImage.src = '';
-    previewImage.style.opacity = '';
-    previewImage.onload = null;
-    previewImage.onerror = null;
-    currentPreviewIndex = -1;
-    document.body.style.overflow = '';
-}
-
-// Infobox (Knowledge Panel) functions
-async function fetchInfobox(query) {
-    if (infoboxState.loading) return;
-    infoboxState.loading = true;
-
-    try {
-        let response: Response;
-        const earlyInfobox = await takeEarlyFetch('infobox', query);
-        if (earlyInfobox) {
-            response = earlyInfobox;
-        } else {
-            response = await apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=infobox`
-            );
-        }
-
-        if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
-
-        const data = await response.json();
-        infoboxState.data = data.infobox;
-
-        if (data.infobox) {
-            renderInfobox(data.infobox);
-        }
-    } catch (error) {
-        console.error('Error fetching infobox:', error);
-    } finally {
-        infoboxState.loading = false;
-    }
-}
-
-function renderInfobox(data) {
-    if (!data) {
-        infobox.style.display = 'none';
-        return;
-    }
-
-    // Store element position before showing infobox (if mouse is in results)
-    const wasHidden = infobox.style.display === 'none';
-    if (wasHidden) {
-        storeElementPositionBeforeContent();
-    }
-
-    // Set title
-    infoboxTitle.textContent = data.title;
-
-    // Set description
-    infoboxDescription.textContent = data.description;
-
-    // Set image with error handling for broken images
-    infobox.classList.remove('no-image-fallback');
-    if (data.image) {
-        infoboxImage.src = data.image;
-        infoboxImage.alt = data.title;
-        infoboxImage.classList.remove('no-image');
-        infoboxImage.style.cursor = 'pointer';
-        infoboxImage.onclick = () => openImagePreview({
-            thumbnail: data.image,
-            full: data.imageFull || data.image,
-            title: data.title,
-            sourceUrl: data.url,
-            sourceLinkText: 'View on Wikipedia'
-        });
-        infoboxImage.onerror = () => {
-            infoboxImage.classList.add('no-image');
-            infobox.classList.add('no-image-fallback');
-            infoboxImage.style.cursor = '';
-            infoboxImage.onclick = null;
-        };
-        infoboxImage.onload = () => {
-            // Hide if image loads but is broken (0x0 dimension)
-            if (infoboxImage.naturalWidth === 0) {
-                infoboxImage.classList.add('no-image');
-                infobox.classList.add('no-image-fallback');
-                infoboxImage.style.cursor = '';
-                infoboxImage.onclick = null;
-            }
-        };
-    } else {
-        infoboxImage.classList.add('no-image');
-        infobox.classList.add('no-image-fallback');
-    }
-
-    // Set external links
-    infoboxLinks.innerHTML = '';
-    if (data.links && data.links.length > 0) {
-        data.links.forEach(link => {
-            const linkEl = document.createElement('a');
-            linkEl.href = link.url;
-            linkEl.target = '_blank';
-            linkEl.rel = 'noopener noreferrer';
-            linkEl.className = 'infobox-link';
-            linkEl.innerHTML = `<span class="infobox-link-icon">${link.icon}</span>${link.name}`;
-            infoboxLinks.appendChild(linkEl);
-        });
-    }
-
-    // Set Wikipedia source link
-    infoboxSource.href = data.url;
-
-    // Show the infobox
-    infobox.style.display = 'flex';
-    
-    // Maintain mouse position if cursor is inside #results
-    // Use requestAnimationFrame to ensure DOM has updated
-    requestAnimationFrame(() => {
-        maintainMousePosition();
-    });
-}
-
-function attachSentinel(container, source) {
-    const sentinelKey = source === 'commercial' ? 'commercialSentinel' :
-        source === 'noncommercial' ? 'noncommercialSentinel' : 'mergedSentinel';
-    const observerKey = source === 'commercial' ? 'commercialObserver' :
-        source === 'noncommercial' ? 'noncommercialObserver' : 'mergedObserver';
-
-    const sentinel = window.sentinels[sentinelKey];
-    const observer = window.scrollObservers[observerKey];
-
-    const existingSentinel = container.querySelector('.scroll-sentinel');
-    if (existingSentinel) {
-        observer.unobserve(existingSentinel);
-        existingSentinel.remove();
-    }
-
-    const newSentinel = sentinel.cloneNode(false) as HTMLElement;
-    container.appendChild(newSentinel);
-    observer.observe(newSentinel);
-}
-
-function showLoading(container) {
-    // Show skeleton loading for optimistic updates
-    container.innerHTML = generateSkeletonHTML(5);
-}
-
-function generateSkeletonHTML(count = 5) {
-    return Array(count).fill(0).map(() => `
-        <article class="skeleton-item">
-            <div class="skeleton-url-row">
-                <div class="skeleton-favicon"></div>
-                <div class="skeleton-url"></div>
-                <div class="skeleton-tag"></div>
-            </div>
-            <div class="skeleton-title"></div>
-            <div class="skeleton-snippet">
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line"></div>
-            </div>
-        </article>
-    `).join('');
-}
-
-function showLoadingMore(container) {
-    removeLoadingMore(container);
-    const loadingEl = document.createElement('div');
-    loadingEl.className = 'loading-more';
-    loadingEl.innerHTML = `<div class="loading-spinner small"></div><span>Loading more...</span>`;
-    container.appendChild(loadingEl);
-}
-
-function removeLoadingMore(container) {
-    const loadingEl = container.querySelector('.loading-more');
-    if (loadingEl) loadingEl.remove();
-}
-
-function updateCount(element, count, hasMore) {
-    element.textContent = hasMore ? `${count}+ results` : `${count} results`;
-}
-
-function resetResults() {
-    currentQuery = '';
-    braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
-    mergedState = { loading: false };
-    imageState = { images: [], loading: false, page: 1, hasMore: true };
-    infoboxState = { data: null, loading: false };
-
-    // Reset AI state
-    if (aiState.abortController) {
-        aiState.abortController.abort();
-        aiState.abortController = null;
-    }
-    aiState = { loading: false, abortController: null };
-
-    // Reset rendered URL tracking
-    renderedCommercialUrls = new Set();
-    renderedNoncommercialUrls = new Set();
-    renderedMergedUrls = new Set();
-
-    commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
-    noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
-    mergedResults.innerHTML = `<div class="empty-state"><p>Search results will appear here</p></div>`;
-    commercialCount.textContent = '';
-    noncommercialCount.textContent = '';
-    imageSection.style.display = 'none';
-    sliderTrack.innerHTML = '';
-    imageSliderScrollBound = false;
-    infobox.style.display = 'none';
-    aiPanel.style.display = 'none';
-    aiBtn.classList.remove('active');
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Sanitize HTML - allow only safe tags for snippets
-function sanitizeSnippet(html: string) {
-    if (!html) return '';
-
-    // Create a temporary element to parse HTML
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
-
-    // Walk through all elements and remove unsafe ones
-    const allowedTags = ['b', 'strong', 'i', 'em', 'br', 'span', 'mark'];
-
-    function sanitizeNode(node: Node): void {
-        const children = Array.from(node.childNodes);
-
-        for (const child of children) {
-            if (child.nodeType === Node.ELEMENT_NODE) {
-                const el = child as Element;
-                const tagName = el.tagName.toLowerCase();
-
-                if (!allowedTags.includes(tagName)) {
-                    // Replace element with its text content
-                    const text = document.createTextNode(el.textContent);
-                    node.replaceChild(text, child);
-                } else {
-                    // Remove all attributes except class
-                    const attrs = Array.from(el.attributes);
-                    for (const attr of attrs) {
-                        if (attr.name !== 'class') {
-                            el.removeAttribute(attr.name);
-                        }
-                    }
-                    // Recursively sanitize children
-                    sanitizeNode(el);
-                }
-            }
-        }
-    }
-
-    sanitizeNode(temp);
-
-    // Format ellipsis separators - split on " ... " patterns and wrap each segment
-    let result = temp.innerHTML;
-    // Match patterns like " ... " or "... " at start or " ..." at end
-    result = result.replace(/\s*\.{3}\s*/g, '<span class="snippet-separator">···</span>');
-
-    return result;
-}
-
-function getDomain(url) {
-    try {
-        return new URL(url).hostname;
-    } catch {
-        return url;
-    }
-}
-
-function getFaviconUrl(url) {
-    try {
-        const domain = new URL(url).hostname;
-        return `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
-    } catch {
-        return '';
-    }
-}

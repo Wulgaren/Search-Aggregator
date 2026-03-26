@@ -1,4 +1,6 @@
 /** Google Custom Search credentials + OAuth token cache (localStorage). */
+import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
+import type { ApiSecretsFields, ApplyApiSecretsResult, StoredGoogleToken } from './types';
 
 export const LS_KEYS = {
     GOOGLE_SERVICE_ACCOUNT: 'searchApiGoogleServiceAccount',
@@ -30,8 +32,6 @@ export function setApiSecrets(values: Partial<Record<ApiSecretId, string>>): voi
         }
     }
 }
-
-type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
 
 export function getStoredGoogleTokenState(): StoredGoogleToken | null {
     try {
@@ -74,7 +74,7 @@ export function clearStoredGoogleAccessToken(): void {
     }
 }
 
-export function getApiSecretsFields(): { googleCx: string; googleServiceAccount: string } {
+export function getApiSecretsFields(): ApiSecretsFields {
     const saRaw = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
     let googleServiceAccount = '';
     if (saRaw) {
@@ -90,10 +90,7 @@ export function getApiSecretsFields(): { googleCx: string; googleServiceAccount:
     };
 }
 
-export function applyApiSecretsFromFields(fields: {
-    googleCx: string;
-    googleServiceAccount: string;
-}): { ok: true } | { ok: false; error: string } {
+export function applyApiSecretsFromFields(fields: ApiSecretsFields): ApplyApiSecretsResult {
     const googleCx = fields.googleCx.trim();
     const googleServiceAccount = fields.googleServiceAccount.trim();
 
@@ -112,3 +109,95 @@ export function applyApiSecretsFromFields(fields: {
 
     return { ok: true };
 }
+
+const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
+
+function hasCommercialApiKeys(): boolean {
+    return Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+}
+
+function loadApiSettingsFields() {
+    const f = getApiSecretsFields();
+    const cx = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
+    const sa = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
+    if (cx) cx.value = f.googleCx;
+    if (sa) sa.value = f.googleServiceAccount;
+}
+
+function openApiSettingsDialog(contextMessage?: string) {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const contextEl = document.getElementById('api-settings-context');
+    const errEl = document.getElementById('api-settings-json-error');
+    if (!dialog || dialog.open) return;
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.hidden = true;
+    }
+    if (contextEl) {
+        if (contextMessage) {
+            contextEl.textContent = contextMessage;
+            contextEl.hidden = false;
+        } else {
+            contextEl.textContent = '';
+            contextEl.hidden = true;
+        }
+    }
+    loadApiSettingsFields();
+    dialog.showModal();
+}
+
+function maybeNotifyMissingCommercialKeys() {
+    if (hasCommercialApiKeys()) return;
+    if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
+    sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
+    openApiSettingsDialog(
+        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq run on Netlify (env vars).'
+    );
+}
+
+function setupApiSettingsPanel() {
+    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
+    const cxField = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
+    const saField = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
+    const errEl = document.getElementById('api-settings-json-error');
+    const closeBtn = document.getElementById('api-settings-close');
+    const saveBtn = document.getElementById('api-settings-save');
+    const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
+    if (!dialog || !cxField || !saField || !closeBtn || !saveBtn) return;
+    closeBtn.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.close();
+    });
+    saveBtn.addEventListener('click', () => {
+        const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
+        const beforeCx = getApiSecret('GOOGLE_CX');
+        const result = applyApiSecretsFromFields({ googleCx: cxField.value, googleServiceAccount: saField.value });
+        if (result.ok === false) {
+            if (errEl) {
+                errEl.textContent = result.error;
+                errEl.hidden = false;
+            }
+            return;
+        }
+        if (errEl) {
+            errEl.textContent = '';
+            errEl.hidden = true;
+        }
+        if (getApiSecret('GOOGLE_SERVICE_ACCOUNT') !== beforeSa || getApiSecret('GOOGLE_CX') !== beforeCx) {
+            clearGoogleClientCaches();
+        }
+        void invalidateGoogleSearchCache();
+        sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
+        dialog.close();
+    });
+    clearGoogleBtn?.addEventListener('click', () => {
+        clearGoogleClientCaches();
+        void invalidateGoogleSearchCache();
+    });
+}
+
+export const apiSettings = {
+    setupApiSettingsPanel,
+    maybeNotifyMissingCommercialKeys,
+    openApiSettingsDialog,
+};
