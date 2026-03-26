@@ -1,13 +1,15 @@
 import { apiSettings, getApiSecret } from './api-keys';
-import { handleGoogleSearchRequest, isGoogleClientSearchUrl } from './google-search';
-import { createCachedSearchGet } from './search-cache';
+import {
+    createCachedGoogleSearchGet,
+    handleGoogleSearchRequest,
+    isGoogleClientSearchUrl,
+} from './google-search';
 import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
-const cachedEdgeSearchGet = createCachedSearchGet((request) => fetch(request.url));
-const cachedGoogleSearchGet = createCachedSearchGet((request) => handleGoogleSearchRequest(request));
+const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
 
 type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'images' | 'infobox';
 
@@ -21,7 +23,7 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
     if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
         if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
-        return cachedEdgeSearchGet(url.pathname + url.search);
+        return fetch(url.toString());
     }
     return fetch(url.toString(), init);
 }

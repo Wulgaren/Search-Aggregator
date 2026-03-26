@@ -1,6 +1,5 @@
 /** Google Custom Search credentials + OAuth token cache (localStorage). */
-import { clearGoogleClientCaches } from './google-search';
-import { invalidateSearchCache } from './search-cache';
+import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
 
 export const LS_KEYS = {
     GOOGLE_SERVICE_ACCOUNT: 'searchApiGoogleServiceAccount',
@@ -191,13 +190,13 @@ function setupApiSettingsPanel() {
         if (getApiSecret('GOOGLE_SERVICE_ACCOUNT') !== beforeSa || getApiSecret('GOOGLE_CX') !== beforeCx) {
             clearGoogleClientCaches();
         }
-        void invalidateSearchCache();
+        void invalidateGoogleSearchCache();
         sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();
     });
     clearGoogleBtn?.addEventListener('click', () => {
         clearGoogleClientCaches();
-        void invalidateSearchCache();
+        void invalidateGoogleSearchCache();
     });
 }
 
