@@ -37,6 +37,20 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     let activeRequestId = 0;
     let braveTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+    function normalizeImageKey(img: any): string {
+        return String(img?.full || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+    }
+
+    function uniqueImages(images: any[], existing: any[] = []): any[] {
+        const seen = new Set<string>(existing.map((img) => normalizeImageKey(img)).filter(Boolean));
+        return images.filter((img) => {
+            const key = normalizeImageKey(img);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
     function reset() {
         activeRequestId += 1;
         activeQuery = '';
@@ -122,7 +136,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 if (googleResponse.ok) {
                     const googleData = await googleResponse.json();
                     if (requestId !== activeRequestId || query !== activeQuery) return;
-                    state.images = googleData.images || [];
+                    state.images = uniqueImages(googleData.images || []);
                     if (state.images.length > 0) {
                         const wasHidden = elements.imageSection.style.display === 'none';
                         if (wasHidden) deps.storeElementPositionBeforeContent();
@@ -142,8 +156,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 const newImages = data.images || [];
                 state.hasMore = data.hasMore ?? false;
                 state.page = page;
-                const existingUrls = new Set(state.images.map((img) => img.full));
-                const uniqueNewImages = newImages.filter((img: any) => !existingUrls.has(img.full));
+                const uniqueNewImages = uniqueImages(newImages, state.images);
                 state.images = [...state.images, ...uniqueNewImages];
                 appendImagesToSlider(uniqueNewImages);
             }
@@ -166,8 +179,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 const braveData = await braveResponse.json();
                 if (requestId !== activeRequestId || query !== activeQuery) return;
                 const braveImages = braveData.images || [];
-                const existingUrls = new Set(state.images.map((img) => img.full));
-                const uniqueBraveImages = braveImages.filter((img: any) => !existingUrls.has(img.full));
+                const uniqueBraveImages = uniqueImages(braveImages, state.images);
                 if (uniqueBraveImages.length === 0) return;
                 state.images = [...state.images, ...uniqueBraveImages];
                 if (elements.imageSection.style.display === 'none' && state.images.length > 0) {
@@ -234,7 +246,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         elements.sliderTrack.innerHTML = state.images
             .map(
                 (img, index) => `
-        <img class="slider-image" src="${deps.escapeHtml(img.thumbnail)}" alt="${deps.escapeHtml(img.title)}" data-index="${index}" data-bound="true" loading="lazy">
+        <img class="slider-image" src="${deps.escapeHtml(img.thumbnail)}" alt="${deps.escapeHtml(img.title)}" data-index="${index}" loading="lazy">
     `
             )
             .join('');
