@@ -171,12 +171,22 @@ export type SearchDeps = {
     takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
+    storeElementPositionBeforeContent: () => void;
+    maintainMousePosition: () => void;
 };
 
 export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
 export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string };
 export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
-export type ElementPositionBeforeContent = { element: Element; viewportTop: number };
+export type ElementPositionBeforeContent = {
+    element: Element;
+    viewportTop: number;
+    /**
+     * When the hovered element gets replaced during re-render (e.g. infinite scroll),
+     * we can re-find the same result by this stable key.
+     */
+    activeResultUrlKey?: string;
+};
 export type MousePosition = { x: number | null; y: number | null; isInsideResults: boolean };
 
 export type ServiceAccountConfig = {

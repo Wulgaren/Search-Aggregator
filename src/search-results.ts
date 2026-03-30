@@ -146,6 +146,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         if (!braveNeedsMore && !googleNeedsMore) return;
+        deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.commercialResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -158,14 +159,17 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
         await Promise.all(promises);
         removeLoadingMore(elements.commercialResults);
+        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     async function loadMoreMarginalia() {
         if (marginaliaState.loading || !marginaliaState.hasMore) return;
+        deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.noncommercialResults);
         marginaliaState.page += 1;
         await fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId);
         removeLoadingMore(elements.noncommercialResults);
+        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     async function loadMoreMergedResults() {
@@ -174,6 +178,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedState.loading = true;
+        deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -191,6 +196,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);
         mergedState.loading = false;
+        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     function renderCommercialResults() {

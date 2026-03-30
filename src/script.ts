@@ -95,6 +95,8 @@ const searchResults = createSearchResultsComponent(
         takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
         isMergedView: () => window.innerWidth <= 900,
         openApiSettingsDialog: apiSettings.openApiSettingsDialog,
+        storeElementPositionBeforeContent,
+        maintainMousePosition,
     }
 );
 
@@ -152,17 +154,41 @@ function storeElementPositionBeforeContent() {
         elementPositionBeforeContent = null;
         return;
     }
+    // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
+    const resultItem = elementAtMouse.closest('.result-item[data-url-key]') as HTMLElement | null;
+    if (resultItem) {
+        elementPositionBeforeContent = {
+            element: resultItem,
+            viewportTop: resultItem.getBoundingClientRect().top,
+            activeResultUrlKey: resultItem.dataset.urlKey,
+        };
+        return;
+    }
+
     elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
 }
 
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
-    const element = elementPositionBeforeContent.element;
-    if (!element || !document.contains(element)) {
+    const storedElement = elementPositionBeforeContent.element;
+    const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
+
+    let targetElement: Element | null = null;
+    if (storedElement && document.contains(storedElement)) targetElement = storedElement;
+
+    // The stored element might have been replaced during re-render (e.g. infinite scroll).
+    // If we have a stable result key, try to re-find the same card.
+    if (!targetElement && activeResultUrlKey) {
+        const safeKey = CSS.escape(activeResultUrlKey);
+        targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
+    }
+
+    if (!targetElement) {
         elementPositionBeforeContent = null;
         return;
     }
-    const moved = element.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
+
+    const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
     if (moved > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
     elementPositionBeforeContent = null;
 }
