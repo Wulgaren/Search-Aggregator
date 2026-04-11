@@ -20,11 +20,10 @@ async function build(): Promise<void> {
   ).exited;
   if (js !== 0) process.exit(js);
 
-  const css = await Bun.spawn(
-    ["bun", "build", "src/style.css", "--outfile=style.css", "--minify", "--production"],
-    { stdout: "inherit", stderr: "inherit", cwd: root }
-  ).exited;
-  if (css !== 0) process.exit(css);
+  await Bun.write(
+    join(root, "style.css"),
+    await Bun.file(join(root, "src/style.css")).text()
+  );
 
   console.log("Built script.js + style.css");
 }
