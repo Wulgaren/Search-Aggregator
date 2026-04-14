@@ -159,7 +159,8 @@ function storeResultAnchor(resultItem: HTMLElement) {
     };
 }
 
-function storeElementPositionBeforeContent() {
+function storeElementPositionBeforeContent(options?: { allowFallbackAnchor?: boolean }) {
+    const allowFallbackAnchor = options?.allowFallbackAnchor ?? false;
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
@@ -185,7 +186,7 @@ function storeElementPositionBeforeContent() {
         return;
     }
 
-    const fallbackResult = sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null;
+    const fallbackResult = allowFallbackAnchor ? sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null : null;
     if (fallbackResult) {
         storeResultAnchor(fallbackResult);
         return;
@@ -337,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', () => {
         const nowMerged = window.innerWidth <= 900;
         if (wasMerged !== nowMerged && searchResults.getCurrentQuery()) {
-            searchResults.forceRenderMergedIfNeeded();
+            if (nowMerged) searchResults.forceRenderMergedIfNeeded();
             wasMerged = nowMerged;
         }
     });

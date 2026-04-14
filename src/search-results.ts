@@ -71,7 +71,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     function renderMergedResultsPreservingPosition(reason: string) {
         const shouldPreservePosition = deps.isMergedView() && window.scrollY > 0;
         const reusingPendingAnchor = shouldPreservePosition && deps.hasPendingStoredPosition();
-        if (shouldPreservePosition && !reusingPendingAnchor) deps.storeElementPositionBeforeContent();
+        if (shouldPreservePosition && !reusingPendingAnchor) {
+            deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
+        }
         suppressMergedAnimations = shouldPreservePosition;
         renderMergedResults();
         suppressMergedAnimations = false;
@@ -152,7 +154,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function forceRenderMergedIfNeeded() {
-        if (deps.isMergedView() && currentQuery) renderMergedResultsPreservingPosition('force-render');
+        if (deps.isMergedView() && currentQuery) renderMergedResults();
     }
 
     function getCurrentQuery() {
@@ -195,7 +197,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedState.loading = true;
-        deps.storeElementPositionBeforeContent();
+        deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
