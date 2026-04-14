@@ -147,6 +147,19 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         if (!braveNeedsMore && !googleNeedsMore) return;
         deps.storeElementPositionBeforeContent();
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'search-results.ts:loadMoreCommercial',
+                message: 'load more',
+                data: { hypothesisId: 'E', path: 'commercial-split' },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         showLoadingMore(elements.commercialResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -165,6 +178,19 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     async function loadMoreMarginalia() {
         if (marginaliaState.loading || !marginaliaState.hasMore) return;
         deps.storeElementPositionBeforeContent();
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'search-results.ts:loadMoreMarginalia',
+                message: 'load more',
+                data: { hypothesisId: 'E', path: 'marginalia-split' },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         showLoadingMore(elements.noncommercialResults);
         marginaliaState.page += 1;
         await fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId);
@@ -179,6 +205,19 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedState.loading = true;
         deps.storeElementPositionBeforeContent();
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'search-results.ts:loadMoreMergedResults',
+                message: 'load more',
+                data: { hypothesisId: 'E', path: 'merged' },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {

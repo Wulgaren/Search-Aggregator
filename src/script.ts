@@ -20,11 +20,106 @@ function byId<T extends HTMLElement = HTMLElement>(id: string): T {
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
+    const mock = await getMockResponse(url);
+    if (mock) return mock;
     if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
         if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
         return fetch(url.toString());
     }
     return fetch(url.toString(), init);
+}
+
+async function getMockResponse(url: URL): Promise<Response | null> {
+    if (url.pathname !== '/api/search') return null;
+    const query = url.searchParams.get('q') ?? '';
+    if (query !== 'mock-scroll') return null;
+
+    const source = url.searchParams.get('source') ?? '';
+    const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+    const imageSource = url.searchParams.get('imageSource') ?? '';
+    const json = (payload: unknown) =>
+        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+    const makeWebResult = (kind: string, idx: number) => ({
+        title: `${kind} mock result ${idx}`,
+        url: `https://example.com/${kind.toLowerCase()}/${idx}`,
+        displayUrl: `example.com/${kind.toLowerCase()}/${idx}`,
+        snippet: `Mock ${kind.toLowerCase()} snippet ${idx} for scroll restoration testing.`,
+        source: kind,
+    });
+
+    const range = (start: number, count: number) => Array.from({ length: count }, (_, i) => start + i);
+
+    if (source === 'brave') {
+        const perPage = 12;
+        const start = (page - 1) * perPage + 1;
+        return json({
+            brave: {
+                hasMore: page < 4,
+                results: range(start, perPage).map((i) => makeWebResult('Brave', i)),
+            },
+        });
+    }
+
+    if (source === 'google') {
+        const perPage = 12;
+        const start = (page - 1) * perPage + 1;
+        return json({
+            google: {
+                hasMore: page < 3,
+                results: range(start, perPage).map((i) => makeWebResult('Google', i)),
+            },
+        });
+    }
+
+    if (source === 'marginalia') {
+        const perPage = 12;
+        const start = (page - 1) * perPage + 1;
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 650 + page * 150);
+        });
+        return json({
+            marginalia: {
+                hasMore: page < 4,
+                results: range(start, perPage).map((i) => makeWebResult('Marginalia', i)),
+            },
+        });
+    }
+
+    if (source === 'infobox') {
+        return json({
+            infobox: {
+                title: 'Mock Scroll Topic',
+                description: 'Local mock infobox for debugging scroll anchor restore behavior.',
+                image: '',
+                imageFull: '',
+                links: [
+                    { name: 'Mock Source', url: 'https://example.com/mock-scroll', icon: 'M' },
+                    { name: 'Debug Notes', url: 'https://example.com/mock-scroll/debug', icon: 'D' },
+                ],
+                url: 'https://example.com/mock-scroll',
+            },
+        });
+    }
+
+    if (source === 'images') {
+        const perPage = 16;
+        const start = (page - 1) * perPage + 1;
+        return json({
+            hasMore: page < 3,
+            images: range(start, perPage).map((i) => ({
+                thumbnail: `https://picsum.photos/seed/${imageSource || 'mix'}-${i}/320/200`,
+                full: `https://picsum.photos/seed/${imageSource || 'mix'}-${i}/1200/800`,
+                title: `Mock image ${i}`,
+                sourceUrl: `https://example.com/image/${i}`,
+                width: 1200,
+                height: 800,
+                source: imageSource || 'mixed',
+            })),
+        });
+    }
+
+    return json({});
 }
 
 function detectBang(query: string) {
@@ -152,6 +247,19 @@ function storeElementPositionBeforeContent() {
             : null;
     if (!elementAtMouse) {
         elementPositionBeforeContent = null;
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'script.ts:storeElementPositionBeforeContent',
+                message: 'store anchor',
+                data: { hypothesisId: 'A', outcome: 'no-elementAtMouse', inside: mousePosition.isInsideResults },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         return;
     }
     // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
@@ -162,34 +270,108 @@ function storeElementPositionBeforeContent() {
             viewportTop: resultItem.getBoundingClientRect().top,
             activeResultUrlKey: resultItem.dataset.urlKey,
         };
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'script.ts:storeElementPositionBeforeContent',
+                message: 'store anchor',
+                data: {
+                    hypothesisId: 'A',
+                    outcome: 'card',
+                    viewportTop: elementPositionBeforeContent.viewportTop,
+                    keyLen: (elementPositionBeforeContent.activeResultUrlKey ?? '').length,
+                },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         return;
     }
 
     elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
+    // #region agent log
+    fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+        body: JSON.stringify({
+            sessionId: '41bf7a',
+            location: 'script.ts:storeElementPositionBeforeContent',
+            message: 'store anchor',
+            data: { hypothesisId: 'A', outcome: 'raw-element', tag: elementAtMouse.nodeName },
+            timestamp: Date.now(),
+        }),
+    }).catch(() => {});
+    // #endregion
 }
 
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
     const storedElement = elementPositionBeforeContent.element;
     const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
+    const viewportTopStored = elementPositionBeforeContent.viewportTop;
 
     let targetElement: Element | null = null;
     if (storedElement && document.contains(storedElement)) targetElement = storedElement;
 
     // The stored element might have been replaced during re-render (e.g. infinite scroll).
     // If we have a stable result key, try to re-find the same card.
+    let usedRefind = false;
     if (!targetElement && activeResultUrlKey) {
+        usedRefind = true;
         const safeKey = CSS.escape(activeResultUrlKey);
         targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
     }
 
     if (!targetElement) {
+        // #region agent log
+        fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+            body: JSON.stringify({
+                sessionId: '41bf7a',
+                location: 'script.ts:maintainMousePosition',
+                message: 'no target for restore',
+                data: {
+                    hypothesisId: 'B',
+                    usedRefind,
+                    hadStoredInDom: storedElement ? document.contains(storedElement) : false,
+                    keyLen: (activeResultUrlKey ?? '').length,
+                },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
         elementPositionBeforeContent = null;
         return;
     }
 
-    const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
-    if (moved > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    const moved = targetElement.getBoundingClientRect().top - viewportTopStored;
+    const scrollYBefore = window.scrollY;
+    if (moved > 1) window.scrollTo({ top: scrollYBefore + moved, behavior: 'auto' });
+    // #region agent log
+    fetch('http://127.0.0.1:7589/ingest/3a4c1100-2d5a-4039-8531-2ecb3e82e8f2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '41bf7a' },
+        body: JSON.stringify({
+            sessionId: '41bf7a',
+            location: 'script.ts:maintainMousePosition',
+            message: 'restore applied',
+            data: {
+                hypothesisId: 'C',
+                usedRefind,
+                moved,
+                thresholdPass: moved > 1,
+                scrollYBefore,
+                scrollYAfter: window.scrollY,
+                targetTop: targetElement.getBoundingClientRect().top,
+            },
+            timestamp: Date.now(),
+        }),
+    }).catch(() => {});
+    // #endregion
     elementPositionBeforeContent = null;
 }
 
