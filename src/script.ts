@@ -65,14 +65,14 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
         return;
     }
     const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
-    const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    const hasGoogleKeys = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
     const enc = encodeURIComponent(q);
     const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
-    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
+    const imgGooglePromise = hasGoogleKeys ? apiFetch(imgGoogle) : null;
     window.__earlyFetch = {
         query: q,
         brave: apiFetch(base + 'brave'),
-        ...(hasGoogle && imgGooglePromise ? { google: apiFetch(base + 'google'), images: imgGooglePromise } : {}),
+        ...(hasGoogleKeys && imgGooglePromise ? { google: apiFetch(base + 'google'), images: imgGooglePromise } : {}),
         marginalia: apiFetch(base + 'marginalia'),
         infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
     };
@@ -172,8 +172,12 @@ const scrollDebug = new URLSearchParams(window.location.search).has('scrollDebug
 
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
-    const storedElement = elementPositionBeforeContent.element;
-    const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
+    // Snapshot + clear immediately so re-entrant calls (same rAF tick) cannot double-apply.
+    const positionBeforeContent = elementPositionBeforeContent;
+    elementPositionBeforeContent = null;
+
+    const storedElement = positionBeforeContent.element;
+    const activeResultUrlKey = positionBeforeContent.activeResultUrlKey;
 
     let targetElement: Element | null = null;
     if (storedElement && document.contains(storedElement)) targetElement = storedElement;
@@ -185,17 +189,13 @@ function maintainMousePosition() {
         targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
     }
 
-    if (!targetElement) {
-        elementPositionBeforeContent = null;
-        return;
-    }
+    if (!targetElement) return;
 
-    const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
+    const moved = targetElement.getBoundingClientRect().top - positionBeforeContent.viewportTop;
     if (Math.abs(moved) > 1) {
         if (scrollDebug) console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey });
         window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
     }
-    elementPositionBeforeContent = null;
 }
 
 function escapeHtml(text: string) {
@@ -253,11 +253,12 @@ const ai = createAIComponent(
 );
 
 function performSearch(query: string) {
+    const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
     searchResults.startSearch(query);
     images.reset();
     infobox.reset();
     ai.reset();
-    searchResults.fetchGoogle(query);
+    if (hasGoogle) searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
 }
@@ -297,7 +298,6 @@ function restoreSearchState() {
 
 document.addEventListener('DOMContentLoaded', () => {
     apiSettings.setupApiSettingsPanel();
-    apiSettings.maybeNotifyMissingCommercialKeys();
     searchResults.initInfiniteScroll();
     setupMouseTracking();
     ai.setupEvents(() => searchInput.value);

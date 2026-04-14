@@ -147,12 +147,8 @@ function openApiSettingsDialog(contextMessage?: string) {
 }
 
 function maybeNotifyMissingCommercialKeys() {
-    if (hasCommercialApiKeys()) return;
-    if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
-    sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
-    openApiSettingsDialog(
-        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq run on Netlify (env vars).'
-    );
+    // Google Custom Search keys are optional: Brave + Marginalia work without them (e.g. Netlify previews).
+    // Avoid auto-opening the settings dialog on every load.
 }
 
 function setupApiSettingsPanel() {
