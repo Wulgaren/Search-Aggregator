@@ -7,6 +7,8 @@ import type {
     SourceState,
 } from './types';
 
+const scrollDebug = true;
+
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
     let searchSessionId = 0;
@@ -182,13 +184,17 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     async function loadMoreMergedResults() {
         const LOAD_MORE_DEBOUNCE_MS = 250;
         const now = Date.now();
-        if (now - mergedLastLoadStartedAt < LOAD_MORE_DEBOUNCE_MS) return;
+        if (now - mergedLastLoadStartedAt < LOAD_MORE_DEBOUNCE_MS) {
+            if (scrollDebug) console.log('[scroll] merged load-more debounced');
+            return;
+        }
         const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedLastLoadStartedAt = now;
         mergedState.loading = true;
+        if (scrollDebug) console.log('[scroll] merged load-more start');
         deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];

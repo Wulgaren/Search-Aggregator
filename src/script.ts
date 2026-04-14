@@ -20,6 +20,44 @@ function byId<T extends HTMLElement = HTMLElement>(id: string): T {
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
+    const mockQuery = 'mock-scroll';
+    const isMockSearch = url.pathname === '/api/search' && url.searchParams.get('q')?.trim().toLowerCase() === mockQuery;
+    if (isMockSearch && (!init?.method || init.method === 'GET')) {
+        const source = url.searchParams.get('source');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        const delayMs = source === 'brave' ? 900 : source === 'marginalia' ? 1800 : 300;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+        const makeResult = (prefix: string, index: number) => ({
+            title: `${prefix} mock result ${index}`,
+            url: `https://example.com/${prefix.toLowerCase()}/${index}`,
+            displayUrl: `example.com/${prefix.toLowerCase()}/${index}`,
+            snippet: `Mock ${prefix} snippet ${index} for scroll stability testing.`,
+            source: prefix.toLowerCase(),
+        });
+
+        if (source === 'brave') {
+            const start = (page - 1) * 8 + 1;
+            return Response.json({
+                brave: {
+                    hasMore: page < 5,
+                    results: Array.from({ length: 8 }, (_, i) => makeResult('Brave', start + i)),
+                },
+            });
+        }
+        if (source === 'marginalia') {
+            const start = (page - 1) * 8 + 1;
+            return Response.json({
+                marginalia: {
+                    hasMore: page < 5,
+                    results: Array.from({ length: 8 }, (_, i) => makeResult('Marginalia', start + i)),
+                },
+            });
+        }
+        if (source === 'google') {
+            return Response.json({ google: { hasMore: false, results: [] } });
+        }
+    }
     if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
         if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
         return fetch(url.toString());
@@ -146,11 +184,13 @@ function setupMouseTracking() {
 }
 
 function storeElementPositionBeforeContent() {
+    console.log('[scroll] storeElementPositionBeforeContent start');
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
     if (!elementAtMouse) {
+        console.log('[scroll] storeElementPositionBeforeContent no hit', { isInsideResults: mousePosition.isInsideResults });
         elementPositionBeforeContent = null;
         return;
     }
@@ -162,14 +202,24 @@ function storeElementPositionBeforeContent() {
             viewportTop: resultItem.getBoundingClientRect().top,
             activeResultUrlKey: resultItem.dataset.urlKey,
         };
+        console.log('[scroll] storeElementPositionBeforeContent card', {
+            viewportTop: elementPositionBeforeContent.viewportTop,
+            urlKey: elementPositionBeforeContent.activeResultUrlKey,
+            scrollY: window.scrollY,
+        });
         return;
     }
 
     elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
+    console.log('[scroll] storeElementPositionBeforeContent non-card', { tag: elementAtMouse.tagName });
 }
 
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
+    console.log('[scroll] maintainMousePosition start', {
+        viewportTop: elementPositionBeforeContent.viewportTop,
+        key: elementPositionBeforeContent.activeResultUrlKey,
+    });
     const storedElement = elementPositionBeforeContent.element;
     const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
 
@@ -181,15 +231,22 @@ function maintainMousePosition() {
     if (!targetElement && activeResultUrlKey) {
         const safeKey = CSS.escape(activeResultUrlKey);
         targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
+        console.log('[scroll] maintainMousePosition refind by key', { found: Boolean(targetElement), key: activeResultUrlKey });
     }
 
     if (!targetElement) {
+        console.log('[scroll] maintainMousePosition abort (no target)');
         elementPositionBeforeContent = null;
         return;
     }
 
     const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
-    if (Math.abs(moved) > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    if (Math.abs(moved) > 1) {
+        console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey });
+        window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    } else {
+        console.log('[scroll] anchor settle (no scroll)', { moved });
+    }
     elementPositionBeforeContent = null;
 }
 
