@@ -18,8 +18,47 @@ function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     return el as T;
 }
 
+const MOCK_SCROLL_QUERY = 'mock-scroll';
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const url = new URL(path, window.location.origin);
+    const isMockSearch = url.pathname === '/api/search' && url.searchParams.get('q')?.trim().toLowerCase() === MOCK_SCROLL_QUERY;
+    if (isMockSearch && (!init?.method || init.method === 'GET')) {
+        const source = url.searchParams.get('source');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        const delayMs = source === 'brave' ? 900 : source === 'marginalia' ? 1800 : 300;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+        const makeResult = (prefix: string, index: number) => ({
+            title: `${prefix} mock result ${index}`,
+            url: `https://example.com/${prefix.toLowerCase()}/${index}`,
+            displayUrl: `example.com/${prefix.toLowerCase()}/${index}`,
+            snippet: `Mock ${prefix} snippet ${index} for scroll stability testing.`,
+            source: prefix.toLowerCase(),
+        });
+
+        if (source === 'brave') {
+            const start = (page - 1) * 8 + 1;
+            return Response.json({
+                brave: {
+                    hasMore: page < 5,
+                    results: Array.from({ length: 8 }, (_, i) => makeResult('Brave', start + i)),
+                },
+            });
+        }
+        if (source === 'marginalia') {
+            const start = (page - 1) * 8 + 1;
+            return Response.json({
+                marginalia: {
+                    hasMore: page < 5,
+                    results: Array.from({ length: 8 }, (_, i) => makeResult('Marginalia', start + i)),
+                },
+            });
+        }
+        if (source === 'google') {
+            return Response.json({ google: { hasMore: false, results: [] } });
+        }
+    }
     if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
         if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
         return fetch(url.toString());
@@ -329,7 +368,7 @@ function performSearch(query: string) {
     images.reset();
     infobox.reset();
     ai.reset();
-    if (hasGoogle) searchResults.fetchGoogle(query);
+    if (hasGoogle && query.trim().toLowerCase() !== MOCK_SCROLL_QUERY) searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
 }
