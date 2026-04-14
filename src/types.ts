@@ -171,6 +171,7 @@ export type SearchDeps = {
     takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
+    hasPendingStoredPosition: () => boolean;
     storeElementPositionBeforeContent: () => void;
     maintainMousePosition: () => void;
 };
