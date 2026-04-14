@@ -103,6 +103,8 @@ const searchResults = createSearchResultsComponent(
 let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
 let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
 
+const scrollDebug = new URLSearchParams(window.location.search).has('scrollDebug');
+
 function setupMouseTracking() {
     const updateTrackedPoint = (clientX: number, clientY: number) => {
         const rect = resultsContainer.getBoundingClientRect();
@@ -146,28 +148,42 @@ function setupMouseTracking() {
 }
 
 function getActiveAnchorScope(): 'merged' | 'commercial' | 'noncommercial' | 'results' {
-    if (window.innerWidth <= 900) return 'merged';
+    if (window.innerWidth <= 900) {
+        if (scrollDebug) console.log('[scroll] getActiveAnchorScope', { scope: 'merged', innerWidth: window.innerWidth });
+        return 'merged';
+    }
     const atPointer =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
     const inCommercial = atPointer?.closest('#commercial-column');
-    if (inCommercial) return 'commercial';
+    if (inCommercial) {
+        if (scrollDebug) console.log('[scroll] getActiveAnchorScope', { scope: 'commercial', innerWidth: window.innerWidth });
+        return 'commercial';
+    }
     const inNoncommercial = atPointer?.closest('#noncommercial-column');
-    if (inNoncommercial) return 'noncommercial';
+    if (inNoncommercial) {
+        if (scrollDebug) console.log('[scroll] getActiveAnchorScope', { scope: 'noncommercial', innerWidth: window.innerWidth });
+        return 'noncommercial';
+    }
+    if (scrollDebug) console.log('[scroll] getActiveAnchorScope', { scope: 'results', innerWidth: window.innerWidth });
     return 'results';
 }
 
 function storeElementPositionBeforeContent() {
     // Keep first anchor captured for a pending load-more cycle.
     // A second append starting before correction runs should not overwrite it.
-    if (elementPositionBeforeContent) return;
+    if (elementPositionBeforeContent) {
+        if (scrollDebug) console.log('[scroll] storeElementPositionBeforeContent skip (already pending)');
+        return;
+    }
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
     if (!elementAtMouse) {
         // Do not clear here; if another caller already captured an anchor we keep it.
+        if (scrollDebug) console.log('[scroll] storeElementPositionBeforeContent no hit', { isInsideResults: mousePosition.isInsideResults });
         return;
     }
     // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
@@ -182,14 +198,28 @@ function storeElementPositionBeforeContent() {
             settleFramesRemaining: 3,
             activeResultUrlKey: resultItem.dataset.urlKey,
         };
+        if (scrollDebug) {
+            console.log('[scroll] storeElementPositionBeforeContent', {
+                anchorDocTop,
+                anchorScope,
+                urlKey: resultItem.dataset.urlKey,
+                scrollY: window.scrollY,
+            });
+        }
         return;
     }
     const anchorDocTop = window.scrollY + elementAtMouse.getBoundingClientRect().top;
     const anchorScope = getActiveAnchorScope();
     elementPositionBeforeContent = { element: elementAtMouse, anchorDocTop, anchorScope, settleFramesRemaining: 3 };
+    if (scrollDebug) {
+        console.log('[scroll] storeElementPositionBeforeContent (non-card)', {
+            anchorDocTop,
+            anchorScope,
+            tag: elementAtMouse.tagName,
+            scrollY: window.scrollY,
+        });
+    }
 }
-
-const scrollDebug = new URLSearchParams(window.location.search).has('scrollDebug');
 
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
@@ -199,6 +229,15 @@ function maintainMousePosition() {
 
     const storedElement = positionBeforeContent.element;
     const activeResultUrlKey = positionBeforeContent.activeResultUrlKey;
+
+    if (scrollDebug) {
+        console.log('[scroll] maintainMousePosition start', {
+            anchorDocTop: positionBeforeContent.anchorDocTop,
+            anchorScope: positionBeforeContent.anchorScope,
+            urlKey: activeResultUrlKey,
+            storedStillInDom: Boolean(storedElement && document.contains(storedElement)),
+        });
+    }
 
     let targetElement: Element | null = null;
     if (storedElement && document.contains(storedElement)) targetElement = storedElement;
@@ -213,9 +252,13 @@ function maintainMousePosition() {
         else if (positionBeforeContent.anchorScope === 'noncommercial') scopeEl = byId('noncommercial-results');
         else scopeEl = resultsContainer;
         targetElement = scopeEl.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
+        if (scrollDebug) console.log('[scroll] maintainMousePosition refind by key', { found: Boolean(targetElement), anchorScope: positionBeforeContent.anchorScope });
     }
 
-    if (!targetElement) return;
+    if (!targetElement) {
+        if (scrollDebug) console.log('[scroll] maintainMousePosition abort (no target element)');
+        return;
+    }
     let framesRemaining = positionBeforeContent.settleFramesRemaining;
     const settle = () => {
         const currentDocTop = window.scrollY + targetElement!.getBoundingClientRect().top;
@@ -223,9 +266,12 @@ function maintainMousePosition() {
         if (Math.abs(moved) > 1) {
             if (scrollDebug) console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey, framesRemaining });
             window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+        } else if (scrollDebug) {
+            console.log('[scroll] anchor settle (no scroll)', { moved, framesRemaining });
         }
         framesRemaining -= 1;
         if (framesRemaining > 0) requestAnimationFrame(settle);
+        else if (scrollDebug) console.log('[scroll] maintainMousePosition settle done');
     };
     requestAnimationFrame(settle);
 }
