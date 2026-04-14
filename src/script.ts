@@ -168,6 +168,8 @@ function storeElementPositionBeforeContent() {
     elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
 }
 
+const scrollDebug = new URLSearchParams(window.location.search).has('scrollDebug');
+
 function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
     const storedElement = elementPositionBeforeContent.element;
@@ -189,7 +191,10 @@ function maintainMousePosition() {
     }
 
     const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
-    if (Math.abs(moved) > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    if (Math.abs(moved) > 1) {
+        if (scrollDebug) console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey });
+        window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    }
     elementPositionBeforeContent = null;
 }
 

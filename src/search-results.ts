@@ -7,6 +7,8 @@ import type {
     SourceState,
 } from './types';
 
+const scrollDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('scrollDebug');
+
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
     let searchSessionId = 0;
@@ -15,6 +17,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let marginaliaState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let mergedState = { loading: false };
     let mergedLastLoadStartedAt = 0;
+    let mergedLoadMoreRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let renderedCommercialUrls = new Set<string>();
     let renderedNoncommercialUrls = new Set<string>();
     let renderedMergedUrls = new Set<string>();
@@ -26,6 +29,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         mergedState = { loading: false };
+        if (mergedLoadMoreRetryTimer !== null) {
+            clearTimeout(mergedLoadMoreRetryTimer);
+            mergedLoadMoreRetryTimer = null;
+        }
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
@@ -125,6 +132,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         mergedState = { loading: false };
+        if (mergedLoadMoreRetryTimer !== null) {
+            clearTimeout(mergedLoadMoreRetryTimer);
+            mergedLoadMoreRetryTimer = null;
+        }
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
@@ -182,13 +193,25 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     async function loadMoreMergedResults() {
         const LOAD_MORE_DEBOUNCE_MS = 250;
         const now = Date.now();
-        if (now - mergedLastLoadStartedAt < LOAD_MORE_DEBOUNCE_MS) return;
+        const sinceLast = now - mergedLastLoadStartedAt;
+        if (sinceLast < LOAD_MORE_DEBOUNCE_MS) {
+            if (mergedLoadMoreRetryTimer === null) {
+                const delay = LOAD_MORE_DEBOUNCE_MS - sinceLast;
+                if (scrollDebug) console.log('[scroll] merged load-more debounced, retry in ms', delay);
+                mergedLoadMoreRetryTimer = setTimeout(() => {
+                    mergedLoadMoreRetryTimer = null;
+                    void loadMoreMergedResults();
+                }, delay);
+            }
+            return;
+        }
         const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedLastLoadStartedAt = now;
         mergedState.loading = true;
+        if (scrollDebug) console.log('[scroll] merged load-more start');
         deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
