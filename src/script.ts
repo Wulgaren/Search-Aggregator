@@ -189,7 +189,7 @@ function maintainMousePosition() {
     }
 
     const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
-    if (moved > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    if (Math.abs(moved) > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
     elementPositionBeforeContent = null;
 }
 

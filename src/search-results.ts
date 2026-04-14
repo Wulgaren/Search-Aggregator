@@ -14,6 +14,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let googleState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let marginaliaState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let mergedState = { loading: false };
+    let mergedLastLoadStartedAt = 0;
     let renderedCommercialUrls = new Set<string>();
     let renderedNoncommercialUrls = new Set<string>();
     let renderedMergedUrls = new Set<string>();
@@ -67,7 +68,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
     }
 
-    async function fetchSource(source: 'brave' | 'google' | 'marginalia', query: string, page: number, sessionId: number) {
+    async function fetchSource(
+        source: 'brave' | 'google' | 'marginalia',
+        query: string,
+        page: number,
+        sessionId: number,
+        options: { deferMergedRender?: boolean } = {}
+    ) {
         if (sessionId !== searchSessionId || query !== currentQuery) return;
         const state = getState(source);
         state.loading = true;
@@ -107,7 +114,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             renderCommercialResults();
             if (!deps.isMergedView() && marginaliaState.results.length > 0) renderNoncommercialResults();
         }
-        if (deps.isMergedView()) renderMergedResults();
+        if (deps.isMergedView() && !options.deferMergedRender) renderMergedResults();
     }
 
     function startSearch(query: string) {
@@ -173,27 +180,34 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     async function loadMoreMergedResults() {
+        const LOAD_MORE_DEBOUNCE_MS = 250;
+        const now = Date.now();
+        if (now - mergedLastLoadStartedAt < LOAD_MORE_DEBOUNCE_MS) return;
         const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
+        mergedLastLoadStartedAt = now;
         mergedState.loading = true;
         deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
             braveState.page += 1;
-            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId));
+            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId, { deferMergedRender: true }));
         }
         if (googleNeedsMore) {
             googleState.page += 1;
-            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId));
+            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId, { deferMergedRender: true }));
         }
         if (marginaliaNeedsMore) {
             marginaliaState.page += 1;
-            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId));
+            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId, {
+                deferMergedRender: true,
+            }));
         }
         await Promise.all(promises);
+        if (deps.isMergedView()) renderMergedResults();
         removeLoadingMore(elements.mergedResults);
         mergedState.loading = false;
         requestAnimationFrame(() => deps.maintainMousePosition());
