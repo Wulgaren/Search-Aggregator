@@ -145,6 +145,19 @@ function setupMouseTracking() {
     );
 }
 
+function getActiveAnchorScope(): 'merged' | 'commercial' | 'noncommercial' | 'results' {
+    if (window.innerWidth <= 900) return 'merged';
+    const atPointer =
+        mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
+            ? document.elementFromPoint(mousePosition.x, mousePosition.y)
+            : null;
+    const inCommercial = atPointer?.closest('#commercial-column');
+    if (inCommercial) return 'commercial';
+    const inNoncommercial = atPointer?.closest('#noncommercial-column');
+    if (inNoncommercial) return 'noncommercial';
+    return 'results';
+}
+
 function storeElementPositionBeforeContent() {
     // Keep first anchor captured for a pending load-more cycle.
     // A second append starting before correction runs should not overwrite it.
@@ -160,15 +173,20 @@ function storeElementPositionBeforeContent() {
     // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
     const resultItem = elementAtMouse.closest('.result-item[data-url-key]') as HTMLElement | null;
     if (resultItem) {
+        const anchorDocTop = window.scrollY + resultItem.getBoundingClientRect().top;
+        const anchorScope = getActiveAnchorScope();
         elementPositionBeforeContent = {
             element: resultItem,
-            viewportTop: resultItem.getBoundingClientRect().top,
+            anchorDocTop,
+            anchorScope,
+            settleFramesRemaining: 3,
             activeResultUrlKey: resultItem.dataset.urlKey,
         };
         return;
     }
-
-    elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
+    const anchorDocTop = window.scrollY + elementAtMouse.getBoundingClientRect().top;
+    const anchorScope = getActiveAnchorScope();
+    elementPositionBeforeContent = { element: elementAtMouse, anchorDocTop, anchorScope, settleFramesRemaining: 3 };
 }
 
 const scrollDebug = new URLSearchParams(window.location.search).has('scrollDebug');
@@ -189,16 +207,27 @@ function maintainMousePosition() {
     // If we have a stable result key, try to re-find the same card.
     if (!targetElement && activeResultUrlKey) {
         const safeKey = CSS.escape(activeResultUrlKey);
-        targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
+        let scopeEl: ParentNode;
+        if (positionBeforeContent.anchorScope === 'merged') scopeEl = byId('merged-results');
+        else if (positionBeforeContent.anchorScope === 'commercial') scopeEl = byId('commercial-results');
+        else if (positionBeforeContent.anchorScope === 'noncommercial') scopeEl = byId('noncommercial-results');
+        else scopeEl = resultsContainer;
+        targetElement = scopeEl.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
     }
 
     if (!targetElement) return;
-
-    const moved = targetElement.getBoundingClientRect().top - positionBeforeContent.viewportTop;
-    if (Math.abs(moved) > 1) {
-        if (scrollDebug) console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey });
-        window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
-    }
+    let framesRemaining = positionBeforeContent.settleFramesRemaining;
+    const settle = () => {
+        const currentDocTop = window.scrollY + targetElement!.getBoundingClientRect().top;
+        const moved = currentDocTop - positionBeforeContent.anchorDocTop;
+        if (Math.abs(moved) > 1) {
+            if (scrollDebug) console.log('[scroll] anchor adjust', { moved, scrollY: window.scrollY, key: activeResultUrlKey, framesRemaining });
+            window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+        }
+        framesRemaining -= 1;
+        if (framesRemaining > 0) requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
 }
 
 function escapeHtml(text: string) {

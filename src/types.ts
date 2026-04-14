@@ -180,7 +180,9 @@ export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string 
 export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
 export type ElementPositionBeforeContent = {
     element: Element;
-    viewportTop: number;
+    anchorDocTop: number;
+    anchorScope: 'merged' | 'commercial' | 'noncommercial' | 'results';
+    settleFramesRemaining: number;
     /**
      * When the hovered element gets replaced during re-render (e.g. infinite scroll),
      * we can re-find the same result by this stable key.
