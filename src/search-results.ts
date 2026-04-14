@@ -14,6 +14,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let googleState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let marginaliaState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let mergedState = { loading: false };
+    let suppressMergedAnimations = false;
     let renderedCommercialUrls = new Set<string>();
     let renderedNoncommercialUrls = new Set<string>();
     let renderedMergedUrls = new Set<string>();
@@ -67,6 +68,22 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
     }
 
+    function renderMergedResultsPreservingPosition(reason: string) {
+        const shouldPreservePosition = deps.isMergedView() && window.scrollY > 0;
+        const reusingPendingAnchor = shouldPreservePosition && deps.hasPendingStoredPosition();
+        if (shouldPreservePosition && !reusingPendingAnchor) {
+            deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
+        }
+        suppressMergedAnimations = shouldPreservePosition;
+        renderMergedResults();
+        suppressMergedAnimations = false;
+        if (shouldPreservePosition) {
+            requestAnimationFrame(() => {
+                deps.maintainMousePosition();
+            });
+        }
+    }
+
     async function fetchSource(source: 'brave' | 'google' | 'marginalia', query: string, page: number, sessionId: number) {
         if (sessionId !== searchSessionId || query !== currentQuery) return;
         const state = getState(source);
@@ -107,7 +124,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             renderCommercialResults();
             if (!deps.isMergedView() && marginaliaState.results.length > 0) renderNoncommercialResults();
         }
-        if (deps.isMergedView()) renderMergedResults();
+        if (deps.isMergedView()) {
+            renderMergedResultsPreservingPosition(`source-settle:${source}:page-${page}`);
+        }
     }
 
     function startSearch(query: string) {
@@ -178,7 +197,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
         mergedState.loading = true;
-        deps.storeElementPositionBeforeContent();
+        deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -196,7 +215,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);
         mergedState.loading = false;
-        requestAnimationFrame(() => deps.maintainMousePosition());
+        requestAnimationFrame(() => {
+            deps.maintainMousePosition();
+        });
     }
 
     function renderCommercialResults() {
@@ -274,7 +295,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                     index,
                     item.type === 'commercial' ? 'commercial' : 'noncommercial',
                     sourceLabel,
-                    'result-source'
+                    'result-source',
+                    !suppressMergedAnimations
                 );
             })
             .join('');
@@ -400,12 +422,15 @@ function renderStandardResultArticle(
     index: number,
     dataSource: string,
     sourceLabel: string,
-    sourceClassName = 'result-source-tag'
+    sourceClassName = 'result-source-tag',
+    animate = true
 ) {
     const faviconUrl = getFaviconUrl(result.url);
     const urlKey = getDedupeKey(result.url);
+    const animateStyle = animate ? ` style="animation-delay: ${index * 0.02}s"` : '';
+    const className = animate ? 'result-item' : 'result-item no-animate';
     return `
-        <article class="result-item" data-source="${dataSource}" data-url-key="${escapeHtml(urlKey)}" style="animation-delay: ${index * 0.02}s">
+        <article class="${className}" data-source="${dataSource}" data-url-key="${escapeHtml(urlKey)}"${animateStyle}>
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>

@@ -81,6 +81,7 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
 const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
 const resultsContainer = byId('results');
+const mergedResultsContainer = byId('merged-results');
 
 const searchResults = createSearchResultsComponent(
     {
@@ -95,6 +96,7 @@ const searchResults = createSearchResultsComponent(
         takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
         isMergedView: () => window.innerWidth <= 900,
         openApiSettingsDialog: apiSettings.openApiSettingsDialog,
+        hasPendingStoredPosition: () => elementPositionBeforeContent !== null,
         storeElementPositionBeforeContent,
         maintainMousePosition,
     }
@@ -145,23 +147,53 @@ function setupMouseTracking() {
     );
 }
 
-function storeElementPositionBeforeContent() {
+function getActiveResultsRoot() {
+    return window.innerWidth <= 900 ? mergedResultsContainer : resultsContainer;
+}
+
+function storeResultAnchor(resultItem: HTMLElement) {
+    elementPositionBeforeContent = {
+        element: resultItem,
+        viewportTop: resultItem.getBoundingClientRect().top,
+        activeResultUrlKey: resultItem.dataset.urlKey,
+    };
+}
+
+function storeElementPositionBeforeContent(options?: { allowFallbackAnchor?: boolean }) {
+    const allowFallbackAnchor = options?.allowFallbackAnchor ?? false;
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
-    if (!elementAtMouse) {
-        elementPositionBeforeContent = null;
+    const resultItem = elementAtMouse?.closest('.result-item[data-url-key]') as HTMLElement | null;
+    const activeResultsRoot = getActiveResultsRoot();
+    const firstFullyVisibleResult = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')).find((item) => {
+        const rect = (item as HTMLElement).getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+    }) as HTMLElement | undefined;
+    const resultsRect = activeResultsRoot.getBoundingClientRect();
+    const sampleX = Math.min(Math.max(resultsRect.left + 24, window.innerWidth / 2), resultsRect.right - 24);
+    const sampleY = Math.min(Math.max(resultsRect.top + 24, window.innerHeight * 0.4), resultsRect.bottom - 24);
+    const sampleResult = document
+        .elementFromPoint(sampleX, sampleY)
+        ?.closest('.result-item[data-url-key]') as HTMLElement | null;
+    const topVisibleResult = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')).find((item) => {
+        const rect = (item as HTMLElement).getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+    }) as HTMLElement | undefined;
+    if (resultItem) {
+        storeResultAnchor(resultItem);
         return;
     }
-    // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
-    const resultItem = elementAtMouse.closest('.result-item[data-url-key]') as HTMLElement | null;
-    if (resultItem) {
-        elementPositionBeforeContent = {
-            element: resultItem,
-            viewportTop: resultItem.getBoundingClientRect().top,
-            activeResultUrlKey: resultItem.dataset.urlKey,
-        };
+
+    const fallbackResult = allowFallbackAnchor ? sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null : null;
+    if (fallbackResult) {
+        storeResultAnchor(fallbackResult);
+        return;
+    }
+
+    if (!elementAtMouse) {
+        elementPositionBeforeContent = null;
         return;
     }
 
@@ -172,15 +204,18 @@ function maintainMousePosition() {
     if (!elementPositionBeforeContent) return;
     const storedElement = elementPositionBeforeContent.element;
     const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
+    const viewportTopStored = elementPositionBeforeContent.viewportTop;
 
     let targetElement: Element | null = null;
     if (storedElement && document.contains(storedElement)) targetElement = storedElement;
 
     // The stored element might have been replaced during re-render (e.g. infinite scroll).
     // If we have a stable result key, try to re-find the same card.
+    let usedRefind = false;
     if (!targetElement && activeResultUrlKey) {
+        usedRefind = true;
         const safeKey = CSS.escape(activeResultUrlKey);
-        targetElement = document.querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
+        targetElement = getActiveResultsRoot().querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
     }
 
     if (!targetElement) {
@@ -188,8 +223,9 @@ function maintainMousePosition() {
         return;
     }
 
-    const moved = targetElement.getBoundingClientRect().top - elementPositionBeforeContent.viewportTop;
-    if (moved > 1) window.scrollTo({ top: window.scrollY + moved, behavior: 'auto' });
+    const moved = targetElement.getBoundingClientRect().top - viewportTopStored;
+    const scrollYBefore = window.scrollY;
+    if (Math.abs(moved) > 1) window.scrollTo({ top: scrollYBefore + moved, behavior: 'auto' });
     elementPositionBeforeContent = null;
 }
 
@@ -302,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', () => {
         const nowMerged = window.innerWidth <= 900;
         if (wasMerged !== nowMerged && searchResults.getCurrentQuery()) {
-            searchResults.forceRenderMergedIfNeeded();
+            if (nowMerged) searchResults.forceRenderMergedIfNeeded();
             wasMerged = nowMerged;
         }
     });

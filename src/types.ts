@@ -57,7 +57,7 @@ export type ImageDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'images', query: string) => Promise<Response | null>;
     escapeHtml: (text: string) => string;
-    storeElementPositionBeforeContent: () => void;
+    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
     maintainMousePosition: () => void;
 };
 
@@ -114,7 +114,7 @@ export type InfoboxElements = {
 export type InfoboxDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'infobox', query: string) => Promise<Response | null>;
-    storeElementPositionBeforeContent: () => void;
+    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
     maintainMousePosition: () => void;
     openImagePreview: (img: PreviewImage) => void;
 };
@@ -171,7 +171,8 @@ export type SearchDeps = {
     takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
-    storeElementPositionBeforeContent: () => void;
+    hasPendingStoredPosition: () => boolean;
+    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
     maintainMousePosition: () => void;
 };
 
