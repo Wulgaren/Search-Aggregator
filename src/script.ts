@@ -146,12 +146,15 @@ function setupMouseTracking() {
 }
 
 function storeElementPositionBeforeContent() {
+    // Keep first anchor captured for a pending load-more cycle.
+    // A second append starting before correction runs should not overwrite it.
+    if (elementPositionBeforeContent) return;
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
     if (!elementAtMouse) {
-        elementPositionBeforeContent = null;
+        // Do not clear here; if another caller already captured an anchor we keep it.
         return;
     }
     // Prefer preserving the whole result card (mobile/touch users often aren't "hovering" the `a` itself).
