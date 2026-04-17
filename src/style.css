@@ -913,7 +913,7 @@ a:hover {
 
 /* Image Slider Section */
 .image-slider-section {
-  max-width: 90dvw;
+  max-width: 95%;
   margin: 0 auto 1.5rem;
   padding: 0 1.5rem;
   overflow: hidden;
