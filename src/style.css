@@ -1737,3 +1737,70 @@ a:hover {
     display: none;
   }
 }
+
+/* Spell correction banner */
+.spell-banner {
+  max-width: 700px;
+  margin: 0.25rem auto 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  animation: spell-banner-in 180ms ease-out;
+}
+
+.spell-banner[hidden] {
+  display: none;
+}
+
+.spell-banner-line {
+  display: block;
+}
+
+.spell-banner-showing strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-style: italic;
+}
+
+.spell-banner-instead {
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.spell-banner-revert {
+  color: var(--link-color);
+  font-style: italic;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.spell-banner-revert:hover {
+  color: var(--link-hover);
+  border-bottom-color: var(--link-hover);
+}
+
+@keyframes spell-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .spell-banner {
+    margin: 0.25rem 0.75rem 0.875rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.9rem;
+  }
+}

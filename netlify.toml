@@ -44,3 +44,8 @@
   for = "/fonts/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/dict/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

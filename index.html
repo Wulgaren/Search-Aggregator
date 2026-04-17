@@ -7,10 +7,16 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=43" as="style" />
-    <link rel="stylesheet" href="style.css?v=43" />
+    <link rel="preload" href="style.css?v=44" as="style" />
+    <link rel="stylesheet" href="style.css?v=44" />
+    <link
+      rel="preload"
+      href="/dict/frequency_dictionary_en_82_765.txt"
+      as="fetch"
+      crossorigin="anonymous"
+    />
 
-    <script defer src="script.js?v=56"></script>
+    <script defer src="script.js?v=57"></script>
   </head>
   <body>
     <div class="container">
@@ -89,6 +95,8 @@
           </div>
         </div>
       </dialog>
+
+      <div class="spell-banner" id="spell-banner" hidden></div>
 
       <!-- AI Answer Panel -->
       <div class="ai-panel" id="ai-panel" style="display: none;">

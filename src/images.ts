@@ -168,7 +168,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
             } catch (error) {
                 console.error('Error fetching Brave images:', error);
             }
-        }, 1000);
+        }, 2000);
     }
 
     function setupImageSliderScroll(query: string) {

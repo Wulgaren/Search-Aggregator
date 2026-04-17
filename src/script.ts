@@ -9,6 +9,9 @@ import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
+import { maybeCorrect, preloadSpellcheck } from './autocorrect';
+
+const spellReadyPromise = preloadSpellcheck();
 
 const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
 
@@ -82,6 +85,8 @@ const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
 const resultsContainer = byId('results');
 const mergedResultsContainer = byId('merged-results');
+const spellBanner = byId('spell-banner');
+let bypassSpellOnce = false;
 
 const searchResults = createSearchResultsComponent(
     {
@@ -293,6 +298,53 @@ function performSearch(query: string) {
     void images.fetchImages(query, 1);
 }
 
+function renderSpellBanner(original: string, corrected: string | null) {
+    if (!corrected || corrected === original) {
+        spellBanner.hidden = true;
+        spellBanner.textContent = '';
+        return;
+    }
+    spellBanner.hidden = false;
+    spellBanner.innerHTML = '';
+    const showing = document.createElement('div');
+    showing.className = 'spell-banner-line spell-banner-showing';
+    const label = document.createElement('span');
+    label.textContent = 'Showing results for ';
+    const strong = document.createElement('strong');
+    strong.textContent = corrected;
+    showing.appendChild(label);
+    showing.appendChild(strong);
+
+    const instead = document.createElement('div');
+    instead.className = 'spell-banner-line spell-banner-instead';
+    const insteadLabel = document.createElement('span');
+    insteadLabel.textContent = 'Search instead for ';
+    const link = document.createElement('a');
+    link.href = `?q=${encodeURIComponent(original)}`;
+    link.className = 'spell-banner-revert';
+    link.dataset.searchInstead = original;
+    link.textContent = original;
+    instead.appendChild(insteadLabel);
+    instead.appendChild(link);
+
+    spellBanner.appendChild(showing);
+    spellBanner.appendChild(instead);
+}
+
+spellBanner.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    const link = target?.closest('[data-search-instead]') as HTMLAnchorElement | null;
+    if (!link) return;
+    e.preventDefault();
+    const original = link.dataset.searchInstead ?? '';
+    if (!original) return;
+    bypassSpellOnce = true;
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', original);
+    window.history.pushState({}, '', url);
+    restoreSearchState();
+});
+
 function restoreSearchState() {
     const query = new URLSearchParams(window.location.search).get('q');
     const setInputValue = (value: string, focus: boolean) => {
@@ -314,16 +366,33 @@ function restoreSearchState() {
             return;
         }
         setInputValue(query, false);
+        const bypass = bypassSpellOnce;
+        bypassSpellOnce = false;
+        const correction = bypass ? null : maybeCorrect(query).corrected;
+        const effective = correction ?? query;
+        renderSpellBanner(query, correction);
         document.title = `${query} - Search`;
-        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== query) performSearch(query);
+        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== effective) performSearch(effective);
     } else {
         setInputValue('', true);
         document.title = 'Search';
+        renderSpellBanner('', null);
         searchResults.reset();
         images.reset();
         infobox.reset();
         ai.reset();
     }
+}
+
+function retryCorrectionIfPending() {
+    const raw = new URLSearchParams(window.location.search).get('q');
+    if (!raw || bypassSpellOnce) return;
+    const current = searchResults.getCurrentQuery();
+    if (!current) return;
+    const correction = maybeCorrect(raw).corrected;
+    if (!correction || correction === current) return;
+    renderSpellBanner(raw, correction);
+    performSearch(correction);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -334,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ai.setupEvents(() => searchInput.value);
     images.setupEvents(() => searchResults.getCurrentQuery());
     restoreSearchState();
+    void spellReadyPromise.then(retryCorrectionIfPending);
     let wasMerged = window.innerWidth <= 900;
     window.addEventListener('resize', () => {
         const nowMerged = window.innerWidth <= 900;
