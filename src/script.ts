@@ -82,6 +82,8 @@ const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
 const resultsContainer = byId('results');
 const mergedResultsContainer = byId('merged-results');
+const spellBanner = byId('spell-banner');
+let bypassGoogleCorrectionForQuery: string | null = null;
 
 const searchResults = createSearchResultsComponent(
     {
@@ -99,6 +101,7 @@ const searchResults = createSearchResultsComponent(
         hasPendingStoredPosition: () => elementPositionBeforeContent !== null,
         storeElementPositionBeforeContent,
         maintainMousePosition,
+        onGoogleCorrection: handleGoogleCorrection,
     }
 );
 
@@ -293,6 +296,47 @@ function performSearch(query: string) {
     void images.fetchImages(query, 1);
 }
 
+function renderSpellBanner(original: string, corrected: string | null) {
+    if (!corrected || corrected === original) {
+        spellBanner.hidden = true;
+        spellBanner.textContent = '';
+        return;
+    }
+    spellBanner.hidden = false;
+    spellBanner.innerHTML = '';
+
+    const showing = document.createElement('div');
+    showing.className = 'spell-banner-line spell-banner-showing';
+    showing.append('Showing results for ');
+    const correctedStrong = document.createElement('strong');
+    correctedStrong.textContent = corrected;
+    showing.appendChild(correctedStrong);
+
+    const instead = document.createElement('div');
+    instead.className = 'spell-banner-line spell-banner-instead';
+    instead.append('Search instead for ');
+    const originalLink = document.createElement('a');
+    originalLink.href = '#';
+    originalLink.className = 'spell-banner-revert';
+    originalLink.dataset.searchInstead = original;
+    originalLink.textContent = original;
+    instead.appendChild(originalLink);
+
+    spellBanner.append(showing, instead);
+}
+
+function handleGoogleCorrection(query: string, correctedQuery: string) {
+    if (!correctedQuery || correctedQuery === query) return;
+    if (bypassGoogleCorrectionForQuery === query) {
+        bypassGoogleCorrectionForQuery = null;
+        return;
+    }
+
+    renderSpellBanner(query, correctedQuery);
+    if (searchResults.getCurrentQuery() === correctedQuery) return;
+    performSearch(correctedQuery);
+}
+
 function restoreSearchState() {
     const query = new URLSearchParams(window.location.search).get('q');
     const setInputValue = (value: string, focus: boolean) => {
@@ -314,11 +358,13 @@ function restoreSearchState() {
             return;
         }
         setInputValue(query, false);
+        renderSpellBanner('', null);
         document.title = `${query} - Search`;
         if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== query) performSearch(query);
     } else {
         setInputValue('', true);
         document.title = 'Search';
+        renderSpellBanner('', null);
         searchResults.reset();
         images.reset();
         infobox.reset();
@@ -349,6 +395,24 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         searchInput.focus();
     }
+});
+
+spellBanner.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    const link = target?.closest('[data-search-instead]') as HTMLAnchorElement | null;
+    if (!link) return;
+
+    e.preventDefault();
+    const query = link.dataset.searchInstead;
+    if (!query) return;
+
+    bypassGoogleCorrectionForQuery = query;
+    searchInput.value = query;
+    renderSpellBanner('', null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', query);
+    window.history.pushState({}, '', url);
+    restoreSearchState();
 });
 
 searchForm.addEventListener('submit', (e) => {

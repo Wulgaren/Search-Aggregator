@@ -236,7 +236,21 @@ async function getGoogleAccessToken(): Promise<string> {
     return accessToken;
 }
 
-async function fetchGoogle(query: string, page: number, resultsPerPage: number) {
+type GoogleSearchPayload = {
+    results: Array<{
+        title: string;
+        url: string;
+        displayUrl: string;
+        snippet: string;
+        source: string;
+    }>;
+    hasMore: boolean;
+    totalResults: string;
+    correctedQuery?: string;
+    htmlCorrectedQuery?: string;
+};
+
+async function fetchGoogle(query: string, page: number, resultsPerPage: number): Promise<GoogleSearchPayload> {
     const cx = getApiSecret("GOOGLE_CX");
 
     if (!cx) {
@@ -260,7 +274,10 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number) 
     url.searchParams.set("q", query);
     url.searchParams.set("num", String(Math.min(resultsPerPage, 10)));
     url.searchParams.set("start", String(startIndex));
-    url.searchParams.set("fields", "items(title,link,displayLink,snippet),searchInformation/totalResults");
+    url.searchParams.set(
+        "fields",
+        "items(title,link,displayLink,snippet),searchInformation/totalResults,spelling(correctedQuery,htmlCorrectedQuery)"
+    );
 
     const response = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -292,6 +309,9 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number) 
         results,
         hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
         totalResults: String(totalResults),
+        correctedQuery: typeof data.spelling?.correctedQuery === "string" ? data.spelling.correctedQuery : undefined,
+        htmlCorrectedQuery:
+            typeof data.spelling?.htmlCorrectedQuery === "string" ? data.spelling.htmlCorrectedQuery : undefined,
     };
 }
 

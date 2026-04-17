@@ -108,6 +108,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                 state.hasMore = sourceData.hasMore;
                 state.results = [...state.results, ...sourceData.results];
                 state.error = null;
+                if (source === 'google' && page === 1 && sourceData.correctedQuery && sourceData.correctedQuery !== query) {
+                    deps.onGoogleCorrection?.(query, sourceData.correctedQuery);
+                }
             }
         } catch (error) {
             const errMsg = error instanceof Error ? error.message : String(error);

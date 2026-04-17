@@ -136,6 +136,8 @@ export type SourcePayload = {
     error?: string;
     hasMore: boolean;
     results: SearchResult[];
+    correctedQuery?: string;
+    htmlCorrectedQuery?: string;
 };
 
 export type SearchApiResponse = {
@@ -174,6 +176,7 @@ export type SearchDeps = {
     hasPendingStoredPosition: () => boolean;
     storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
     maintainMousePosition: () => void;
+    onGoogleCorrection?: (query: string, correctedQuery: string) => void;
 };
 
 export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
