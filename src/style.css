@@ -1128,15 +1128,15 @@ a:hover {
   text-align: center;
 }
 
-.preview-nav.loading {
+.preview-nav.nav-loading {
   pointer-events: none;
 }
 
-.preview-nav.loading svg {
+.preview-nav.nav-loading svg {
   display: none;
 }
 
-.preview-nav.loading::after {
+.preview-nav.nav-loading::after {
   content: "";
   width: 20px;
   height: 20px;

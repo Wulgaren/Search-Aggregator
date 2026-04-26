@@ -311,10 +311,10 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         if (newIndex >= 0 && newIndex < state.images.length) {
             openImagePreview(newIndex);
         } else if (newIndex >= state.images.length && state.hasMore && !state.loading) {
-            elements.previewNext.classList.add('loading');
+            elements.previewNext.classList.add('nav-loading');
             const previousCount = state.images.length;
             await fetchImages(getCurrentQuery(), state.page + 1);
-            elements.previewNext.classList.remove('loading');
+            elements.previewNext.classList.remove('nav-loading');
             if (state.images.length > previousCount) openImagePreview(previousCount);
         }
     }
