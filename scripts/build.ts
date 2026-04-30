@@ -5,20 +5,27 @@ import { fileURLToPath } from "node:url";
 
 const root = join(fileURLToPath(new URL("..", import.meta.url)));
 
+function disableGoogleBangFromEnv(): boolean {
+  const v = process.env.DISABLE_GOOGLE_BANG ?? process.env.disable_google_bang;
+  return v === "true" || v === "1" || v === "yes";
+}
+
 async function build(): Promise<void> {
-  const js = await Bun.spawn(
-    [
-      "bun",
-      "build",
-      "src/script.ts",
-      "--outfile=script.js",
-      "--minify",
-      "--target=browser",
-      "--production",
-    ],
-    { stdout: "inherit", stderr: "inherit", cwd: root }
-  ).exited;
-  if (js !== 0) process.exit(js);
+  const disableGoogleBang = disableGoogleBangFromEnv();
+  const result = await Bun.build({
+    entrypoints: [join(root, "src/script.ts")],
+    outdir: root,
+    naming: "script.js",
+    minify: true,
+    target: "browser",
+    define: {
+      __DISABLE_GOOGLE_BANG__: JSON.stringify(disableGoogleBang),
+    },
+  });
+  if (!result.success) {
+    console.error(result.logs);
+    process.exit(1);
+  }
 
   await Bun.write(
     join(root, "style.css"),

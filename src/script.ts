@@ -10,6 +10,9 @@ import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
+/** Injected by `scripts/build.ts` from Netlify env `DISABLE_GOOGLE_BANG` or `disable_google_bang`. */
+declare const __DISABLE_GOOGLE_BANG__: boolean;
+
 const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
 
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -29,6 +32,32 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 
 function detectBang(query: string) {
     return /^![\w]+(?:\s|$)|\s![\w]+$/.test(query);
+}
+
+/** Removes DDG `!g` only (start or end), case-insensitive. */
+function stripGoogleBangFromQuery(query: string): string {
+    let s = query.trim();
+    s = s.replace(/^!g(?:\s+|$)/i, '').trim();
+    s = s.replace(/(?:^|\s)!g$/i, '').trim();
+    return s;
+}
+
+type BangResolution = { kind: 'redirect'; q: string } | { kind: 'search'; q: string };
+
+function resolveQueryForBangHandling(raw: string): BangResolution {
+    if (!detectBang(raw)) {
+        return { kind: 'search', q: raw };
+    }
+    if (__DISABLE_GOOGLE_BANG__) {
+        const stripped = stripGoogleBangFromQuery(raw);
+        if (stripped !== raw) {
+            if (detectBang(stripped)) {
+                return { kind: 'redirect', q: stripped };
+            }
+            return { kind: 'search', q: stripped };
+        }
+    }
+    return { kind: 'redirect', q: raw };
 }
 
 function handleBangRedirect(query: string) {
@@ -60,17 +89,20 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
 (function startEarlyClientFetch() {
     const q = new URLSearchParams(window.location.search).get('q');
     if (!q) return;
-    if (detectBang(q)) {
-        handleBangRedirect(q);
+    const resolved = resolveQueryForBangHandling(q);
+    if (resolved.kind === 'redirect') {
+        handleBangRedirect(resolved.q);
         return;
     }
-    const base = `/api/search?q=${encodeURIComponent(q)}&page=1&source=`;
+    const searchQ = resolved.q;
+    if (!searchQ.trim()) return;
+    const base = `/api/search?q=${encodeURIComponent(searchQ)}&page=1&source=`;
     const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
-    const enc = encodeURIComponent(q);
+    const enc = encodeURIComponent(searchQ);
     const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
     const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
     window.__earlyFetch = {
-        query: q,
+        query: searchQ,
         brave: apiFetch(base + 'brave'),
         ...(hasGoogle && imgGooglePromise ? { google: apiFetch(base + 'google'), images: imgGooglePromise } : {}),
         marginalia: apiFetch(base + 'marginalia'),
@@ -353,14 +385,31 @@ function restoreSearchState() {
     };
 
     if (query) {
-        if (detectBang(query)) {
-            handleBangRedirect(query);
+        const resolved = resolveQueryForBangHandling(query);
+        if (resolved.kind === 'redirect') {
+            handleBangRedirect(resolved.q);
             return;
         }
-        setInputValue(query, false);
+        const q = resolved.q;
+        if (q !== query) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('q', q);
+            window.history.replaceState({}, '', url);
+        }
+        if (!q.trim()) {
+            setInputValue('', true);
+            document.title = 'Search';
+            renderSpellBanner('', null);
+            searchResults.reset();
+            images.reset();
+            infobox.reset();
+            ai.reset();
+            return;
+        }
+        setInputValue(q, false);
         renderSpellBanner('', null);
-        document.title = `${query} - Search`;
-        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== query) performSearch(query);
+        document.title = `${q} - Search`;
+        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== q) performSearch(q);
     } else {
         setInputValue('', true);
         document.title = 'Search';
@@ -417,10 +466,19 @@ spellBanner.addEventListener('click', (e) => {
 
 searchForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const query = searchInput.value.trim();
-    if (!query) return;
-    if (detectBang(query)) {
-        handleBangRedirect(query);
+    const raw = searchInput.value.trim();
+    if (!raw) return;
+    const resolved = resolveQueryForBangHandling(raw);
+    if (resolved.kind === 'redirect') {
+        handleBangRedirect(resolved.q);
+        return;
+    }
+    const query = resolved.q;
+    if (!query.trim()) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('q');
+        window.history.pushState({}, '', url);
+        restoreSearchState();
         return;
     }
     const url = new URL(window.location.href);
