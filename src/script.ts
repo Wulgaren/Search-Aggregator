@@ -64,6 +64,10 @@ function handleBangRedirect(query: string) {
     window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
 }
 
+function shouldAutoOpenAIForQuery(query: string): boolean {
+    return query.trim().endsWith('?');
+}
+
 function maybeClearEarlyFetch(): void {
     const early = window.__earlyFetch;
     if (!early) return;
@@ -326,6 +330,9 @@ function performSearch(query: string) {
     searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
+    if (shouldAutoOpenAIForQuery(query)) {
+        void ai.fetchAIAnswer(query, { toggleWhenLoading: false });
+    }
 }
 
 function renderSpellBanner(original: string, corrected: string | null) {

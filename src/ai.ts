@@ -13,10 +13,16 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
         state.loading = false;
     }
 
-    async function fetchAIAnswer(query: string) {
+    async function fetchAIAnswer(query: string, options?: { toggleWhenLoading?: boolean }) {
+        const toggleWhenLoading = options?.toggleWhenLoading ?? true;
         if (state.loading) {
-            closeAIPanel();
-            return;
+            if (toggleWhenLoading) {
+                closeAIPanel();
+                return;
+            }
+            state.abortController?.abort();
+            state.abortController = null;
+            state.loading = false;
         }
 
         elements.aiPanel.style.display = 'block';
