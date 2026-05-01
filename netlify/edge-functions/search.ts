@@ -384,6 +384,115 @@ async function fetchWikipediaInfobox(query) {
     }
 }
 
+/** Wikidata Commons image (P18) → thumbnail URL */
+function commonsThumbnailUrl(filename, width = 128) {
+    if (!filename || typeof filename !== "string") return null;
+    const segment = filename.replace(/ /g, "_");
+    return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(segment)}?width=${width}`;
+}
+
+function wikidataQualifierText(statement, propertyId) {
+    const quals = statement?.qualifiers?.[propertyId];
+    if (!quals?.length) return null;
+    const snak = quals[0];
+    if (snak?.snaktype !== "value" || !snak.datavalue?.value) return null;
+    const v = snak.datavalue.value;
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object" && typeof v.text === "string") return v.text;
+    return null;
+}
+
+function wikidataEntityLabel(entity) {
+    const labels = entity?.labels;
+    if (!labels || typeof labels !== "object") return null;
+    return labels.en?.value || labels[Object.keys(labels)[0]]?.value || null;
+}
+
+function wikipediaTitleFromSitelink(entity) {
+    const enwiki = entity?.sitelinks?.enwiki;
+    if (enwiki?.title && typeof enwiki.title === "string") return enwiki.title;
+    return null;
+}
+
+function wikipediaArticleUrl(title) {
+    if (!title) return null;
+    return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+}
+
+/** Extract cast member Q-ids from film entity claims (P161), preserving order, deduped */
+function extractCastMemberIds(claims) {
+    const list = claims?.P161;
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const st of list) {
+        const snak = st?.mainsnak;
+        if (snak?.snaktype !== "value" || snak.datavalue?.type !== "wikibase-entityid") continue;
+        const id = snak.datavalue.value?.id;
+        if (!id || typeof id !== "string" || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, role: wikidataQualifierText(st, "P453") });
+        if (out.length >= 36) break;
+    }
+    return out;
+}
+
+async function fetchWikidataCastMembers(castEntries) {
+    if (!castEntries.length) return [];
+
+    const batches = [];
+    for (let i = 0; i < castEntries.length; i += 40) {
+        batches.push(castEntries.slice(i, i + 40));
+    }
+
+    const members = [];
+
+    for (const batch of batches) {
+        const ids = batch.map((e) => e.id).join("|");
+        const url =
+            `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&ids=${ids}` +
+            "&props=labels|claims|sitelinks&languages=en&origin=*";
+
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        let data;
+        try {
+            data = await res.json();
+        } catch {
+            continue;
+        }
+
+        const entities = data.entities || {};
+
+        for (const { id, role } of batch) {
+            const entity = entities[id];
+            if (!entity || entity.missing === "") continue;
+
+            const name = wikidataEntityLabel(entity);
+            if (!name) continue;
+
+            let image = null;
+            const p18 = entity.claims?.P18?.[0]?.mainsnak;
+            if (p18?.snaktype === "value" && typeof p18.datavalue?.value === "string") {
+                image = commonsThumbnailUrl(p18.datavalue.value, 128);
+            }
+
+            const wpTitle = wikipediaTitleFromSitelink(entity);
+            const articleUrl = wikipediaArticleUrl(wpTitle) || `https://www.wikidata.org/wiki/${id}`;
+
+            members.push({
+                name,
+                role: role || undefined,
+                image: image || undefined,
+                url: articleUrl,
+            });
+        }
+    }
+
+    return members.slice(0, 24);
+}
+
 async function tryFetchPageInfobox(pageTitle) {
     try {
         const pageUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=extracts|pageimages|info|extlinks|categories&exintro=true&explaintext=true&exsentences=4&piprop=thumbnail|original&pithumbsize=300&inprop=url&cllimit=10&origin=*`;
@@ -402,6 +511,7 @@ async function tryFetchPageInfobox(pageTitle) {
 
         let wikidataId = null;
         const externalLinks = [];
+        let cast = [];
 
         try {
             const wikidataUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=pageprops&ppprop=wikibase_item&origin=*`;
@@ -458,6 +568,11 @@ async function tryFetchPageInfobox(pageTitle) {
                             });
                         }
                     }
+
+                    const castEntries = extractCastMemberIds(claims);
+                    if (castEntries.length > 0) {
+                        cast = await fetchWikidataCastMembers(castEntries);
+                    }
                 }
             }
         } catch (e) {
@@ -477,6 +592,7 @@ async function tryFetchPageInfobox(pageTitle) {
             url: page.fullurl,
             wikidataId,
             links: externalLinks.slice(0, 6),
+            cast: cast.length > 0 ? cast : undefined,
         };
     } catch (e) {
         console.error("[edge-search] tryFetchPageInfobox failed", {

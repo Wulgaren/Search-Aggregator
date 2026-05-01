@@ -1,4 +1,4 @@
-import type { InfoboxData, InfoboxDeps, InfoboxElements, InfoboxLink, InfoboxState } from './types';
+import type { InfoboxCastMember, InfoboxData, InfoboxDeps, InfoboxElements, InfoboxLink, InfoboxState } from './types';
 
 export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxDeps) {
     const state: InfoboxState = { data: null, loading: false };
@@ -11,6 +11,8 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         state.data = null;
         state.loading = false;
         elements.infobox.style.display = 'none';
+        elements.infoboxCast.hidden = true;
+        elements.infoboxCast.innerHTML = '';
     }
 
     async function fetchInfobox(query: string) {
@@ -44,6 +46,23 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         if (wasHidden) deps.storeElementPositionBeforeContent();
         elements.infoboxTitle.textContent = data.title;
         elements.infoboxDescription.textContent = data.description;
+
+        elements.infoboxCast.hidden = true;
+        elements.infoboxCast.innerHTML = '';
+        if (data.cast && data.cast.length > 0) {
+            elements.infoboxCast.hidden = false;
+            const heading = document.createElement('div');
+            heading.className = 'infobox-cast-heading';
+            heading.textContent = 'Cast';
+            elements.infoboxCast.appendChild(heading);
+            const scroll = document.createElement('div');
+            scroll.className = 'infobox-cast-scroll';
+            for (const member of data.cast) {
+                scroll.appendChild(buildCastCard(member));
+            }
+            elements.infoboxCast.appendChild(scroll);
+        }
+
         elements.infobox.classList.remove('no-image-fallback');
         if (data.image) {
             elements.infoboxImage.src = data.image;
@@ -96,6 +115,61 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         elements.infoboxSource.href = data.url;
         elements.infobox.style.display = 'flex';
         requestAnimationFrame(() => deps.maintainMousePosition());
+    }
+
+    function buildCastCard(member: InfoboxCastMember) {
+        const card = document.createElement('a');
+        card.className = 'infobox-cast-card';
+        card.href = member.url;
+        card.target = '_blank';
+        card.rel = 'noopener noreferrer';
+
+        const photo = document.createElement('div');
+        photo.className = 'infobox-cast-photo';
+
+        if (member.image) {
+            const img = document.createElement('img');
+            img.src = member.image;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.className = 'infobox-cast-photo-img';
+            img.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                deps.openImagePreview({
+                    thumbnail: member.image!,
+                    full: member.image!,
+                    title: member.name,
+                    sourceUrl: member.url,
+                    sourceLinkText: 'View article',
+                });
+            });
+            img.addEventListener('error', () => {
+                img.remove();
+                photo.classList.add('infobox-cast-photo--empty');
+                photo.textContent = member.name.charAt(0).toUpperCase();
+            });
+            photo.appendChild(img);
+        } else {
+            photo.classList.add('infobox-cast-photo--empty');
+            photo.textContent = member.name.charAt(0).toUpperCase();
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'infobox-cast-meta';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'infobox-cast-name';
+        nameEl.textContent = member.name;
+        meta.appendChild(nameEl);
+        if (member.role) {
+            const roleEl = document.createElement('span');
+            roleEl.className = 'infobox-cast-role';
+            roleEl.textContent = member.role;
+            meta.appendChild(roleEl);
+        }
+
+        card.append(photo, meta);
+        return card;
     }
 
     return { reset, fetchInfobox };

@@ -297,6 +297,7 @@ const infobox = createInfoboxComponent(
         infoboxImage: byId<HTMLImageElement>('infobox-image'),
         infoboxTitle: byId('infobox-title'),
         infoboxDescription: byId('infobox-description'),
+        infoboxCast: byId('infobox-cast'),
         infoboxLinks: byId('infobox-links'),
         infoboxSource: byId<HTMLAnchorElement>('infobox-source'),
     },
