@@ -93,6 +93,13 @@ export type InfoboxLink = {
     name?: string;
 };
 
+export type InfoboxCastMember = {
+    name: string;
+    role?: string;
+    image?: string;
+    url: string;
+};
+
 export type InfoboxData = {
     title: string;
     description: string;
@@ -100,6 +107,7 @@ export type InfoboxData = {
     imageFull?: string;
     url: string;
     links?: InfoboxLink[];
+    cast?: InfoboxCastMember[];
 };
 
 export type InfoboxElements = {
@@ -107,6 +115,7 @@ export type InfoboxElements = {
     infoboxImage: HTMLImageElement;
     infoboxTitle: HTMLElement;
     infoboxDescription: HTMLElement;
+    infoboxCast: HTMLElement;
     infoboxLinks: HTMLElement;
     infoboxSource: HTMLAnchorElement;
 };
