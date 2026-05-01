@@ -1204,7 +1204,9 @@ a:hover {
   max-width: 800px;
   animation: fadeSlideIn 0.4s ease-out;
   position: relative;
-  overflow: hidden;
+  /* Allow horizontal overflow from inner cast strip (nested overflow-x); clip x only for chrome bar */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .infobox::before {
@@ -1321,7 +1323,13 @@ a:hover {
   margin: 0 -0.15rem;
   padding-left: 0.15rem;
   padding-right: 0.15rem;
-  scroll-snap-type: x proximity;
+  justify-content: flex-start;
+  align-items: flex-start;
+  scroll-padding-inline: 0;
+  /* Touch: horizontal pan without trapping vertical page scroll */
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
 }
@@ -1344,7 +1352,6 @@ a:hover {
   width: 76px;
   text-decoration: none;
   color: inherit;
-  scroll-snap-align: start;
   transition: transform 0.15s ease;
 }
 
@@ -1488,6 +1495,13 @@ a:hover {
     align-items: center;
   }
 
+  /* Full-width strip so cast scroll hits viewport edges (parent centers narrow flex items) */
+  .infobox-cast {
+    align-self: stretch;
+    width: 100%;
+    max-width: none;
+  }
+
   .infobox-links {
     justify-content: center;
   }
@@ -1498,8 +1512,14 @@ a:hover {
   }
 
   .infobox-cast-scroll {
+    flex-wrap: nowrap;
     justify-content: flex-start;
-    max-width: 100%;
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .infobox-source {

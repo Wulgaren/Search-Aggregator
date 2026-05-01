@@ -61,6 +61,9 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
                 scroll.appendChild(buildCastCard(member));
             }
             elements.infoboxCast.appendChild(scroll);
+            requestAnimationFrame(() => {
+                scroll.scrollLeft = 0;
+            });
         }
 
         elements.infobox.classList.remove('no-image-fallback');
