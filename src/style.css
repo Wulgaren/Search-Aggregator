@@ -1042,6 +1042,9 @@ a:hover {
 }
 
 .preview-image {
+  width: auto;
+  height: auto;
+  min-width: min(280px, 90vw);
   max-width: 90vw;
   max-height: calc(80vh - 40px);
   object-fit: contain;
