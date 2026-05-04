@@ -241,14 +241,19 @@ async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey
 }
 
 async function fetchMarginalia(query, page, resultsPerPage) {
-    const offset = (page - 1) * resultsPerPage;
-    const encodedQuery = encodeURIComponent(query);
-    const url = `https://api.marginalia.nu/public/search/${encodedQuery}?count=${resultsPerPage}&index=${offset}`;
+    const count = Math.min(100, Math.max(1, resultsPerPage));
+    const url = new URL("https://api2.marginalia-search.com/search");
+    url.searchParams.set("query", query);
+    url.searchParams.set("count", String(count));
+    url.searchParams.set("page", String(page));
 
-    const response = await fetch(url, {
-        headers: { 
+    const apiKey = Deno.env.get("MARGINALIA_API_KEY") ?? "public";
+
+    const response = await fetch(url.toString(), {
+        headers: {
             Accept: "application/json",
-            "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)"
+            "API-Key": apiKey,
+            "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)",
         },
     });
 
@@ -278,9 +283,14 @@ async function fetchMarginalia(query, page, resultsPerPage) {
         source: "marginalia",
     }));
 
+    const hasMore =
+        typeof data.pages === "number" && typeof data.page === "number"
+            ? data.page < data.pages
+            : results.length === count;
+
     return {
         results,
-        hasMore: results.length === resultsPerPage,
+        hasMore,
         totalResults: String(data.results?.length || 0),
     };
 }

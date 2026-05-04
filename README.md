@@ -22,7 +22,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
-  - [Marginalia Search API](https://search.marginalia.nu/)
+  - [Marginalia Search API](https://about.marginalia-search.com/article/api/) (`api2.marginalia-search.com`)
   - [Wikipedia API](https://www.mediawiki.org/wiki/API:Main_page)
 
 ## Setup
@@ -84,6 +84,16 @@ API keys and Google credentials are **not** set as Netlify environment variables
 ```
 
 ## Configuration
+
+### Netlify environment variables (edge search)
+
+Set these in the Netlify UI (Site configuration → Environment variables) so `/api/search` and `/api/ai` work:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `BRAVE_API_KEY` | Brave web + image search |
+| `MARGINALIA_API_KEY` | [Marginalia Search API v2](https://about.marginalia-search.com/article/api/) (`API-Key` header). If unset, the edge function falls back to the sample key `public` (shared rate limit). |
+| `GROQ_API_KEY` | Optional streaming AI answers |
 
 The `netlify.toml` file configures:
 
@@ -163,11 +173,11 @@ GET /api/search?q=javascript&page=1&source=brave
 
 ### Marginalia Search
 
-This project uses the [Marginalia Search public API](https://api.marginalia.nu/public/search/). The API is publicly available and doesn't require authentication. However, please:
+The edge function calls [`api2.marginalia-search.com`](https://about.marginalia-search.com/article/api/) with the `API-Key` header (from `MARGINALIA_API_KEY`, or the documented sample key `public` if unset). Response data is licensed [CC-BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) per Marginalia.
 
-- **Respect rate limits**: The service may have rate limits; implement appropriate caching
-- **Add attribution**: Marginalia results are clearly labeled in the UI
-- **Monitor usage**: If you expect high traffic, consider contacting the Marginalia maintainers
+- **Set `MARGINALIA_API_KEY`**: Dedicated rate limit vs. the overloaded `public` key
+- **Respect rate limits**: Use caching where appropriate
+- **Attribution**: Marginalia results are labeled in the UI
 
 ### unduck.link
 
