@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Search</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+    <link rel="preload" href="style.css?v=50" as="style" />
+    <link rel="stylesheet" href="style.css?v=50" />
+
+    <!-- IIFE: runs during parse (before deferred script.js) to start ?q= fetches early -->
+    <script src="early-fetch-entry.js?v=61"></script>
+    <script defer src="script.js?v=61"></script>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="search-row">
+          <form class="search-form" id="search-form">
+            <input
+              type="text"
+              class="search-input"
+              id="search-input"
+              placeholder="Search the web..."
+              autocomplete="off"
+            />
+            <button type="submit" class="search-btn">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </button>
+          </form>
+          <button
+            type="button"
+            class="ai-btn"
+            id="ai-btn"
+            title="Get AI Answer"
+          >
+            <span class="ai-icon">✨</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="spell-banner" id="spell-banner" hidden></div>
+
+      <dialog class="api-settings-dialog" id="api-settings-dialog">
+        <div class="api-settings-inner">
+          <h2 class="api-settings-title">Google Custom Search</h2>
+          <p class="api-settings-context" id="api-settings-context" hidden></p>
+          <p class="api-settings-hint">
+            Values are stored in <code>localStorage</code>. On Vercel, set <code>BRAVE_API_KEY</code>, <code>MARGINALIA_API_KEY</code>, and <code>GROQ_API_KEY</code> under Project Settings → Environment Variables (see <a href="https://about.marginalia-search.com/article/api/" target="_blank" rel="noopener">Marginalia API docs</a>). Clear a field and save to remove it. Use “Clear Google token” if search fails after rotating credentials.
+          </p>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-google-cx">Google Custom Search Engine ID (cx)</label>
+            <input
+              type="text"
+              class="api-settings-input"
+              id="api-settings-google-cx"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="cx"
+            />
+          </div>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-google-sa">Google service account JSON</label>
+            <textarea
+              class="api-settings-textarea api-settings-json"
+              id="api-settings-google-sa"
+              rows="8"
+              spellcheck="false"
+              placeholder="Paste the full service account JSON from Google Cloud"
+            ></textarea>
+          </div>
+          <p class="api-settings-json-error" id="api-settings-json-error" hidden></p>
+
+          <div class="api-settings-actions">
+            <button type="button" class="api-settings-secondary" id="api-settings-clear-google-token">Clear Google token</button>
+            <div class="api-settings-actions-main">
+              <button type="button" class="api-settings-secondary" id="api-settings-close">Cancel</button>
+              <button type="button" class="api-settings-save" id="api-settings-save">Save</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- AI Answer Panel -->
+      <div class="ai-panel" id="ai-panel" style="display: none;">
+        <div class="ai-panel-header">
+          <div class="ai-panel-title">
+            <span class="ai-icon">✨</span>
+            <span>AI Answer</span>
+            <span class="ai-model-badge">Compound Mini</span>
+          </div>
+          <button class="ai-panel-close" id="ai-panel-close" aria-label="Close AI panel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="ai-panel-content" id="ai-panel-content">
+          <div class="ai-loading" id="ai-loading">
+            <div class="loading-spinner"></div>
+            <span>Thinking...</span>
+          </div>
+          <div class="ai-answer" id="ai-answer"></div>
+        </div>
+        <div class="ai-panel-footer" id="ai-panel-footer" style="display: none;">
+          <div class="ai-sources-label">Sources used for grounding:</div>
+          <div class="ai-sources" id="ai-sources"></div>
+        </div>
+      </div>
+
+      <!-- Infobox (Knowledge Panel) -->
+      <aside class="infobox" id="infobox" style="display: none">
+        <div class="infobox-image-container">
+          <img class="infobox-image" id="infobox-image" src="" alt="" />
+        </div>
+        <div class="infobox-content">
+          <h2 class="infobox-title" id="infobox-title"></h2>
+          <p class="infobox-description" id="infobox-description"></p>
+          <div class="infobox-cast" id="infobox-cast" hidden></div>
+          <div class="infobox-links" id="infobox-links"></div>
+          <a
+            class="infobox-source"
+            id="infobox-source"
+            href=""
+            target="_blank"
+            rel="noopener"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+            Read more on Wikipedia
+          </a>
+        </div>
+      </aside>
+
+      <!-- Image Slider -->
+      <section
+        class="image-slider-section"
+        id="image-section"
+        style="display: none"
+      >
+        <div class="image-slider-header">
+          <h2 class="image-slider-title">Images</h2>
+        </div>
+        <div class="slider-track" id="slider-track"></div>
+      </section>
+
+      <!-- Image Preview -->
+      <div class="image-preview" id="image-preview">
+        <div class="preview-overlay" id="preview-overlay"></div>
+        <button class="preview-nav preview-prev" id="preview-prev" aria-label="Previous image">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <button class="preview-nav preview-next" id="preview-next" aria-label="Next image">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+        <div class="preview-content">
+          <button class="preview-close" id="preview-close">×</button>
+          <div class="preview-image-container">
+            <img class="preview-image" id="preview-image" src="" alt="" />
+          </div>
+          <div class="preview-info" id="preview-info"></div>
+          <div class="preview-counter" id="preview-counter"></div>
+        </div>
+      </div>
+
+      <main class="results" id="results">
+        <!-- Desktop: Two columns -->
+        <section class="results-column" id="commercial-column">
+          <div class="column-header">
+            <h2 class="column-title">Commercial</h2>
+            <span class="result-count" id="commercial-count"></span>
+          </div>
+          <div class="results-list" id="commercial-results">
+            <div class="empty-state">
+              <p>Commercial results will appear here</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="results-column" id="noncommercial-column">
+          <div class="column-header">
+            <h2 class="column-title">Non-commercial</h2>
+            <span class="result-count" id="noncommercial-count"></span>
+          </div>
+          <div class="results-list" id="noncommercial-results">
+            <div class="empty-state">
+              <p>Non-commercial results will appear here</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Mobile: Merged interleaved view -->
+        <section class="results-merged" id="merged-column">
+          <div class="column-header">
+            <h2 class="column-title">Results</h2>
+            <div class="source-legend">
+              <span class="legend-item legend-commercial">Commercial</span>
+              <span class="legend-item legend-noncommercial"
+                >Non-commercial</span
+              >
+            </div>
+          </div>
+          <div class="results-list" id="merged-results">
+            <div class="empty-state">
+              <p>Search results will appear here</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>
+          Powered by
+          <a href="https://brave.com/search/" target="_blank" rel="noopener"
+            >Brave</a
+          >,
+          <a href="https://google.com" target="_blank" rel="noopener">Google</a>
+          &
+          <a href="https://search.marginalia.nu/" target="_blank" rel="noopener"
+            >Marginalia</a
+          >
+        </p>
+      </footer>
+    </div>
+
+  </body>
+</html>
