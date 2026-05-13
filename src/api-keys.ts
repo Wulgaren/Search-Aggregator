@@ -151,7 +151,7 @@ function maybeNotifyMissingCommercialKeys() {
     if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
     sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
     openApiSettingsDialog(
-        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq run on Netlify (env vars).'
+        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Brave, Marginalia, and Groq use Vercel environment variables (BRAVE_API_KEY, MARGINALIA_API_KEY, GROQ_API_KEY).'
     );
 }
 

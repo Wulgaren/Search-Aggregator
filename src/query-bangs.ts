@@ -1,4 +1,4 @@
-/** Injected by `scripts/build.ts` from Netlify env `DISABLE_GOOGLE_BANG` or `disable_google_bang`. */
+/** Injected by `scripts/build.ts` from env `DISABLE_GOOGLE_BANG` or `disable_google_bang`. */
 declare const __DISABLE_GOOGLE_BANG__: boolean;
 
 export function detectBang(query: string): boolean {

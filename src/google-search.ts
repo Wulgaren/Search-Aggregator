@@ -1,6 +1,6 @@
 /**
  * Google Custom Search (web + images) in the browser. Credentials from localStorage (see api-keys.ts).
- * Brave / Marginalia / Groq are handled by Netlify edge `search.ts`.
+ * Brave / Marginalia / Groq are handled by Vercel Edge (`api/search.ts`, `api/ai.ts`).
  */
 
 import {

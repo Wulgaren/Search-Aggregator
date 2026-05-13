@@ -18,7 +18,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 ## Tech Stack
 
 - **Frontend**: TypeScript (compiled with Bun), HTML, CSS — sources in `src/`, minified bundles `script.js` / `style.css` at repo root
-- **Hosting**: Netlify (static build from `netlify.toml`; no server-side search API)
+- **Hosting**: [Vercel](https://vercel.com/) — static files plus Edge routes under `api/` (`vercel.json` for build and headers)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
@@ -38,30 +38,32 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 ### Installation
 
 1. Clone this repository:
+
 ```bash
 git clone <repository-url>
 cd Search
 ```
 
 2. Install dependencies and build the client (TypeScript + minified CSS):
+
 ```bash
 bun install
 bun run build
 ```
-This writes `script.js` and `style.css` at the project root. Netlify runs the same steps via `netlify.toml`.
 
-3. Deploy to Netlify (or any static host):
-   - Connect your repository to Netlify
-   - Netlify will automatically detect the build settings from `netlify.toml`
-   - The site will deploy automatically
+This writes `script.js` and `style.css` at the project root. Vercel runs the same steps via `vercel.json`.
+
+3. Deploy to Vercel:
+   - Import the repo in the Vercel dashboard (or use `vercel link` / `vercel deploy`)
+   - Set environment variables (see below)
 
 ### API keys (browser)
 
-API keys and Google credentials are **not** set as Netlify environment variables for search. After opening the app, use **API configuration** (JSON in `localStorage`) to add:
+Google Custom Search credentials (`cx`, service account JSON) are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets.
 
-- `braveApiKey`, `googleCx`, `googleServiceAccount` (object or JSON string), `groqApiKey` (optional, for AI answers)
+Optional keys you can also store in the browser: `braveApiKey`, `groqApiKey` (see `src/api-keys.ts`). Production setups usually rely on **server-side** env vars for Brave, Marginalia, and Groq so keys stay off the client.
 
-**Security note:** credentials live in the user’s browser. Treat this as a personal or trusted-user setup, not a hidden server-side secret store.
+**Security note:** Treat browser-stored credentials as a personal or trusted-user setup, not a hidden server-side secret store.
 
 ## Project Structure
 
@@ -70,6 +72,10 @@ API keys and Google credentials are **not** set as Netlify environment variables
 ├── index.html              # Main HTML file
 ├── script.js               # Built client bundle (run `bun run build`)
 ├── style.css               # Minified CSS (run `bun run build`)
+├── api/
+│   ├── search.ts           # Vercel Edge — GET /api/search
+│   ├── ai.ts               # Vercel Edge — POST /api/ai
+│   └── lib/search-route.ts # Shared Edge handler logic
 ├── src/
 │   ├── script.ts           # UI, search state, API settings dialog
 │   ├── api-keys.ts         # localStorage keys + JSON config helpers
@@ -79,25 +85,25 @@ API keys and Google credentials are **not** set as Netlify environment variables
 │   └── global.d.ts         # DOM / window typings
 ├── scripts/
 │   └── build.ts            # Bun build (JS + CSS minify)
-├── netlify.toml            # Netlify configuration (build + headers)
+├── vercel.json             # Vercel build + headers
 └── README.md               # This file
 ```
 
 ## Configuration
 
-### Netlify environment variables (edge search)
+### Vercel environment variables
 
-Set these in the Netlify UI (Site configuration → Environment variables) so `/api/search` and `/api/ai` work:
+Set these in **Project → Settings → Environment Variables** so `/api/search` and `/api/ai` work:
 
 | Variable | Purpose |
 | -------- | ------- |
 | `BRAVE_API_KEY` | Brave web + image search |
-| `MARGINALIA_API_KEY` | [Marginalia Search API v2](https://about.marginalia-search.com/article/api/) (`API-Key` header). If unset, the edge function falls back to the sample key `public` (shared rate limit). |
+| `MARGINALIA_API_KEY` | [Marginalia Search API v2](https://about.marginalia-search.com/article/api/) (`API-Key` header). If unset, the handler falls back to the sample key `public` (shared rate limit). |
 | `GROQ_API_KEY` | Optional streaming AI answers |
 
-The `netlify.toml` file configures:
+`vercel.json` configures:
 
-- Build command and publish directory
+- Install/build commands and output directory
 - Security headers (X-Frame-Options, etc.)
 - Cache headers for static assets
 
@@ -123,24 +129,25 @@ The `netlify.toml` file configures:
 ### Local Development
 
 1. Install dependencies and build the client (or use `bun run watch` to rebuild on save):
+
 ```bash
 bun install
 bun run build
 ```
 
-2. Serve the repo root with any static server (e.g. `npx serve .` or your editor’s live server) and open `index.html`.
+2. Serve the repo root with any static server (e.g. `bunx serve .`) and open `index.html`. Same-origin `/api/*` routes require `vercel dev` or a deployed preview.
 
 Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebuild `script.js` and `style.css` when editing `src/`.
 
 ### Code Structure
 
 - **UI** (`src/script.ts` → `script.js`): DOM, search state, infinite scroll, image previews, API settings
-- **Search + AI** (Netlify edge `netlify/edge-functions/search.ts`): request handlers invoked via same-origin “/api” paths
+- **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/lib/search-route.ts`): Vercel Edge handlers for same-origin `/api` paths
 - **Styles** (`src/style.css` → minified `style.css`)
 
 ## API Endpoints (in-bundle)
 
-The app issues `fetch()` calls to same-origin paths handled by `netlify/edge-functions/search.ts`:
+The app issues `fetch()` calls to same-origin paths handled by Vercel Edge:
 
 ### `/api/search`
 
@@ -173,7 +180,7 @@ GET /api/search?q=javascript&page=1&source=brave
 
 ### Marginalia Search
 
-The edge function calls [`api2.marginalia-search.com`](https://about.marginalia-search.com/article/api/) with the `API-Key` header (from `MARGINALIA_API_KEY`, or the documented sample key `public` if unset). Response data is licensed [CC-BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) per Marginalia.
+The Edge handler calls [`api2.marginalia-search.com`](https://about.marginalia-search.com/article/api/) with the `API-Key` header (from `MARGINALIA_API_KEY`, or the documented sample key `public` if unset). Response data is licensed [CC-BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) per Marginalia.
 
 - **Set `MARGINALIA_API_KEY`**: Dedicated rate limit vs. the overloaded `public` key
 - **Respect rate limits**: Use caching where appropriate
@@ -202,7 +209,7 @@ This project is open source. Feel free to use, modify, and distribute as needed.
 - [Google Custom Search](https://developers.google.com/custom-search) - Search API
 - [Marginalia Search](https://search.marginalia.nu/) - Non-commercial search
 - [Wikipedia](https://www.wikipedia.org/) - Knowledge panel data
-- [Netlify](https://www.netlify.com/) - Hosting
+- [Vercel](https://vercel.com/) - Hosting
 
 ## Contributing
 

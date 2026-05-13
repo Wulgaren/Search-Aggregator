@@ -1,6 +1,6 @@
 /** Vercel Edge — POST `/api/ai` routed through shared handler (`aggregateEdgeRequest` checks pathname). */
 export const runtime = "edge";
 
-import { aggregateEdgeRequest } from "../edge/search-route";
+import { aggregateEdgeRequest } from "./lib/search-route";
 
 export default aggregateEdgeRequest;

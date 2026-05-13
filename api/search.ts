@@ -1,6 +1,6 @@
-/** Vercel Edge — same behavior as `netlify/edge-functions/search.ts` route `/api/search`. */
+/** Vercel Edge — serves `/api/search`. */
 export const runtime = "edge";
 
-import { aggregateEdgeRequest } from "../edge/search-route";
+import { aggregateEdgeRequest } from "./lib/search-route";
 
 export default aggregateEdgeRequest;

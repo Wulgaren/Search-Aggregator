@@ -1,5 +1,6 @@
 // @ts-nocheck
-// Serverless Edge: `/api/search` + `/api/ai` (Vercel). Same handlers as legacy Netlify edge.
+/* eslint-disable @typescript-eslint/no-explicit-any -- Wikidata/Brave JSON shapes */
+// Shared handler for Vercel Edge `/api/search` + `/api/ai`.
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -43,7 +44,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     const requestKey = `q=${searchQuery}&page=${page}&source=${source ?? ""}&imageSource=${imageSource ?? ""}`;
 
     // Helps confirm whether multiple Brave requests hit during "first whole site load".
-    // Group by `requestKey` and time (Netlify log viewer).
+    // Group by `requestKey` and time (deploy logs).
     console.log("[edge-search] api/search request", {
         reqId,
         requestKey,
