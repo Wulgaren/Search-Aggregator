@@ -3,6 +3,7 @@
   command = "bun install --frozen-lockfile && bun run build"
 
 # Edge: Brave, Marginalia, Wikipedia infobox, Brave images, Groq (/api/ai). Google uses the browser (popup).
+# Vercel port: api/search.ts, api/ai.ts → edge/search-route.ts (+ vercel.json). Keep env names identical.
 # Set BRAVE_API_KEY, MARGINALIA_API_KEY (new API: api2.marginalia-search.com + API-Key header), GROQ_API_KEY in Netlify env.
 [[edge_functions]]
   path = "/api/search"

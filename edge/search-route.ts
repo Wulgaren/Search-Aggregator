@@ -1,8 +1,11 @@
-// Netlify Edge (Deno env). Behaviour should match ../edge/search-route.ts (Vercel / process.env); change both together.
+// @ts-nocheck
+// Serverless Edge: `/api/search` + `/api/ai` (Vercel). Same handlers as legacy Netlify edge.
+
+/** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
-export default async (request: Request, context: unknown): Promise<Response> => {
+export async function aggregateEdgeRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     
     // Route to AI handler for /api/ai
@@ -152,10 +155,10 @@ export default async (request: Request, context: unknown): Promise<Response> => 
             "Cache-Control": SEARCH_JSON_CACHE,
         },
     });
-};
+}
 
 async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey: string) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
         console.error("[edge-search] Brave API key not configured");
@@ -245,7 +248,7 @@ async function fetchMarginalia(query, page, resultsPerPage) {
     url.searchParams.set("count", String(count));
     url.searchParams.set("page", String(page));
 
-    const apiKey = Deno.env.get("MARGINALIA_API_KEY") ?? "public";
+    const apiKey = process.env.MARGINALIA_API_KEY ?? "public";
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -299,7 +302,7 @@ async function fetchBraveImages(
     reqId?: string,
     requestKey?: string
 ) {
-    const apiKey = Deno.env.get("BRAVE_API_KEY");
+    const apiKey = process.env.BRAVE_API_KEY;
 
     if (!apiKey) {
         console.error("[edge-search] Brave API key not configured for images");
@@ -621,7 +624,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
+    const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
         console.error("[edge-search] Groq API key not configured");
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
