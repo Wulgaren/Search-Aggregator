@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { cp, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { watch as watchLegacy } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -80,7 +79,7 @@ async function build(): Promise<void> {
 await build();
 
 if (process.argv.includes("--watch")) {
-  watchLegacy(join(root, "src"), { recursive: true }, () => {
+  watch(join(root, "src"), { recursive: true }, () => {
     void build();
   });
   console.log("Watching src/ …");

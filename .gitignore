@@ -42,3 +42,12 @@ yarn.lock
 /script.js
 /early-fetch-entry.js
 /style.css
+
+# Same bundles + copies emitted to `public/` for Vercel (`bun run build` → scripts/build.ts)
+/public/script.js
+/public/early-fetch-entry.js
+/public/style.css
+/public/index.html
+/public/favicon.svg
+/public/robots.txt
+/public/fonts/

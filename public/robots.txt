@@ -1,4 +1,0 @@
-# Block all search engine crawlers
-User-agent: *
-Disallow: /
-
