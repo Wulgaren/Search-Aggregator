@@ -3,6 +3,14 @@
   "installCommand": "bun install --frozen-lockfile",
   "buildCommand": "bun install --frozen-lockfile && bun run build",
   "outputDirectory": "public",
+  "functions": {
+    "api/search.ts": {
+      "includeFiles": "api/lib/**"
+    },
+    "api/ai.ts": {
+      "includeFiles": "api/lib/**"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
