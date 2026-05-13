@@ -1,67 +1,16 @@
-import { apiSettings, getApiSecret } from './api-keys';
-import {
-    createCachedGoogleSearchGet,
-    handleGoogleSearchRequest,
-    isGoogleClientSearchUrl,
-} from './google-search';
+import { apiSettings } from './api-keys';
+import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
+import { searchApiFetch as apiFetch } from './search-fetch';
 import type { EarlyFetchKey, ElementPositionBeforeContent, MousePosition } from './types';
 import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
-/** Injected by `scripts/build.ts` from Netlify env `DISABLE_GOOGLE_BANG` or `disable_google_bang`. */
-declare const __DISABLE_GOOGLE_BANG__: boolean;
-
-const cachedGoogleSearchGet = createCachedGoogleSearchGet((request) => handleGoogleSearchRequest(request));
-
 function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     const el = document.getElementById(id);
     if (!el) throw new Error(`Missing #${id}`);
     return el as T;
-}
-
-async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-    const url = new URL(path, window.location.origin);
-    if (url.pathname === '/api/search' && (!init?.method || init.method === 'GET')) {
-        if (isGoogleClientSearchUrl(url)) return cachedGoogleSearchGet(url.pathname + url.search);
-        return fetch(url.toString());
-    }
-    return fetch(url.toString(), init);
-}
-
-function detectBang(query: string) {
-    return /^![\w]+(?:\s|$)|\s![\w]+$/.test(query);
-}
-
-/** Removes DDG `!g` only (start or end), case-insensitive. */
-function stripGoogleBangFromQuery(query: string): string {
-    let s = query.trim();
-    s = s.replace(/^!g(?:\s+|$)/i, '').trim();
-    s = s.replace(/(?:^|\s)!g$/i, '').trim();
-    return s;
-}
-
-type BangResolution = { kind: 'redirect'; q: string } | { kind: 'search'; q: string };
-
-function resolveQueryForBangHandling(raw: string): BangResolution {
-    if (!detectBang(raw)) {
-        return { kind: 'search', q: raw };
-    }
-    if (__DISABLE_GOOGLE_BANG__) {
-        const stripped = stripGoogleBangFromQuery(raw);
-        if (stripped !== raw) {
-            if (detectBang(stripped)) {
-                return { kind: 'redirect', q: stripped };
-            }
-            return { kind: 'search', q: stripped };
-        }
-    }
-    return { kind: 'redirect', q: raw };
-}
-
-function handleBangRedirect(query: string) {
-    window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
 }
 
 function shouldAutoOpenAIForQuery(query: string): boolean {
@@ -89,30 +38,6 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
     const promise = takeEarlyFetchPromise(key, query);
     return promise ? await promise : null;
 }
-
-(function startEarlyClientFetch() {
-    const q = new URLSearchParams(window.location.search).get('q');
-    if (!q) return;
-    const resolved = resolveQueryForBangHandling(q);
-    if (resolved.kind === 'redirect') {
-        handleBangRedirect(resolved.q);
-        return;
-    }
-    const searchQ = resolved.q;
-    if (!searchQ.trim()) return;
-    const base = `/api/search?q=${encodeURIComponent(searchQ)}&page=1&source=`;
-    const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
-    const enc = encodeURIComponent(searchQ);
-    const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
-    const imgGooglePromise = hasGoogle ? apiFetch(imgGoogle) : null;
-    window.__earlyFetch = {
-        query: searchQ,
-        brave: apiFetch(base + 'brave'),
-        ...(hasGoogle && imgGooglePromise ? { google: apiFetch(base + 'google'), images: imgGooglePromise } : {}),
-        marginalia: apiFetch(base + 'marginalia'),
-        infobox: apiFetch(`/api/search?q=${enc}&source=infobox`),
-    };
-})();
 
 const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
@@ -250,9 +175,7 @@ function maintainMousePosition() {
 
     // The stored element might have been replaced during re-render (e.g. infinite scroll).
     // If we have a stable result key, try to re-find the same card.
-    let usedRefind = false;
     if (!targetElement && activeResultUrlKey) {
-        usedRefind = true;
         const safeKey = CSS.escape(activeResultUrlKey);
         targetElement = getActiveResultsRoot().querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
     }
@@ -395,7 +318,7 @@ function restoreSearchState() {
     if (query) {
         const resolved = resolveQueryForBangHandling(query);
         if (resolved.kind === 'redirect') {
-            handleBangRedirect(resolved.q);
+            redirectForBang(resolved.q);
             return;
         }
         const q = resolved.q;
@@ -478,7 +401,7 @@ searchForm.addEventListener('submit', (e) => {
     if (!raw) return;
     const resolved = resolveQueryForBangHandling(raw);
     if (resolved.kind === 'redirect') {
-        handleBangRedirect(resolved.q);
+        redirectForBang(resolved.q);
         return;
     }
     const query = resolved.q;

@@ -40,4 +40,5 @@ yarn.lock
 
 # Generated frontend bundles (built from src/)
 /script.js
+/early-fetch-entry.js
 /style.css

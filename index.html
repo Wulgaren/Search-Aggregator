@@ -10,7 +10,9 @@
     <link rel="preload" href="style.css?v=50" as="style" />
     <link rel="stylesheet" href="style.css?v=50" />
 
-    <script defer src="script.js?v=60"></script>
+    <!-- IIFE: runs during parse (before deferred script.js) to start ?q= fetches early -->
+    <script src="early-fetch-entry.js?v=61"></script>
+    <script defer src="script.js?v=61"></script>
   </head>
   <body>
     <div class="container">

@@ -12,18 +12,34 @@ function disableGoogleBangFromEnv(): boolean {
 
 async function build(): Promise<void> {
   const disableGoogleBang = disableGoogleBangFromEnv();
-  const result = await Bun.build({
+  const define = {
+    __DISABLE_GOOGLE_BANG__: JSON.stringify(disableGoogleBang),
+  };
+
+  const early = await Bun.build({
+    entrypoints: [join(root, "src/early-fetch-entry.ts")],
+    outdir: root,
+    naming: "early-fetch-entry.js",
+    minify: true,
+    format: "iife",
+    target: "browser",
+    define,
+  });
+  if (!early.success) {
+    console.error(early.logs);
+    process.exit(1);
+  }
+
+  const main = await Bun.build({
     entrypoints: [join(root, "src/script.ts")],
     outdir: root,
     naming: "script.js",
     minify: true,
     target: "browser",
-    define: {
-      __DISABLE_GOOGLE_BANG__: JSON.stringify(disableGoogleBang),
-    },
+    define,
   });
-  if (!result.success) {
-    console.error(result.logs);
+  if (!main.success) {
+    console.error(main.logs);
     process.exit(1);
   }
 
@@ -32,7 +48,7 @@ async function build(): Promise<void> {
     await Bun.file(join(root, "src/style.css")).text()
   );
 
-  console.log("Built script.js + style.css");
+  console.log("Built early-fetch-entry.js + script.js + style.css");
 }
 
 await build();

@@ -68,7 +68,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
     }
 
-    function renderMergedResultsPreservingPosition(reason: string) {
+    function renderMergedResultsPreservingPosition() {
         const shouldPreservePosition = deps.isMergedView() && window.scrollY > 0;
         const reusingPendingAnchor = shouldPreservePosition && deps.hasPendingStoredPosition();
         if (shouldPreservePosition && !reusingPendingAnchor) {
@@ -128,7 +128,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             if (!deps.isMergedView() && marginaliaState.results.length > 0) renderNoncommercialResults();
         }
         if (deps.isMergedView()) {
-            renderMergedResultsPreservingPosition(`source-settle:${source}:page-${page}`);
+            renderMergedResultsPreservingPosition();
         }
     }
 
