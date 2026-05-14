@@ -68,6 +68,40 @@ const searchResults = createSearchResultsComponent(
 
 let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
 let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
+let hasNavigatedPage = false;
+
+function resetViewportTracking() {
+    mousePosition = { x: null, y: null, isInsideResults: false };
+    elementPositionBeforeContent = null;
+    hasNavigatedPage = false;
+}
+
+function markPageNavigation() {
+    hasNavigatedPage = true;
+}
+
+function isEditableTarget(target: EventTarget | null) {
+    const el = target as HTMLElement | null;
+    return !!el?.closest('input, textarea, select, [contenteditable="true"]');
+}
+
+function isScrollNavigationKey(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
+    if (isEditableTarget(event.target)) return false;
+    return (
+        event.key === 'ArrowDown' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'PageDown' ||
+        event.key === 'PageUp' ||
+        event.key === 'Home' ||
+        event.key === 'End' ||
+        event.key === ' '
+    );
+}
+
+function scrollToPageTop() {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+}
 
 function setupMouseTracking() {
     const updateTrackedPoint = (clientX: number, clientY: number) => {
@@ -77,6 +111,7 @@ function setupMouseTracking() {
     };
 
     document.addEventListener('mousemove', (e) => {
+        markPageNavigation();
         updateTrackedPoint(e.clientX, e.clientY);
     });
 
@@ -95,6 +130,7 @@ function setupMouseTracking() {
         (e) => {
             const t = e.touches[0] ?? e.changedTouches[0];
             if (!t) return;
+            markPageNavigation();
             updateTrackedPoint(t.clientX, t.clientY);
         },
         { passive: true }
@@ -109,6 +145,11 @@ function setupMouseTracking() {
         },
         { passive: true }
     );
+
+    document.addEventListener('wheel', markPageNavigation, { passive: true });
+    document.addEventListener('keydown', (e) => {
+        if (isScrollNavigationKey(e)) markPageNavigation();
+    });
 }
 
 function getActiveResultsRoot() {
@@ -124,33 +165,35 @@ function storeResultAnchor(resultItem: HTMLElement) {
 }
 
 function storeElementPositionBeforeContent(options?: { allowFallbackAnchor?: boolean }) {
-    const allowFallbackAnchor = options?.allowFallbackAnchor ?? false;
+    const allowFallbackAnchor = (options?.allowFallbackAnchor ?? false) && hasNavigatedPage;
     const elementAtMouse =
         mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
             ? document.elementFromPoint(mousePosition.x, mousePosition.y)
             : null;
     const resultItem = elementAtMouse?.closest('.result-item[data-url-key]') as HTMLElement | null;
     const activeResultsRoot = getActiveResultsRoot();
-    const firstFullyVisibleResult = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')).find((item) => {
-        const rect = (item as HTMLElement).getBoundingClientRect();
-        return rect.top >= 0 && rect.bottom <= window.innerHeight;
-    }) as HTMLElement | undefined;
-    const resultsRect = activeResultsRoot.getBoundingClientRect();
-    const sampleX = Math.min(Math.max(resultsRect.left + 24, window.innerWidth / 2), resultsRect.right - 24);
-    const sampleY = Math.min(Math.max(resultsRect.top + 24, window.innerHeight * 0.4), resultsRect.bottom - 24);
-    const sampleResult = document
-        .elementFromPoint(sampleX, sampleY)
-        ?.closest('.result-item[data-url-key]') as HTMLElement | null;
-    const topVisibleResult = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')).find((item) => {
-        const rect = (item as HTMLElement).getBoundingClientRect();
-        return rect.bottom > 0 && rect.top < window.innerHeight;
-    }) as HTMLElement | undefined;
     if (resultItem) {
         storeResultAnchor(resultItem);
         return;
     }
 
-    const fallbackResult = allowFallbackAnchor ? sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null : null;
+    let fallbackResult: HTMLElement | null = null;
+    if (allowFallbackAnchor) {
+        const resultItems = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')) as HTMLElement[];
+        const firstFullyVisibleResult = resultItems.find((item) => {
+            const rect = item.getBoundingClientRect();
+            return rect.top >= 0 && rect.bottom <= window.innerHeight;
+        });
+        const resultsRect = activeResultsRoot.getBoundingClientRect();
+        const sampleX = Math.min(Math.max(resultsRect.left + 24, window.innerWidth / 2), resultsRect.right - 24);
+        const sampleY = Math.min(Math.max(resultsRect.top + 24, window.innerHeight * 0.4), resultsRect.bottom - 24);
+        const sampleResult = document.elementFromPoint(sampleX, sampleY)?.closest('.result-item[data-url-key]') as HTMLElement | null;
+        const topVisibleResult = resultItems.find((item) => {
+            const rect = item.getBoundingClientRect();
+            return rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+        fallbackResult = sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null;
+    }
     if (fallbackResult) {
         storeResultAnchor(fallbackResult);
         return;
@@ -247,6 +290,7 @@ const ai = createAIComponent(
 );
 
 function performSearch(query: string) {
+    resetViewportTracking();
     searchResults.startSearch(query);
     images.reset();
     infobox.reset();
@@ -297,10 +341,11 @@ function handleGoogleCorrection(query: string, correctedQuery: string) {
 
     renderSpellBanner(query, correctedQuery);
     if (searchResults.getCurrentQuery() === correctedQuery) return;
+    scrollToPageTop();
     performSearch(correctedQuery);
 }
 
-function restoreSearchState() {
+function restoreSearchState(options?: { scrollToTop?: boolean }) {
     const query = new URLSearchParams(window.location.search).get('q');
     const setInputValue = (value: string, focus: boolean) => {
         const doSet = () => {
@@ -340,7 +385,10 @@ function restoreSearchState() {
         setInputValue(q, false);
         renderSpellBanner('', null);
         document.title = `${q} - Search`;
-        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== q) performSearch(q);
+        if (!searchResults.getCurrentQuery() || searchResults.getCurrentQuery() !== q) {
+            if (options?.scrollToTop) scrollToPageTop();
+            performSearch(q);
+        }
     } else {
         setInputValue('', true);
         document.title = 'Search';
@@ -359,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMouseTracking();
     ai.setupEvents(() => searchInput.value);
     images.setupEvents(() => searchResults.getCurrentQuery());
-    restoreSearchState();
+    restoreSearchState({ scrollToTop: true });
     let wasMerged = window.innerWidth <= 900;
     window.addEventListener('resize', () => {
         const nowMerged = window.innerWidth <= 900;
@@ -392,7 +440,7 @@ spellBanner.addEventListener('click', (e) => {
     const url = new URL(window.location.href);
     url.searchParams.set('q', query);
     window.history.pushState({}, '', url);
-    restoreSearchState();
+    restoreSearchState({ scrollToTop: true });
 });
 
 searchForm.addEventListener('submit', (e) => {
@@ -415,10 +463,10 @@ searchForm.addEventListener('submit', (e) => {
     const url = new URL(window.location.href);
     url.searchParams.set('q', query);
     window.history.pushState({}, '', url);
-    restoreSearchState();
+    restoreSearchState({ scrollToTop: true });
 });
 
-window.addEventListener('popstate', restoreSearchState);
+window.addEventListener('popstate', () => restoreSearchState());
 window.addEventListener('pageshow', (e) => {
     if (e.persisted) restoreSearchState();
 });
