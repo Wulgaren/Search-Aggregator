@@ -115,15 +115,20 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             ? fetchMarginalia(searchQuery, page, resultsPerPage)
             : Promise.resolve(null);
 
-    const [braveResults, marginaliaResults] = await Promise.allSettled([
+    const fetchWibyPromise =
+        !source || source === "wiby" ? fetchWiby(searchQuery, page) : Promise.resolve(null);
+
+    const [braveResults, marginaliaResults, wibyResults] = await Promise.allSettled([
         fetchBravePromise,
         fetchMarginaliaPromise,
+        fetchWibyPromise,
     ]);
 
     const response: {
         page: number;
         brave?: unknown;
         marginalia?: unknown;
+        wiby?: unknown;
     } = { page };
 
     if (!source || source === "brave") {
@@ -146,6 +151,17 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                     error:
                         (marginaliaResults.reason as Error)?.message ||
                         "Failed to fetch Marginalia results",
+                    results: [],
+                };
+    }
+
+    if (!source || source === "wiby") {
+        response.wiby =
+            wibyResults.status === "fulfilled" && wibyResults.value
+                ? wibyResults.value
+                : {
+                    error:
+                        (wibyResults.reason as Error)?.message || "Failed to fetch Wiby results",
                     results: [],
                 };
     }
@@ -294,6 +310,72 @@ async function fetchMarginalia(query, page, resultsPerPage) {
         results,
         hasMore,
         totalResults: String(data.results?.length || 0),
+    };
+}
+
+async function fetchWiby(query, page) {
+    const url = new URL("https://wiby.me/json/");
+    url.searchParams.set("q", query);
+    url.searchParams.set("p", String(Math.max(1, page)));
+
+    const response = await fetch(url.toString(), {
+        headers: {
+            Accept: "application/json",
+            "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)",
+        },
+    });
+
+    if (!response.ok) {
+        console.error("[edge-search] Wiby request failed", {
+            status: response.status,
+            page,
+        });
+        throw new Error(`Wiby API error: ${response.status}`);
+    }
+
+    let data;
+    try {
+        data = await response.json();
+    } catch (e) {
+        console.error("[edge-search] Wiby response JSON parse failed", {
+            page,
+            error: e instanceof Error ? e.message : String(e),
+        });
+        throw e;
+    }
+
+    if (!Array.isArray(data)) {
+        throw new Error("Wiby API returned unexpected JSON shape");
+    }
+
+    const results = [];
+    for (const item of data) {
+        const href = item.URL || item.url;
+        if (!href || typeof href !== "string") continue;
+        let displayUrl = href;
+        try {
+            displayUrl = new URL(href).hostname;
+        } catch {
+            continue;
+        }
+        const title = item.Title || item.title || href;
+        const snippet =
+            (typeof item.Snippet === "string" && item.Snippet) ||
+            (typeof item.Description === "string" && item.Description) ||
+            "";
+        results.push({
+            title,
+            url: href,
+            displayUrl,
+            snippet,
+            source: "wiby",
+        });
+    }
+
+    return {
+        results,
+        hasMore: results.length > 0,
+        totalResults: String(results.length),
     };
 }
 

@@ -1,10 +1,11 @@
-export type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'images' | 'infobox';
+export type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'wiby' | 'images' | 'infobox';
 
 export type EarlyFetchState = {
     query: string;
     google?: Promise<Response>;
     brave?: Promise<Response>;
     marginalia?: Promise<Response>;
+    wiby?: Promise<Response>;
     images?: Promise<Response>;
     infobox?: Promise<Response>;
 };
@@ -153,6 +154,7 @@ export type SearchApiResponse = {
     brave?: SourcePayload;
     google?: SourcePayload;
     marginalia?: SourcePayload;
+    wiby?: SourcePayload;
 };
 
 export type SourceState = {
@@ -179,7 +181,7 @@ export type SearchResultsElements = {
 
 export type SearchDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia', query: string) => Promise<Response | null>;
+    takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia' | 'wiby', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
     hasPendingStoredPosition: () => boolean;

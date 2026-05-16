@@ -13,6 +13,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let braveState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let googleState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let marginaliaState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+    let wibyState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let mergedState = { loading: false };
     let suppressMergedAnimations = false;
     let renderedCommercialUrls = new Set<string>();
@@ -25,6 +26,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+        wibyState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         mergedState = { loading: false };
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
@@ -52,8 +54,15 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }, observerOptions);
         const noncommercialObserver = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-                if (entry.isIntersecting && !marginaliaState.loading && marginaliaState.hasMore && currentQuery && !deps.isMergedView()) {
-                    void loadMoreMarginalia();
+                if (
+                    entry.isIntersecting &&
+                    !marginaliaState.loading &&
+                    !wibyState.loading &&
+                    (marginaliaState.hasMore || wibyState.hasMore) &&
+                    currentQuery &&
+                    !deps.isMergedView()
+                ) {
+                    void loadMoreNoncommercial();
                 }
             });
         }, observerOptions);
@@ -84,7 +93,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
     }
 
-    async function fetchSource(source: 'brave' | 'google' | 'marginalia', query: string, page: number, sessionId: number) {
+    async function fetchSource(source: 'brave' | 'google' | 'marginalia' | 'wiby', query: string, page: number, sessionId: number) {
         if (sessionId !== searchSessionId || query !== currentQuery) return;
         const state = getState(source);
         state.loading = true;
@@ -122,10 +131,11 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
 
         if (sessionId !== searchSessionId || query !== currentQuery) return;
-        if (source === 'marginalia') renderNoncommercialResults();
+        if (source === 'marginalia' || source === 'wiby') renderNoncommercialResults();
         else {
             renderCommercialResults();
-            if (!deps.isMergedView() && marginaliaState.results.length > 0) renderNoncommercialResults();
+            if (!deps.isMergedView() && (marginaliaState.results.length > 0 || wibyState.results.length > 0))
+                renderNoncommercialResults();
         }
         if (deps.isMergedView()) {
             renderMergedResultsPreservingPosition();
@@ -139,6 +149,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         marginaliaState = { page: 1, hasMore: true, loading: false, results: [], error: null };
+        wibyState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         mergedState = { loading: false };
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
@@ -150,6 +161,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         elements.noncommercialCount.textContent = '';
         void fetchSource('brave', query, 1, sessionId);
         void fetchSource('marginalia', query, 1, sessionId);
+        void fetchSource('wiby', query, 1, sessionId);
     }
 
     function fetchGoogle(query: string) {
@@ -184,12 +196,21 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
-    async function loadMoreMarginalia() {
-        if (marginaliaState.loading || !marginaliaState.hasMore) return;
+    async function loadMoreNoncommercial() {
+        if (marginaliaState.loading || wibyState.loading) return;
+        if (!marginaliaState.hasMore && !wibyState.hasMore) return;
         deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.noncommercialResults);
-        marginaliaState.page += 1;
-        await fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId);
+        const promises: Promise<void>[] = [];
+        if (marginaliaState.hasMore && !marginaliaState.loading) {
+            marginaliaState.page += 1;
+            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId));
+        }
+        if (wibyState.hasMore && !wibyState.loading) {
+            wibyState.page += 1;
+            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId));
+        }
+        await Promise.all(promises);
         removeLoadingMore(elements.noncommercialResults);
         requestAnimationFrame(() => deps.maintainMousePosition());
     }
@@ -198,7 +219,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
-        if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore) return;
+        const wibyNeedsMore = wibyState.hasMore && !wibyState.loading;
+        if (!braveNeedsMore && !googleNeedsMore && !marginaliaNeedsMore && !wibyNeedsMore) return;
         mergedState.loading = true;
         deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
         showLoadingMore(elements.mergedResults);
@@ -214,6 +236,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (marginaliaNeedsMore) {
             marginaliaState.page += 1;
             promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId));
+        }
+        if (wibyNeedsMore) {
+            wibyState.page += 1;
+            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);
@@ -249,39 +275,54 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function renderNoncommercialResults() {
+        const combinedRaw = deduplicateResults(interleaveArrays(marginaliaState.results, wibyState.results));
         const commercialUrls = new Set<string>();
         for (const result of googleState.results) commercialUrls.add(getDedupeKey(result.url));
         for (const result of braveState.results) commercialUrls.add(getDedupeKey(result.url));
-        const results = marginaliaState.results.filter((result) => !commercialUrls.has(getDedupeKey(result.url)));
+        const results = combinedRaw.filter((result) => !commercialUrls.has(getDedupeKey(result.url)));
+        const anyNcLoading = marginaliaState.loading || wibyState.loading;
+        const rawCount = marginaliaState.results.length + wibyState.results.length;
         if (results.length === 0) {
-            if (marginaliaState.loading) return;
-            elements.noncommercialResults.innerHTML = marginaliaState.error
+            if (anyNcLoading) return;
+            const noData = marginaliaState.results.length === 0 && wibyState.results.length === 0;
+            const bothFailed = Boolean(marginaliaState.error && wibyState.error && noData);
+            const anyFailed = Boolean(marginaliaState.error || wibyState.error);
+            elements.noncommercialResults.innerHTML = bothFailed
                 ? `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`
-                : marginaliaState.results.length > 0
+                : rawCount > 0
                   ? `<div class="empty-state"><p>All results match commercial results</p></div>`
-                  : `<div class="empty-state"><p>No results found</p></div>`;
+                  : anyFailed
+                    ? `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`
+                    : `<div class="empty-state"><p>No results found</p></div>`;
+            elements.noncommercialCount.textContent = '';
             return;
         }
         elements.noncommercialResults.innerHTML = results
-            .map((result, index) => renderStandardResultArticle(result, index, 'marginalia', 'Marginalia'))
+            .map((result, index) => {
+                const dataSource = result.source === 'wiby' ? 'wiby' : 'marginalia';
+                const label = result.source === 'wiby' ? 'Wiby' : 'Marginalia';
+                return renderStandardResultArticle(result, index, dataSource, label);
+            })
             .join('');
         applyNoAnimateToRenderedItems(elements.noncommercialResults, renderedNoncommercialUrls);
         attachPrefetchListeners(elements.noncommercialResults);
-        updateCount(elements.noncommercialCount, results.length, marginaliaState.hasMore);
-        if (marginaliaState.hasMore) attachSentinel(elements.noncommercialResults, 'noncommercial');
+        const ncHasMore = marginaliaState.hasMore || wibyState.hasMore;
+        updateCount(elements.noncommercialCount, results.length, ncHasMore);
+        if (ncHasMore) attachSentinel(elements.noncommercialResults, 'noncommercial');
     }
 
     function renderMergedResults() {
+        const combinedNc = deduplicateResults(interleaveArrays(marginaliaState.results, wibyState.results));
         const allResults: MergedItem[] = [];
         const seen = new Set<string>();
-        const maxLen = Math.max(googleState.results.length, marginaliaState.results.length, braveState.results.length);
+        const maxLen = Math.max(googleState.results.length, braveState.results.length, combinedNc.length);
         for (let i = 0; i < maxLen; i++) {
             if (i < googleState.results.length) maybePushMerged('commercial', googleState.results[i], seen, allResults);
-            if (i < marginaliaState.results.length) maybePushMerged('noncommercial', marginaliaState.results[i], seen, allResults);
+            if (i < combinedNc.length) maybePushMerged('noncommercial', combinedNc[i], seen, allResults);
             if (i < braveState.results.length) maybePushMerged('commercial', braveState.results[i], seen, allResults);
         }
-        const anyLoading = braveState.loading || googleState.loading || marginaliaState.loading;
-        const allErrors = googleState.error && marginaliaState.error && braveState.error;
+        const anyLoading = braveState.loading || googleState.loading || marginaliaState.loading || wibyState.loading;
+        const allErrors = Boolean(googleState.error && marginaliaState.error && braveState.error && wibyState.error);
         if (allResults.length === 0) {
             if (!anyLoading) {
                 elements.mergedResults.innerHTML = allErrors
@@ -292,7 +333,14 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
         elements.mergedResults.innerHTML = allResults
             .map((item, index) => {
-                const sourceLabel = item.type === 'commercial' ? (item.result.source === 'google' ? 'Google' : 'Brave') : 'Marginalia';
+                const sourceLabel =
+                    item.type === 'commercial'
+                        ? item.result.source === 'google'
+                            ? 'Google'
+                            : 'Brave'
+                        : item.result.source === 'wiby'
+                          ? 'Wiby'
+                          : 'Marginalia';
                 return renderStandardResultArticle(
                     item.result,
                     index,
@@ -305,7 +353,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             .join('');
         applyNoAnimateToRenderedItems(elements.mergedResults, renderedMergedUrls);
         attachPrefetchListeners(elements.mergedResults);
-        if (braveState.hasMore || googleState.hasMore || marginaliaState.hasMore) attachSentinel(elements.mergedResults, 'merged');
+        if (braveState.hasMore || googleState.hasMore || marginaliaState.hasMore || wibyState.hasMore)
+            attachSentinel(elements.mergedResults, 'merged');
     }
 
     function maybePushMerged(type: 'commercial' | 'noncommercial', result: SearchResult, seen: Set<string>, allResults: MergedItem[]) {
@@ -315,9 +364,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         allResults.push({ type, result, urlKey: key });
     }
 
-    function getState(source: 'brave' | 'google' | 'marginalia') {
+    function getState(source: 'brave' | 'google' | 'marginalia' | 'wiby') {
         if (source === 'brave') return braveState;
         if (source === 'google') return googleState;
+        if (source === 'wiby') return wibyState;
         return marginaliaState;
     }
 

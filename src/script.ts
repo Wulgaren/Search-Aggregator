@@ -20,7 +20,7 @@ function shouldAutoOpenAIForQuery(query: string): boolean {
 function maybeClearEarlyFetch(): void {
     const early = window.__earlyFetch;
     if (!early) return;
-    if (early.brave || early.google || early.marginalia || early.images || early.infobox) return;
+    if (early.brave || early.google || early.marginalia || early.wiby || early.images || early.infobox) return;
     window.__earlyFetch = undefined;
 }
 

@@ -28,6 +28,7 @@ export function bootstrapEarlyFetch(): void {
             ? { google: searchApiFetch(base + 'google'), images: imgGooglePromise }
             : {}),
         marginalia: searchApiFetch(base + 'marginalia'),
+        wiby: searchApiFetch(base + 'wiby'),
         infobox: searchApiFetch(`/api/search?q=${enc}&source=infobox`),
     };
 }

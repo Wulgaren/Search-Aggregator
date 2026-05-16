@@ -832,6 +832,11 @@ a:hover {
   color: var(--noncommercial-accent);
 }
 
+.result-item[data-source="wiby"] .result-source-tag {
+  background: rgba(45, 212, 191, 0.18);
+  color: #14b8a6;
+}
+
 .result-item[data-source="commercial"] .result-source {
   color: var(--commercial-accent);
 }
