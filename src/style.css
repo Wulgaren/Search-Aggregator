@@ -817,24 +817,24 @@ a:hover {
   color: var(--commercial-accent);
 }
 
-.result-item[data-source="google"] .result-source-tag {
-  background: rgba(11, 129, 25, 0.37);
-  color: #0b9323;
+.result-item[data-engine="google"] .result-source-tag {
+  background: rgba(59, 130, 246, 0.22);
+  color: #60a5fa;
 }
 
-.result-item[data-source="brave"] .result-source-tag {
+.result-item[data-engine="brave"] .result-source-tag {
   background: rgba(251, 146, 60, 0.15);
   color: var(--commercial-accent);
 }
 
-.result-item[data-source="marginalia"] .result-source-tag {
-  background: rgba(167, 139, 250, 0.15);
-  color: var(--noncommercial-accent);
+.result-item[data-engine="marginalia"] .result-source-tag {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
 }
 
-.result-item[data-source="wiby"] .result-source-tag {
-  background: rgba(45, 212, 191, 0.18);
-  color: #14b8a6;
+.result-item[data-engine="wiby"] .result-source-tag {
+  background: rgba(167, 139, 250, 0.2);
+  color: #c4b5fd;
 }
 
 .result-item[data-source="commercial"] .result-source {

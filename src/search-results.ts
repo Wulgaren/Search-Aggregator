@@ -470,6 +470,13 @@ function sanitizeSnippet(html: string) {
     return temp.innerHTML.replace(/\s*\.{3}\s*/g, '<span class="snippet-separator">···</span>');
 }
 
+function getResultEngine(result: SearchResult, dataSource: string): string {
+    const s = result.source;
+    if (s === 'google' || s === 'brave' || s === 'marginalia' || s === 'wiby') return s;
+    if (dataSource === 'google' || dataSource === 'brave' || dataSource === 'marginalia' || dataSource === 'wiby') return dataSource;
+    return 'brave';
+}
+
 function renderStandardResultArticle(
     result: SearchResult,
     index: number,
@@ -480,10 +487,11 @@ function renderStandardResultArticle(
 ) {
     const faviconUrl = getFaviconUrl(result.url);
     const urlKey = getDedupeKey(result.url);
+    const engine = getResultEngine(result, dataSource);
     const animateStyle = animate ? ` style="animation-delay: ${index * 0.02}s"` : '';
     const className = animate ? 'result-item' : 'result-item no-animate';
     return `
-        <article class="${className}" data-source="${dataSource}" data-url-key="${escapeHtml(urlKey)}"${animateStyle}>
+        <article class="${className}" data-source="${dataSource}" data-engine="${escapeHtml(engine)}" data-url-key="${escapeHtml(urlKey)}"${animateStyle}>
             <div class="result-url-row">
                 <img class="result-favicon" src="${escapeHtml(faviconUrl)}" alt="" loading="lazy" onerror="this.classList.add('error')">
                 <div class="result-url">${escapeHtml(result.displayUrl || getDomain(result.url))}</div>
