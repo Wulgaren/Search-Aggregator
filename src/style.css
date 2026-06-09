@@ -51,6 +51,8 @@
   --bg-primary: #0a0a0a;
   --bg-secondary: #111111;
   --bg-tertiary: #1a1a1a;
+  --bg-panel-gradient-end: rgba(30, 30, 35, 1);
+  --bg-ai-panel-gradient-end: rgba(30, 30, 40, 1);
   --border-color: #252525;
   --border-hover: #333333;
   --text-primary: #e5e5e5;
@@ -64,6 +66,21 @@
   --noncommercial-accent: #a78bfa;
   --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+
+html[data-noir] {
+  color-scheme: light;
+  --bg-primary: #ffffff;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #ffffff;
+  --bg-panel-gradient-end: #ffffff;
+  --bg-ai-panel-gradient-end: #ffffff;
+  --border-color: #e5e0d8;
+  --border-hover: #d4cfc5;
+  --text-primary: #2c2820;
+  --text-secondary: #6b6358;
+  --text-muted: #8b8580;
 }
 
 html {
@@ -72,9 +89,13 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body {
+  background-color: var(--bg-primary);
+}
+
 body {
   font-family: var(--font-sans);
-  background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
   line-height: 1.6;
@@ -1200,7 +1221,7 @@ a:hover {
   background: linear-gradient(
     135deg,
     var(--bg-secondary) 0%,
-    rgba(30, 30, 35, 1) 100%
+    var(--bg-panel-gradient-end) 100%
   );
   border: 1px solid var(--border-color);
   border-radius: 16px;
@@ -1518,7 +1539,7 @@ a:hover {
   background: linear-gradient(
     135deg,
     var(--bg-secondary) 0%,
-    rgba(30, 30, 40, 1) 100%
+    var(--bg-ai-panel-gradient-end) 100%
   );
   border: 1px solid var(--border-color);
   border-radius: 16px;
