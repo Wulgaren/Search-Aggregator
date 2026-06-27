@@ -366,6 +366,29 @@ async function fetchGoogleImages(query: string, page = 1) {
     }
 }
 
+type BraveSourcePayload = {
+    error?: string;
+    results: Array<Record<string, unknown>>;
+    hasMore: boolean;
+};
+
+async function fetchBraveWebViaEdge(
+    searchQuery: string,
+    page: number,
+    origin: string
+): Promise<BraveSourcePayload | null> {
+    const u = new URL("/api/search", origin);
+    u.searchParams.set("q", searchQuery);
+    u.searchParams.set("source", "brave");
+    u.searchParams.set("page", String(page));
+    const response = await fetch(u.toString());
+    if (!response.ok) return null;
+    const data = await response.json();
+    const brave = data.brave as BraveSourcePayload | undefined;
+    if (!brave || brave.error || !brave.results?.length) return null;
+    return brave;
+}
+
 async function fetchBraveImagesViaEdge(
     searchQuery: string,
     page: number,
@@ -430,6 +453,11 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
             const googleImages = await fetchGoogleImages(searchQuery, page);
             images = googleImages;
             hasMore = page < 10;
+            if (images.length === 0) {
+                const braveImages = await fetchBraveImagesViaEdge(searchQuery, page, origin);
+                images = braveImages;
+                hasMore = page < 3;
+            }
         } else {
             const [braveImages, googleImages] = await Promise.allSettled([
                 fetchBraveImagesViaEdge(searchQuery, page, origin),
@@ -473,10 +501,18 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
             });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
+            let brave: BraveSourcePayload | undefined;
+            try {
+                const braveFallback = await fetchBraveWebViaEdge(searchQuery, page, origin);
+                if (braveFallback) brave = braveFallback;
+            } catch {
+                // Brave fallback is best-effort
+            }
             return new Response(
                 JSON.stringify({
                     page,
-                    google: { error: msg, results: [] },
+                    google: { error: msg, results: [], hasMore: false },
+                    ...(brave ? { brave } : {}),
                 }),
                 {
                     headers: {

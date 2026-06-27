@@ -1,3 +1,4 @@
+import { hasGoogleSearchConfigured } from './api-keys';
 import type { ImageDeps, ImageElements, ImageItem, ImageState } from './types';
 
 export function createImagesComponent(elements: ImageElements, deps: ImageDeps) {
@@ -99,28 +100,35 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
             if (page === 1) {
                 state.images = [];
                 state.page = 1;
-                let googleResponse: Response;
-                const earlyImages = await deps.takeEarlyFetch('images', query);
-                if (earlyImages) googleResponse = earlyImages;
-                else {
-                    googleResponse = await deps.apiFetch(
-                        `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
-                    );
-                }
-                if (googleResponse.ok) {
-                    const googleData = await googleResponse.json();
-                    if (requestId !== activeRequestId || query !== activeQuery) return;
-                    state.images = uniqueImages((googleData.images || []) as ImageItem[]);
-                    if (state.images.length > 0) {
-                        const wasHidden = elements.imageSection.style.display === 'none';
-                        if (wasHidden) deps.storeElementPositionBeforeContent();
-                        renderImageSlider();
-                        elements.imageSection.style.display = 'block';
-                        setupImageSliderScroll(query);
-                        if (wasHidden) requestAnimationFrame(() => deps.maintainMousePosition());
+                let googleOk = false;
+                if (hasGoogleSearchConfigured()) {
+                    let googleResponse: Response;
+                    const earlyImages = await deps.takeEarlyFetch('images', query);
+                    if (earlyImages) googleResponse = earlyImages;
+                    else {
+                        googleResponse = await deps.apiFetch(
+                            `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`
+                        );
+                    }
+                    if (googleResponse.ok) {
+                        const googleData = await googleResponse.json();
+                        if (requestId !== activeRequestId || query !== activeQuery) return;
+                        state.images = uniqueImages((googleData.images || []) as ImageItem[]);
+                        googleOk = state.images.length > 0;
+                        if (googleOk) {
+                            const wasHidden = elements.imageSection.style.display === 'none';
+                            if (wasHidden) deps.storeElementPositionBeforeContent();
+                            renderImageSlider();
+                            elements.imageSection.style.display = 'block';
+                            setupImageSliderScroll(query);
+                            if (wasHidden) requestAnimationFrame(() => deps.maintainMousePosition());
+                            scheduleBraveImagesDelayed(query, requestId);
+                        }
                     }
                 }
-                scheduleBraveImagesDelayed(query, requestId);
+                if (!googleOk) {
+                    await fetchBraveImages(query, requestId);
+                }
                 state.hasMore = true;
             } else {
                 const response = await deps.apiFetch(`/api/search?q=${encodeURIComponent(query)}&source=images&page=${page}`);
@@ -143,32 +151,36 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
 
     function scheduleBraveImagesDelayed(query: string, requestId: number) {
         if (braveTimeoutId) clearTimeout(braveTimeoutId);
-        braveTimeoutId = setTimeout(async () => {
-            if (requestId !== activeRequestId || query !== activeQuery) return;
-            try {
-                const braveResponse = await deps.apiFetch(
-                    `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
-                );
-                if (!braveResponse.ok) return;
-                const braveData = await braveResponse.json();
-                if (requestId !== activeRequestId || query !== activeQuery) return;
-                const braveImages = (braveData.images || []) as ImageItem[];
-                const uniqueBraveImages = uniqueImages(braveImages, state.images);
-                if (uniqueBraveImages.length === 0) return;
-                state.images = [...state.images, ...uniqueBraveImages];
-                if (elements.imageSection.style.display === 'none' && state.images.length > 0) {
-                    deps.storeElementPositionBeforeContent();
-                    renderImageSlider();
-                    elements.imageSection.style.display = 'block';
-                    setupImageSliderScroll(query);
-                    requestAnimationFrame(() => deps.maintainMousePosition());
-                } else {
-                    appendImagesToSlider(uniqueBraveImages);
-                }
-            } catch (error) {
-                console.error('Error fetching Brave images:', error);
-            }
+        braveTimeoutId = setTimeout(() => {
+            void fetchBraveImages(query, requestId);
         }, 2000);
+    }
+
+    async function fetchBraveImages(query: string, requestId: number) {
+        if (requestId !== activeRequestId || query !== activeQuery) return;
+        try {
+            const braveResponse = await deps.apiFetch(
+                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`
+            );
+            if (!braveResponse.ok) return;
+            const braveData = await braveResponse.json();
+            if (requestId !== activeRequestId || query !== activeQuery) return;
+            const braveImages = (braveData.images || []) as ImageItem[];
+            const uniqueBraveImages = uniqueImages(braveImages, state.images);
+            if (uniqueBraveImages.length === 0) return;
+            state.images = [...state.images, ...uniqueBraveImages];
+            if (elements.imageSection.style.display === 'none' && state.images.length > 0) {
+                deps.storeElementPositionBeforeContent();
+                renderImageSlider();
+                elements.imageSection.style.display = 'block';
+                setupImageSliderScroll(query);
+                requestAnimationFrame(() => deps.maintainMousePosition());
+            } else {
+                appendImagesToSlider(uniqueBraveImages);
+            }
+        } catch (error) {
+            console.error('Error fetching Brave images:', error);
+        }
     }
 
     function setupImageSliderScroll(query: string) {

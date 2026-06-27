@@ -112,7 +112,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             if (sourceData?.error) {
                 state.hasMore = false;
                 state.error = sourceData.error;
-                if (source === 'google' && isAuthLikeApiError(String(sourceData.error))) deps.openApiSettingsDialog(String(sourceData.error));
+                if (source === 'google' && shouldOpenGoogleSettings(String(sourceData.error))) {
+                    deps.openApiSettingsDialog(String(sourceData.error));
+                }
             } else if (sourceData) {
                 state.hasMore = sourceData.hasMore;
                 state.results = [...state.results, ...sourceData.results];
@@ -121,11 +123,12 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                     deps.onGoogleCorrection?.(query, sourceData.correctedQuery);
                 }
             }
+            if (source === 'google') applyBraveFallback(data, page, sessionId, query);
         } catch (error) {
             const errMsg = error instanceof Error ? error.message : String(error);
             state.hasMore = false;
             state.error = errMsg;
-            if (source === 'google' && isAuthLikeApiError(errMsg)) deps.openApiSettingsDialog(errMsg);
+            if (source === 'google' && shouldOpenGoogleSettings(errMsg)) deps.openApiSettingsDialog(errMsg);
         } finally {
             if (sessionId === searchSessionId && query === currentQuery) state.loading = false;
         }
@@ -162,6 +165,17 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         void fetchSource('brave', query, 1, sessionId);
         void fetchSource('marginalia', query, 1, sessionId);
         void fetchSource('wiby', query, 1, sessionId);
+    }
+
+    function applyBraveFallback(data: SearchApiResponse, page: number, sessionId: number, query: string) {
+        const braveData = data.brave;
+        if (!braveData || braveData.error || braveData.results.length === 0) return;
+        if (sessionId !== searchSessionId || query !== currentQuery) return;
+        if (braveState.results.length > 0 || braveState.loading) return;
+        braveState.hasMore = braveData.hasMore;
+        braveState.results =
+            page === 1 ? braveData.results : deduplicateResults([...braveState.results, ...braveData.results]);
+        braveState.error = null;
     }
 
     function fetchGoogle(query: string) {
@@ -372,6 +386,20 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     return { reset, initInfiniteScroll, startSearch, fetchGoogle, forceRenderMergedIfNeeded, getCurrentQuery };
+}
+
+function isPermanentGoogleApiError(message: string): boolean {
+    if (!message || typeof message !== 'string') return false;
+    const m = message.toLowerCase();
+    if (m.includes('does not have the access to custom search')) return true;
+    if (m.includes('custom search json api')) return true;
+    if (m.includes('quota exceeded') || m.includes('daily limit')) return true;
+    if (m.includes('billing') && m.includes('enable')) return true;
+    return false;
+}
+
+function shouldOpenGoogleSettings(message: string): boolean {
+    return isAuthLikeApiError(message) && !isPermanentGoogleApiError(message);
 }
 
 function isAuthLikeApiError(message: string): boolean {

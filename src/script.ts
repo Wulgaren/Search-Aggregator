@@ -1,4 +1,4 @@
-import { apiSettings } from './api-keys';
+import { apiSettings, hasGoogleSearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch as apiFetch } from './search-fetch';
 import type { EarlyFetchKey, ElementPositionBeforeContent, MousePosition } from './types';
@@ -295,7 +295,7 @@ function performSearch(query: string) {
     images.reset();
     infobox.reset();
     ai.reset();
-    searchResults.fetchGoogle(query);
+    if (hasGoogleSearchConfigured()) searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
     if (shouldAutoOpenAIForQuery(query)) {

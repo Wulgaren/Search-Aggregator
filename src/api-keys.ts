@@ -112,8 +112,12 @@ export function applyApiSecretsFromFields(fields: ApiSecretsFields): ApplyApiSec
 
 const SS_MISSING_COMMERCIAL = 'searchApiMissingCommercialPrompted';
 
-function hasCommercialApiKeys(): boolean {
+export function hasGoogleSearchConfigured(): boolean {
     return Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+}
+
+function hasCommercialApiKeys(): boolean {
+    return hasGoogleSearchConfigured();
 }
 
 function loadApiSettingsFields() {

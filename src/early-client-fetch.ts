@@ -1,4 +1,4 @@
-import { getApiSecret } from './api-keys';
+import { hasGoogleSearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch } from './search-fetch';
 
@@ -17,7 +17,7 @@ export function bootstrapEarlyFetch(): void {
     const searchQ = resolved.q;
     if (!searchQ.trim()) return;
     const base = `/api/search?q=${encodeURIComponent(searchQ)}&page=1&source=`;
-    const hasGoogle = Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
+    const hasGoogle = hasGoogleSearchConfigured();
     const enc = encodeURIComponent(searchQ);
     const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
     const imgGooglePromise = hasGoogle ? searchApiFetch(imgGoogle) : null;
