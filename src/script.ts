@@ -58,6 +58,7 @@ const searchResults = createSearchResultsComponent(
         apiFetch,
         takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
         isMergedView: () => window.innerWidth <= 900,
+        hasGoogleSearchConfigured,
         openApiSettingsDialog: apiSettings.openApiSettingsDialog,
         hasPendingStoredPosition: () => elementPositionBeforeContent !== null,
         storeElementPositionBeforeContent,

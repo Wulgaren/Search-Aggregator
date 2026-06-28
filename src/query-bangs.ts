@@ -34,3 +34,7 @@ export function resolveQueryForBangHandling(raw: string): BangResolution {
 export function redirectForBang(query: string): void {
     window.location.href = `https://unduck.link?q=${encodeURIComponent(query)}`;
 }
+
+export function redirectToGoogleSearch(query: string): void {
+    window.location.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}

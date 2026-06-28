@@ -6,6 +6,7 @@ import type {
     SearchResultsElements,
     SourceState,
 } from './types';
+import { redirectToGoogleSearch } from './query-bangs';
 
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
@@ -19,6 +20,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let renderedCommercialUrls = new Set<string>();
     let renderedNoncommercialUrls = new Set<string>();
     let renderedMergedUrls = new Set<string>();
+    let googleFallbackRedirected = false;
 
     function reset() {
         searchSessionId += 1;
@@ -31,6 +33,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
+        googleFallbackRedirected = false;
         elements.commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
         elements.noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
         elements.mergedResults.innerHTML = `<div class="empty-state"><p>Search results will appear here</p></div>`;
@@ -113,7 +116,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                 state.hasMore = false;
                 state.error = sourceData.error;
                 if (source === 'google' && shouldOpenGoogleSettings(String(sourceData.error))) {
-                    deps.openApiSettingsDialog(String(sourceData.error));
+                    if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
+                        deps.openApiSettingsDialog(String(sourceData.error));
+                    }
                 }
             } else if (sourceData) {
                 state.hasMore = sourceData.hasMore;
@@ -128,12 +133,19 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             const errMsg = error instanceof Error ? error.message : String(error);
             state.hasMore = false;
             state.error = errMsg;
-            if (source === 'google' && shouldOpenGoogleSettings(errMsg)) deps.openApiSettingsDialog(errMsg);
+            if (source === 'google' && shouldOpenGoogleSettings(errMsg)) {
+                if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
+                    deps.openApiSettingsDialog(errMsg);
+                }
+            }
         } finally {
             if (sessionId === searchSessionId && query === currentQuery) state.loading = false;
         }
 
         if (sessionId !== searchSessionId || query !== currentQuery) return;
+        if ((source === 'brave' || source === 'google') && page === 1) {
+            maybeRedirectToGoogleFallback(query, sessionId, page);
+        }
         if (source === 'marginalia' || source === 'wiby') renderNoncommercialResults();
         else {
             renderCommercialResults();
@@ -157,6 +169,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         renderedCommercialUrls = new Set();
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
+        googleFallbackRedirected = false;
         showLoading(elements.commercialResults);
         showLoading(elements.noncommercialResults);
         showLoading(elements.mergedResults);
@@ -176,6 +189,22 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         braveState.results =
             page === 1 ? braveData.results : deduplicateResults([...braveState.results, ...braveData.results]);
         braveState.error = null;
+    }
+
+    function maybeRedirectToGoogleFallback(query: string, sessionId: number, page: number): boolean {
+        if (page !== 1 || googleFallbackRedirected) return false;
+        if (sessionId !== searchSessionId || query !== currentQuery) return false;
+        if (braveState.loading || googleState.loading) return false;
+        if (braveState.results.length > 0 || googleState.results.length > 0) return false;
+
+        const googleConfigured = deps.hasGoogleSearchConfigured();
+        const braveFailed = Boolean(braveState.error);
+        const googleFailed = googleConfigured ? Boolean(googleState.error) : true;
+        if (!braveFailed || !googleFailed) return false;
+
+        googleFallbackRedirected = true;
+        redirectToGoogleSearch(query);
+        return true;
     }
 
     function fetchGoogle(query: string) {

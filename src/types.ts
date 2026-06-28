@@ -183,6 +183,7 @@ export type SearchDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia' | 'wiby', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
+    hasGoogleSearchConfigured: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
     hasPendingStoredPosition: () => boolean;
     storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
