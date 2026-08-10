@@ -35,7 +35,13 @@ export function isGoogleConfigured(): boolean {
 
 function base64UrlEncode(data: Uint8Array | ArrayBuffer): string {
     const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-    const base64 = btoa(String.fromCharCode(...bytes));
+    // Chunk: large PKCS8/JWT payloads blow `String.fromCharCode(...bytes)` stack.
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    const base64 = btoa(binary);
     return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 

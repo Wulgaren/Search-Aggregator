@@ -17,8 +17,9 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 
 ## Tech Stack
 
-- **Frontend**: TypeScript (compiled with Bun), HTML, CSS — sources in `src/`, minified bundles `script.js` / `style.css` at repo root
+- **Frontend**: TypeScript (Vite), HTML, CSS — sources in `src/`, bundles in `public/`
 - **Hosting**: [Vercel](https://vercel.com/) — static files plus Edge routes under `api/` (`vercel.json` for build and headers)
+- **Tests**: Vitest + jsdom (`npm test`)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
@@ -29,7 +30,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (for installing deps and building the client)
+- Node.js 22+ (npm for install/build/test)
 - Brave Search API key ([Get one here](https://brave.com/search/api/))
 - Google Custom Search Engine ID and Service Account (optional, for Google results)
   - Create a [Custom Search Engine](https://programmablesearchengine.google.com/)
@@ -44,14 +45,14 @@ git clone <repository-url>
 cd Search
 ```
 
-2. Install dependencies and build the client (TypeScript + minified CSS):
+2. Install dependencies and build the client:
 
 ```bash
-bun install
-bun run build
+npm install
+npm run build
 ```
 
-This writes `script.js` and `style.css` at the project root. Vercel runs the same steps via `vercel.json`.
+This writes `early-fetch-entry.js`, `script.js`, and `style.css` under `public/`. Vercel runs the same steps via `vercel.json`.
 
 3. Deploy to Vercel:
    - Import the repo in the Vercel dashboard (or use `vercel link` / `vercel deploy`)
@@ -69,24 +70,18 @@ Optional keys you can also store in the browser: `braveApiKey`, `groqApiKey` (se
 
 ```
 .
-├── index.html              # Main HTML file
-├── script.js               # Built client bundle (run `bun run build`)
-├── style.css               # Minified CSS (run `bun run build`)
+├── index.html              # Main HTML file (copied into public/ on build)
+├── public/                 # Vercel output (built JS/CSS + static assets)
 ├── api/
 │   ├── search.ts           # Vercel Edge — GET /api/search
 │   ├── ai.ts               # Vercel Edge — POST /api/ai
-│   └── lib/search-route.ts # Shared Edge handler logic
-├── src/
-│   ├── script.ts           # UI, search state, API settings dialog
-│   ├── api-keys.ts         # localStorage keys + JSON config helpers
-│   ├── google-search.ts    # browser-side Google Custom Search handler
-│   ├── search-cache.ts     # Cache Storage wrapper for GET /api/search JSON
-│   ├── style.css           # Stylesheet source
-│   └── global.d.ts         # DOM / window typings
+│   └── lib/                # Shared Edge handler logic
+├── src/                    # Client TypeScript + style.css
 ├── scripts/
-│   └── build.ts            # Bun build (JS + CSS minify)
+│   └── build.ts            # Vite IIFE builds + asset sync → public/
+├── vite.config.ts          # Vite + Vitest (jsdom)
 ├── vercel.json             # Vercel build + headers
-└── README.md               # This file
+└── README.md
 ```
 
 ## Configuration
@@ -128,22 +123,22 @@ Set these in **Project → Settings → Environment Variables** so `/api/search`
 
 ### Local Development
 
-1. Install dependencies and build the client (or use `bun run watch` to rebuild on save):
+1. Install dependencies and build the client (or use `npm run watch` to rebuild on save):
 
 ```bash
-bun install
-bun run build
+npm install
+npm run build
 ```
 
-2. Serve the repo root with any static server (e.g. `bunx serve .`) and open `index.html`. Same-origin `/api/*` routes require `vercel dev` or a deployed preview.
+2. Serve `public/` with any static server (e.g. `npx serve public`) and open `index.html`. Same-origin `/api/*` routes require `vercel dev` or a deployed preview.
 
-Use `bun run typecheck` for TypeScript-only checks. Use `bun run watch` to rebuild `script.js` and `style.css` when editing `src/`.
+Use `npm run typecheck` for TypeScript-only checks. Use `npm run watch` to rebuild client bundles when editing `src/`. Use `npm test` / `npm run test:watch` for Vitest.
 
 ### Code Structure
 
-- **UI** (`src/script.ts` → `script.js`): DOM, search state, infinite scroll, image previews, API settings
+- **UI** (`src/script.ts` → `public/script.js`): DOM, search state, infinite scroll, image previews, API settings
 - **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/lib/search-route.ts`): Vercel Edge handlers for same-origin `/api` paths
-- **Styles** (`src/style.css` → minified `style.css`)
+- **Styles** (`src/style.css` → `public/style.css`)
 
 ## API Endpoints (in-bundle)
 
