@@ -1005,6 +1005,36 @@ a:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+.slider-image-skeleton {
+  flex-shrink: 0;
+  width: 120px;
+  height: 80px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+.image-slider-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 100%;
+  min-height: 80px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.image-slider-status--error .error-icon {
+  font-size: 1rem;
+}
+
+.image-slider-status--error .error-message {
+  color: #ef4444;
+}
+
 .image-loading {
   flex-shrink: 0;
   display: flex;
@@ -1211,6 +1241,15 @@ a:hover {
     width: 100px;
     height: 70px;
     flex-shrink: 0;
+  }
+
+  .slider-image-skeleton {
+    width: 100px;
+    height: 70px;
+  }
+
+  .image-slider-status {
+    min-height: 70px;
   }
 }
 
@@ -1632,8 +1671,16 @@ a:hover {
   justify-content: center;
   gap: 0.75rem;
   padding: 2rem;
+  min-height: calc(100px - 2.5rem);
+  box-sizing: border-box;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.ai-answer:has(.ai-error) {
+  min-height: calc(100px - 2.5rem);
+  display: flex;
+  align-items: center;
 }
 
 .ai-answer {
