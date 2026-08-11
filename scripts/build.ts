@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { cp, mkdir, copyFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, watch } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,8 @@ import { build, type InlineConfig } from 'vite';
 
 const root = join(fileURLToPath(new URL('..', import.meta.url)));
 const publicDir = join(root, 'public');
+
+const CACHE_BUST_ASSETS = ['style.css', 'early-fetch-entry.js', 'script.js'] as const;
 
 function disableGoogleBangFromEnv(): boolean {
     const v = process.env.DISABLE_GOOGLE_BANG ?? process.env.disable_google_bang;
@@ -60,6 +63,31 @@ function iifeBuildConfig(entry: string, fileName: string, globalName: string): I
     };
 }
 
+async function shortContentHash(filePath: string): Promise<string> {
+    const buf = await readFile(filePath);
+    return createHash('sha256').update(buf).digest('hex').slice(0, 8);
+}
+
+/** Rewrite `asset?v=…` in index.html from content hashes of built public assets. */
+async function updateIndexCacheBustVersions(): Promise<Record<string, string>> {
+    const versions: Record<string, string> = {};
+    for (const asset of CACHE_BUST_ASSETS) {
+        versions[asset] = await shortContentHash(join(publicDir, asset));
+    }
+
+    const indexPaths = [join(root, 'index.html'), join(publicDir, 'index.html')];
+    for (const indexPath of indexPaths) {
+        let html = await readFile(indexPath, 'utf8');
+        for (const [asset, version] of Object.entries(versions)) {
+            const pattern = new RegExp(`${asset.replace(/\./g, '\\.')}\\?v=[^"'\\s]*`, 'g');
+            html = html.replace(pattern, `${asset}?v=${version}`);
+        }
+        await writeFile(indexPath, html);
+    }
+
+    return versions;
+}
+
 async function buildClient(): Promise<void> {
     await syncStaticAssetsToPublic();
 
@@ -70,7 +98,10 @@ async function buildClient(): Promise<void> {
 
     await copyFile(join(root, 'src/style.css'), join(publicDir, 'style.css'));
 
+    const versions = await updateIndexCacheBustVersions();
+    const versionSummary = CACHE_BUST_ASSETS.map((asset) => `${asset}?v=${versions[asset]}`).join(', ');
     console.log(`Built early-fetch-entry.js + script.js + style.css → ${publicDir}/`);
+    console.log(`Cache bust: ${versionSummary}`);
 }
 
 await buildClient();

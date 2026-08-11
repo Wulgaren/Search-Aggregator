@@ -6,7 +6,7 @@ describe('createHeightTransition', () => {
 
     beforeEach(() => {
         el = document.createElement('div');
-        el.style.display = 'block';
+        el.style.display = 'none';
         document.body.appendChild(el);
         Object.defineProperty(el, 'offsetParent', {
             configurable: true,
@@ -20,37 +20,29 @@ describe('createHeightTransition', () => {
         vi.useRealTimers();
     });
 
-    it('runs updateDom immediately when element is not laid out', () => {
-        el.style.display = 'none';
-        const heightTx = createHeightTransition(el);
-        const updateDom = vi.fn();
-
-        heightTx.withTransition(updateDom);
-
-        expect(updateDom).toHaveBeenCalledOnce();
-        expect(el.classList.contains('infobox--height-animating')).toBe(false);
-    });
-
-    it('animates between measured heights after a DOM update', () => {
-        let height = 120;
+    it('expands from zero to measured height then clears inline height', () => {
         el.getBoundingClientRect = () =>
             ({
                 x: 0,
                 y: 0,
                 top: 0,
                 left: 0,
-                bottom: height,
+                bottom: 220,
                 right: 200,
                 width: 200,
-                height,
+                height: 220,
                 toJSON: () => ({}),
             }) as DOMRect;
 
         const heightTx = createHeightTransition(el);
-        heightTx.withTransition(() => {
-            height = 220;
+        const updateDom = vi.fn(() => {
+            el.textContent = 'ready';
         });
 
+        heightTx.expand(updateDom);
+
+        expect(updateDom).toHaveBeenCalledOnce();
+        expect(el.style.display).toBe('flex');
         expect(el.classList.contains('infobox--height-animating')).toBe(true);
         expect(el.style.height).toBe('220px');
 
@@ -60,48 +52,56 @@ describe('createHeightTransition', () => {
         expect(el.style.height).toBe('');
     });
 
-    it('collapses to zero then calls onComplete', () => {
+    it('skips animation when measured height is zero', () => {
         el.getBoundingClientRect = () =>
             ({
                 x: 0,
                 y: 0,
                 top: 0,
                 left: 0,
-                bottom: 180,
-                right: 200,
-                width: 200,
-                height: 180,
+                bottom: 0,
+                right: 0,
+                width: 0,
+                height: 0,
                 toJSON: () => ({}),
             }) as DOMRect;
 
-        const onComplete = vi.fn();
         const heightTx = createHeightTransition(el);
-        heightTx.animateFromTo(180, 0, onComplete);
+        heightTx.expand(() => {
+            el.textContent = 'empty';
+        });
 
-        expect(el.classList.contains('infobox--height-animating')).toBe(true);
-        expect(el.classList.contains('infobox--collapsing')).toBe(true);
-        expect(el.style.height).toBe('0px');
-        expect(onComplete).not.toHaveBeenCalled();
-
-        el.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'height' }));
-
-        expect(onComplete).toHaveBeenCalledOnce();
-        expect(el.classList.contains('infobox--collapsing')).toBe(false);
+        expect(el.style.display).toBe('flex');
+        expect(el.classList.contains('infobox--height-animating')).toBe(false);
         expect(el.style.height).toBe('');
     });
 
-    it('clear cancels an in-flight transition without calling onComplete', () => {
+    it('clear cancels an in-flight expand', () => {
         vi.useFakeTimers();
-        const onComplete = vi.fn();
+        el.getBoundingClientRect = () =>
+            ({
+                x: 0,
+                y: 0,
+                top: 0,
+                left: 0,
+                bottom: 100,
+                right: 200,
+                width: 200,
+                height: 100,
+                toJSON: () => ({}),
+            }) as DOMRect;
+
         const heightTx = createHeightTransition(el, { durationMs: 100 });
-        heightTx.animateFromTo(100, 0, onComplete);
-        expect(el.style.height).toBe('0px');
+        heightTx.expand(() => {
+            el.textContent = 'go';
+        });
+        expect(el.style.height).toBe('100px');
 
         heightTx.clear();
 
         expect(el.style.height).toBe('');
         expect(el.classList.contains('infobox--height-animating')).toBe(false);
         vi.advanceTimersByTime(500);
-        expect(onComplete).not.toHaveBeenCalled();
+        expect(el.classList.contains('infobox--height-animating')).toBe(false);
     });
 });

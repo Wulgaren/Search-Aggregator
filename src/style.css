@@ -1280,7 +1280,6 @@ a:hover {
   padding: 1.5rem;
   margin: 0 auto 1.5rem;
   max-width: 800px;
-  animation: fadeSlideIn 0.4s ease-out;
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
@@ -1288,21 +1287,7 @@ a:hover {
 
 .infobox.infobox--height-animating {
   overflow: hidden;
-  transition:
-    height 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-    padding 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-    margin-bottom 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-    border-width 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.infobox.infobox--collapsing {
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-bottom: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-  opacity: 0;
+  transition: height 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .infobox::before {
@@ -1569,79 +1554,6 @@ a:hover {
   opacity: 0.6;
 }
 
-.infobox--skeleton .infobox-image {
-  display: none;
-}
-
-.infobox--skeleton .infobox-image-container {
-  display: block;
-  animation: skeletonPulse 1.5s ease-in-out infinite;
-}
-
-.infobox--skeleton .infobox-title,
-.infobox--skeleton .infobox-description,
-.infobox--skeleton .infobox-source {
-  border-radius: 6px;
-  color: transparent !important;
-  background: var(--bg-tertiary);
-  animation: skeletonPulse 1.5s ease-in-out infinite;
-  pointer-events: none;
-  border: none;
-  padding: 0;
-}
-
-.infobox--skeleton .infobox-title {
-  height: 1.4rem;
-  width: 55%;
-  margin: 0;
-}
-
-.infobox--skeleton .infobox-description {
-  height: 4.5rem;
-  width: 100%;
-  display: block;
-  -webkit-line-clamp: unset;
-  overflow: hidden;
-}
-
-.infobox--skeleton .infobox-source {
-  height: 0.85rem;
-  width: 42%;
-  margin-top: auto;
-}
-
-.infobox--skeleton .infobox-source svg,
-.infobox--skeleton .infobox-links,
-.infobox--skeleton .infobox-cast {
-  display: none !important;
-}
-
-.infobox--empty {
-  min-height: auto;
-  align-items: center;
-}
-
-.infobox--empty .infobox-image-container,
-.infobox--empty .infobox-title,
-.infobox--empty .infobox-cast,
-.infobox--empty .infobox-links,
-.infobox--empty .infobox-source {
-  display: none !important;
-}
-
-.infobox--empty .infobox-content {
-  min-height: 0;
-  justify-content: center;
-}
-
-.infobox--empty .infobox-description {
-  color: var(--text-muted);
-  display: block;
-  -webkit-line-clamp: unset;
-  overflow: visible;
-  flex: none;
-}
-
 /* Responsive infobox — keep image left of text */
 @media (max-width: 900px) {
   .infobox {
@@ -1683,10 +1595,6 @@ a:hover {
 
   .infobox-source {
     justify-content: flex-start;
-  }
-
-  .infobox--skeleton .infobox-description {
-    height: 3.5rem;
   }
 }
 

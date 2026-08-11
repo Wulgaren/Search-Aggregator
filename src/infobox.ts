@@ -18,7 +18,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     }
 
     function clearInfoboxUi() {
-        elements.infobox.classList.remove('infobox--skeleton', 'infobox--empty', 'no-image-fallback');
+        elements.infobox.classList.remove('no-image-fallback');
         elements.infoboxTitle.textContent = '';
         elements.infoboxDescription.textContent = '';
         elements.infoboxLinks.innerHTML = '';
@@ -34,37 +34,10 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         elements.infoboxImage.onload = null;
     }
 
-    function showSkeleton() {
-        clearInfoboxUi();
-        elements.infobox.classList.add('infobox--skeleton');
-        elements.infobox.style.display = 'flex';
-    }
-
-    function collapseAndHide() {
-        const el = elements.infobox;
-        const fromHeight = heightTx.isLaidOut() ? el.getBoundingClientRect().height : 0;
+    function hide() {
         heightTx.clear();
-
         clearInfoboxUi();
-        el.classList.add('infobox--empty');
-        elements.infoboxDescription.textContent = 'No infobox available';
-        el.style.display = 'flex';
-
-        const hide = () => {
-            clearInfoboxUi();
-            el.style.display = 'none';
-        };
-
-        if (!heightTx.isLaidOut() || fromHeight < 1) {
-            hide();
-            return;
-        }
-
-        heightTx.animateFromTo(fromHeight, 0, hide);
-    }
-
-    function showEmpty() {
-        collapseAndHide();
+        elements.infobox.style.display = 'none';
     }
 
     async function fetchInfobox(query: string) {
@@ -72,7 +45,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         const requestId = ++activeRequestId;
         activeQuery = query;
         state.loading = true;
-        showSkeleton();
+        hide();
         try {
             let response: Response;
             const earlyInfobox = await deps.takeEarlyFetch('infobox', query);
@@ -83,32 +56,29 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             if (requestId !== activeRequestId || query !== activeQuery) return;
             state.data = data.infobox;
             if (data.infobox) renderInfobox(data.infobox);
-            else showEmpty();
+            else hide();
         } catch (error) {
             console.error('Error fetching infobox:', error);
-            if (requestId === activeRequestId && query === activeQuery) showEmpty();
+            if (requestId === activeRequestId && query === activeQuery) hide();
         } finally {
             if (requestId === activeRequestId) state.loading = false;
         }
     }
 
     function applyNoImageFallback() {
-        heightTx.withTransition(() => {
-            elements.infoboxImage.classList.add('no-image');
-            elements.infobox.classList.add('no-image-fallback');
-            elements.infoboxImage.style.cursor = '';
-            elements.infoboxImage.onclick = null;
-        });
+        elements.infoboxImage.classList.add('no-image');
+        elements.infobox.classList.add('no-image-fallback');
+        elements.infoboxImage.style.cursor = '';
+        elements.infoboxImage.onclick = null;
     }
 
     function renderInfobox(data: InfoboxData) {
         if (!data) {
-            showEmpty();
+            hide();
             return;
         }
 
-        heightTx.withTransition(() => {
-            elements.infobox.classList.remove('infobox--skeleton', 'infobox--empty');
+        heightTx.expand(() => {
             elements.infoboxTitle.textContent = data.title;
             elements.infoboxDescription.textContent = data.description;
 
@@ -172,7 +142,6 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
                 });
             }
             elements.infoboxSource.href = data.url;
-            elements.infobox.style.display = 'flex';
         });
     }
 

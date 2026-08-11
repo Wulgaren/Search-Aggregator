@@ -79,25 +79,17 @@ describe('createInfoboxComponent', () => {
         vi.useRealTimers();
     });
 
-    it('hides infobox when response has no infobox data', async () => {
+    it('stays hidden when response has no infobox data', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('empty');
 
         expect(elements.infobox.style.display).toBe('none');
-        expect(elements.infobox.classList.contains('infobox--empty')).toBe(false);
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
         expect(elements.infoboxDescription.textContent).toBe('');
     });
 
-    it('collapses empty infobox then hides after height animation', async () => {
-        vi.useFakeTimers();
-        document.body.appendChild(elements.infobox);
-        Object.defineProperty(elements.infobox, 'offsetParent', {
-            configurable: true,
-            get: () => document.body,
-        });
+    it('stays hidden while loading then expands on success', async () => {
         elements.infobox.getBoundingClientRect = () =>
             ({
                 x: 0,
@@ -111,29 +103,6 @@ describe('createInfoboxComponent', () => {
                 toJSON: () => ({}),
             }) as DOMRect;
 
-        vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
-        const { fetchInfobox } = createInfoboxComponent(elements, deps);
-
-        await fetchInfobox('empty-collapse');
-
-        expect(elements.infobox.style.display).toBe('flex');
-        expect(elements.infobox.classList.contains('infobox--empty')).toBe(true);
-        expect(elements.infobox.classList.contains('infobox--collapsing')).toBe(true);
-        expect(elements.infoboxDescription.textContent).toBe('No infobox available');
-        expect(elements.infobox.style.height).toBe('0px');
-
-        elements.infobox.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'height' }));
-
-        expect(elements.infobox.style.display).toBe('none');
-        expect(elements.infobox.classList.contains('infobox--empty')).toBe(false);
-        expect(elements.infobox.classList.contains('infobox--collapsing')).toBe(false);
-        expect(elements.infoboxDescription.textContent).toBe('');
-
-        vi.useRealTimers();
-        elements.infobox.remove();
-    });
-
-    it('shows skeleton while loading then clears it on success', async () => {
         let resolveFetch!: (value: Response) => void;
         const pending = new Promise<Response>((resolve) => {
             resolveFetch = resolve;
@@ -142,16 +111,17 @@ describe('createInfoboxComponent', () => {
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         const fetchPromise = fetchInfobox('loading');
-        expect(elements.infobox.style.display).toBe('flex');
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
+        expect(elements.infobox.style.display).toBe('none');
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
 
         resolveFetch(jsonResponse({ infobox: sampleInfobox }));
         await fetchPromise;
 
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infobox.style.display).toBe('flex');
         expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
+        expect(elements.infobox.classList.contains('infobox--height-animating')).toBe(true);
+        expect(elements.infobox.style.height).toBe('200px');
     });
 
     it('renders title, description, links, and source href', async () => {
@@ -241,17 +211,20 @@ describe('createInfoboxComponent', () => {
         });
     });
 
-    it('falls back on image onerror', async () => {
+    it('falls back on image onerror without height animation', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: sampleInfobox }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('broken image');
         expect(elements.infoboxImage.onerror).toBeTypeOf('function');
+        elements.infobox.classList.remove('infobox--height-animating');
+        elements.infobox.style.height = '';
 
         elements.infoboxImage.onerror?.(new Event('error'));
 
         expect(elements.infoboxImage.classList.contains('no-image')).toBe(true);
         expect(elements.infobox.classList.contains('no-image-fallback')).toBe(true);
+        expect(elements.infobox.classList.contains('infobox--height-animating')).toBe(false);
         expect(elements.infoboxImage.style.cursor).toBe('');
         expect(elements.infoboxImage.onclick).toBeNull();
     });
@@ -280,7 +253,7 @@ describe('createInfoboxComponent', () => {
         const { fetchInfobox, reset } = createInfoboxComponent(elements, deps);
 
         const fetchPromise = fetchInfobox('stale');
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
+        expect(elements.infobox.style.display).toBe('none');
         reset();
         resolveFetch(jsonResponse({ infobox: sampleInfobox }));
         await fetchPromise;
@@ -289,7 +262,6 @@ describe('createInfoboxComponent', () => {
         expect(elements.infoboxTitle.textContent).toBe('');
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
     });
 
     it('reset hides infobox and clears cast', async () => {
