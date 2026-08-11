@@ -1,9 +1,10 @@
-export type EarlyFetchKey = 'brave' | 'google' | 'marginalia' | 'wiby' | 'images' | 'infobox';
+export type EarlyFetchKey = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby' | 'images' | 'infobox';
 
 export type EarlyFetchState = {
     query: string;
     google?: Promise<Response>;
     brave?: Promise<Response>;
+    tavily?: Promise<Response>;
     marginalia?: Promise<Response>;
     wiby?: Promise<Response>;
     images?: Promise<Response>;
@@ -153,6 +154,7 @@ export type SourcePayload = {
 export type SearchApiResponse = {
     brave?: SourcePayload;
     google?: SourcePayload;
+    tavily?: SourcePayload;
     marginalia?: SourcePayload;
     wiby?: SourcePayload;
 };
@@ -181,9 +183,13 @@ export type SearchResultsElements = {
 
 export type SearchDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (key: 'brave' | 'google' | 'marginalia' | 'wiby', query: string) => Promise<Response | null>;
+    takeEarlyFetch: (
+        key: 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby',
+        query: string
+    ) => Promise<Response | null>;
     isMergedView: () => boolean;
     hasGoogleSearchConfigured: () => boolean;
+    hasTavilySearchConfigured: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
     hasPendingStoredPosition: () => boolean;
     storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
@@ -192,7 +198,7 @@ export type SearchDeps = {
 };
 
 export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
-export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string };
+export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string; tavilyApiKey: string };
 export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
 export type ElementPositionBeforeContent = {
     element: Element;

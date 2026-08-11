@@ -61,6 +61,7 @@ function makeDeps(overrides: Partial<SearchDeps> = {}): SearchDeps {
         takeEarlyFetch: vi.fn(async () => null),
         isMergedView: vi.fn(() => false),
         hasGoogleSearchConfigured: vi.fn(() => true),
+        hasTavilySearchConfigured: vi.fn(() => false),
         openApiSettingsDialog: vi.fn(),
         hasPendingStoredPosition: vi.fn(() => false),
         storeElementPositionBeforeContent: vi.fn(),
@@ -71,12 +72,15 @@ function makeDeps(overrides: Partial<SearchDeps> = {}): SearchDeps {
 }
 
 function apiFetchBySource(
-    handlers: Partial<Record<'brave' | 'google' | 'marginalia' | 'wiby', () => Response | Promise<Response>>>
+    handlers: Partial<
+        Record<'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby', () => Response | Promise<Response>>
+    >
 ) {
     return vi.fn(async (path: string) => {
         const source = new URL(path, 'https://example.test').searchParams.get('source') as
             | 'brave'
             | 'google'
+            | 'tavily'
             | 'marginalia'
             | 'wiby'
             | null;
@@ -164,6 +168,40 @@ describe('createSearchResultsComponent', () => {
         expect(paths.some((p) => p.includes('source=google'))).toBe(false);
         expect(elements.commercialResults.textContent).toContain('Brave Hit');
         expect(elements.noncommercialResults.textContent).toMatch(/Marg Hit|Wiby Hit/);
+    });
+
+    it('fetchTavily merges Tavily results into the commercial column', async () => {
+        const apiFetch = apiFetchBySource({
+            brave: () =>
+                jsonResponse({
+                    brave: sourcePayload({
+                        results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                    }),
+                }),
+            tavily: () =>
+                jsonResponse({
+                    tavily: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Tavily Hit', url: 'https://tavily.example/a', source: 'tavily' }),
+                        ],
+                    }),
+                }),
+            marginalia: () => jsonResponse({ marginalia: sourcePayload() }),
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.apiFetch = apiFetch;
+        deps.hasTavilySearchConfigured = vi.fn(() => true);
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('cats');
+        component.fetchTavily('cats');
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Tavily Hit');
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+        });
+        expect(elements.commercialResults.textContent).toContain('Tavily');
     });
 
     it('uses takeEarlyFetch for page-1 brave when present', async () => {

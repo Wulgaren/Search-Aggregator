@@ -4,7 +4,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 
 ## Features
 
-- **Multi-Source Search**: Combines results from Brave Search, Google Custom Search, and Marginalia Search
+- **Multi-Source Search**: Combines results from Brave Search, Google Custom Search, Tavily, and Marginalia Search
 - **Dual Column Layout**: Desktop view shows commercial and non-commercial results side-by-side
 - **Responsive Design**: Merged interleaved view on mobile devices
 - **Image Search**: Integrated image search with slider and preview functionality
@@ -23,6 +23,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
+  - [Tavily Search API](https://docs.tavily.com/) (optional; browser localStorage key)
   - [Marginalia Search API](https://about.marginalia-search.com/article/api/) (`api2.marginalia-search.com`)
   - [Wikipedia API](https://www.mediawiki.org/wiki/API:Main_page)
 
@@ -60,7 +61,7 @@ This writes `early-fetch-entry.js`, `script.js`, and `style.css` under `public/`
 
 ### API keys (browser)
 
-Google Custom Search credentials (`cx`, service account JSON) are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets.
+Google Custom Search credentials (`cx`, service account JSON) and an optional **Tavily API key** are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets. Tavily runs in the browser (direct to Tavily, like Google CSE) and merges into the commercial results column.
 
 Optional keys you can also store in the browser: `braveApiKey`, `groqApiKey` (see `src/api-keys.ts`). Production setups usually rely on **server-side** env vars for Brave, Marginalia, and Groq so keys stay off the client.
 

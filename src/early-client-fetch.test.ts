@@ -8,6 +8,7 @@ vi.mock('./search-fetch', () => ({
 
 vi.mock('./api-keys', () => ({
     hasGoogleSearchConfigured: vi.fn(() => false),
+    hasTavilySearchConfigured: vi.fn(() => false),
 }));
 
 vi.mock('./query-bangs', async (importOriginal) => {
@@ -18,14 +19,15 @@ vi.mock('./query-bangs', async (importOriginal) => {
     };
 });
 
-import { hasGoogleSearchConfigured } from './api-keys';
+import { hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys';
 import { bootstrapEarlyFetch } from './early-client-fetch';
 import { redirectForBang } from './query-bangs';
 
 const hasGoogle = vi.mocked(hasGoogleSearchConfigured);
+const hasTavily = vi.mocked(hasTavilySearchConfigured);
 const redirect = vi.mocked(redirectForBang);
 
-type EarlyKey = 'brave' | 'google' | 'marginalia' | 'wiby' | 'images' | 'infobox';
+type EarlyKey = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby' | 'images' | 'infobox';
 
 /** Mirrors script.ts takeEarlyFetchPromise consumption (not exported from early-client-fetch). */
 function takeEarlyFetchPromise(key: EarlyKey, query: string): Promise<Response> | null {
@@ -34,7 +36,15 @@ function takeEarlyFetchPromise(key: EarlyKey, query: string): Promise<Response> 
     const promise = early[key];
     if (!promise) return null;
     delete early[key];
-    if (!early.brave && !early.google && !early.marginalia && !early.wiby && !early.images && !early.infobox) {
+    if (
+        !early.brave &&
+        !early.google &&
+        !early.tavily &&
+        !early.marginalia &&
+        !early.wiby &&
+        !early.images &&
+        !early.infobox
+    ) {
         window.__earlyFetch = undefined;
     }
     return promise;
@@ -49,6 +59,7 @@ describe('bootstrapEarlyFetch', () => {
             })
         );
         hasGoogle.mockReturnValue(false);
+        hasTavily.mockReturnValue(false);
         redirect.mockReset();
         window.__earlyFetch = undefined;
         window.history.replaceState({}, '', '/');
@@ -77,6 +88,7 @@ describe('bootstrapEarlyFetch', () => {
         expect(early!.wiby).toBeInstanceOf(Promise);
         expect(early!.infobox).toBeInstanceOf(Promise);
         expect(early!.google).toBeUndefined();
+        expect(early!.tavily).toBeUndefined();
         expect(early!.images).toBeUndefined();
 
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
@@ -89,6 +101,7 @@ describe('bootstrapEarlyFetch', () => {
             ])
         );
         expect(paths.some((p) => p.includes('source=google'))).toBe(false);
+        expect(paths.some((p) => p.includes('source=tavily'))).toBe(false);
     });
 
     it('adds google + images early fetches when Google configured', () => {
@@ -101,6 +114,16 @@ describe('bootstrapEarlyFetch', () => {
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths.some((p) => p.includes('source=google'))).toBe(true);
         expect(paths.some((p) => p.includes('imageSource=google'))).toBe(true);
+    });
+
+    it('adds tavily early fetch when Tavily configured', () => {
+        hasTavily.mockReturnValue(true);
+        window.history.replaceState({}, '', '/?q=cats');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch!.tavily).toBeInstanceOf(Promise);
+        const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
+        expect(paths.some((p) => p.includes('source=tavily'))).toBe(true);
     });
 
     it('bang redirect does not register __earlyFetch', () => {
