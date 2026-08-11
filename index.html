@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="style.css?v=52" />
 
     <!-- IIFE: runs during parse (before deferred script.js) to start ?q= fetches early -->
-    <script src="early-fetch-entry.js?v=64"></script>
+    <script src="early-fetch-entry.js?v=66"></script>
     <script defer src="script.js?v=65"></script>
   </head>
   <body>
@@ -55,11 +55,22 @@
 
       <dialog class="api-settings-dialog" id="api-settings-dialog">
         <div class="api-settings-inner">
-          <h2 class="api-settings-title">Google Custom Search</h2>
+          <h2 class="api-settings-title">API configuration</h2>
           <p class="api-settings-context" id="api-settings-context" hidden></p>
           <p class="api-settings-hint">
-            Values are stored in <code>localStorage</code>. On Vercel, set <code>BRAVE_API_KEY</code>, <code>MARGINALIA_API_KEY</code>, and <code>GROQ_API_KEY</code> under Project Settings → Environment Variables (see <a href="https://about.marginalia-search.com/article/api/" target="_blank" rel="noopener">Marginalia API docs</a>). Clear a field and save to remove it. Use “Clear Google token” if search fails after rotating credentials.
+            Values are stored in <code>localStorage</code>. Paste a Tavily API key for extra commercial results (browser → Tavily, no Edge hop). On Vercel, set <code>BRAVE_API_KEY</code>, <code>MARGINALIA_API_KEY</code>, and <code>GROQ_API_KEY</code> under Project Settings → Environment Variables (see <a href="https://about.marginalia-search.com/article/api/" target="_blank" rel="noopener">Marginalia API docs</a>). Clear a field and save to remove it. Use “Clear Google token” if search fails after rotating credentials.
           </p>
+          <div class="api-settings-field">
+            <label class="api-settings-label" for="api-settings-tavily-key">Tavily API key</label>
+            <input
+              type="password"
+              class="api-settings-input"
+              id="api-settings-tavily-key"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="tvly-…"
+            />
+          </div>
           <div class="api-settings-field">
             <label class="api-settings-label" for="api-settings-google-cx">Google Custom Search Engine ID (cx)</label>
             <input
@@ -239,7 +250,8 @@
           <a href="https://brave.com/search/" target="_blank" rel="noopener"
             >Brave</a
           >,
-          <a href="https://google.com" target="_blank" rel="noopener">Google</a>
+          <a href="https://google.com" target="_blank" rel="noopener">Google</a>,
+          <a href="https://tavily.com" target="_blank" rel="noopener">Tavily</a>
           &
           <a href="https://search.marginalia.nu/" target="_blank" rel="noopener"
             >Marginalia</a

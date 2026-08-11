@@ -5,6 +5,11 @@ vi.mock('./google-search', () => ({
     invalidateGoogleSearchCache: vi.fn(),
 }));
 
+vi.mock('./tavily-search', () => ({
+    invalidateTavilySearchCache: vi.fn(),
+    primeTavilyConnection: vi.fn(),
+}));
+
 import {
     LS_KEYS,
     applyApiSecretsFromFields,
@@ -14,6 +19,7 @@ import {
     getStoredGoogleAccessToken,
     getStoredGoogleTokenState,
     hasGoogleSearchConfigured,
+    hasTavilySearchConfigured,
     setApiSecrets,
     setStoredGoogleAccessToken,
 } from './api-keys';
@@ -168,24 +174,31 @@ describe('getApiSecretsFields / applyApiSecretsFromFields', () => {
         const ok = applyApiSecretsFromFields({
             googleCx: '  my-cx  ',
             googleServiceAccount: `  ${MIN_SA}  `,
+            tavilyApiKey: '  tvly-test  ',
         });
         expect(ok).toEqual({ ok: true });
         expect(getApiSecret('GOOGLE_CX')).toBe('my-cx');
         expect(getApiSecret('GOOGLE_SERVICE_ACCOUNT')).toBe(MIN_SA);
+        expect(getApiSecret('TAVILY_API_KEY')).toBe('tvly-test');
+        expect(hasTavilySearchConfigured()).toBe(true);
 
         const cleared = applyApiSecretsFromFields({
             googleCx: '',
             googleServiceAccount: '',
+            tavilyApiKey: '',
         });
         expect(cleared).toEqual({ ok: true });
         expect(getApiSecret('GOOGLE_CX')).toBe('');
         expect(getApiSecret('GOOGLE_SERVICE_ACCOUNT')).toBe('');
+        expect(getApiSecret('TAVILY_API_KEY')).toBe('');
+        expect(hasTavilySearchConfigured()).toBe(false);
     });
 
     it('rejects non-object-looking SA that is not valid JSON', () => {
         const bad = applyApiSecretsFromFields({
             googleCx: 'cx',
             googleServiceAccount: 'not-a-json-object',
+            tavilyApiKey: '',
         });
         expect(bad).toEqual({
             ok: false,
@@ -198,8 +211,19 @@ describe('getApiSecretsFields / applyApiSecretsFromFields', () => {
         const result = applyApiSecretsFromFields({
             googleCx: 'cx',
             googleServiceAccount: '{ "type": "service_account" }',
+            tavilyApiKey: '',
         });
         expect(result).toEqual({ ok: true });
         expect(getApiSecret('GOOGLE_SERVICE_ACCOUNT')).toBe('{ "type": "service_account" }');
+    });
+});
+
+describe('hasTavilySearchConfigured', () => {
+    it('is true only when a Tavily API key is stored', () => {
+        expect(hasTavilySearchConfigured()).toBe(false);
+        setApiSecrets({ TAVILY_API_KEY: 'tvly-abc' });
+        expect(hasTavilySearchConfigured()).toBe(true);
+        setApiSecrets({ TAVILY_API_KEY: '' });
+        expect(hasTavilySearchConfigured()).toBe(false);
     });
 });

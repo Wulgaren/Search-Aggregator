@@ -18,6 +18,24 @@ vi.mock('./google-search', async (importOriginal) => {
     };
 });
 
+vi.mock('./tavily-search', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('./tavily-search')>();
+    return {
+        ...actual,
+        createCachedTavilySearchGet: (handler: (request: Request) => Promise<Response>) => {
+            return async (path: string) => {
+                const url = new URL(path, window.location.origin);
+                if (!actual.isTavilyClientSearchUrl(url)) {
+                    return handler(new Request(url.toString()));
+                }
+                return new Response(JSON.stringify({ via: 'cached-tavily', path }), {
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            };
+        },
+    };
+});
+
 import { searchApiFetch } from './search-fetch';
 
 describe('searchApiFetch', () => {
@@ -39,6 +57,15 @@ describe('searchApiFetch', () => {
         expect(await res.json()).toEqual({
             via: 'cached-google',
             path: '/api/search?q=cats&source=google&page=1',
+        });
+    });
+
+    it('routes Tavily /api/search GET through cached client handler (not edge fetch)', async () => {
+        const res = await searchApiFetch('/api/search?q=cats&source=tavily&page=1');
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(await res.json()).toEqual({
+            via: 'cached-tavily',
+            path: '/api/search?q=cats&source=tavily&page=1',
         });
     });
 

@@ -139,7 +139,7 @@ describe('createInfoboxComponent', () => {
     });
 
     it('hides cast when absent', async () => {
-        const noCast = { ...sampleInfobox, cast: undefined };
+        const noCast: InfoboxData = { ...sampleInfobox, cast: undefined };
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: noCast }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
@@ -150,7 +150,7 @@ describe('createInfoboxComponent', () => {
     });
 
     it('adds no-image classes when image is missing', async () => {
-        const noImage = { ...sampleInfobox, image: undefined, imageFull: undefined };
+        const noImage: InfoboxData = { ...sampleInfobox, image: undefined, imageFull: undefined };
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: noImage }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
