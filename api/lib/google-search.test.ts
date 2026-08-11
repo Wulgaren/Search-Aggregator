@@ -82,7 +82,7 @@ describe('google-search lib', () => {
         process.env.GOOGLE_CX = 'test-cx';
         process.env.GOOGLE_SERVICE_ACCOUNT = await generateServiceAccountJson();
 
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
             const url = String(input);
             if (url.includes('oauth2.googleapis.com/token')) {
                 return new Response(
@@ -133,7 +133,8 @@ describe('google-search lib', () => {
         const cseCall = fetchMock.mock.calls.find((c) =>
             String(c[0]).includes('customsearch/v1')
         );
-        expect(cseCall?.[1]).toMatchObject({
+        expect(cseCall).toBeTruthy();
+        expect(cseCall![1]).toMatchObject({
             headers: { Authorization: 'Bearer ya29.test-token' },
         });
     });

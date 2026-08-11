@@ -35,7 +35,6 @@ yarn-error.log*
 
 # Dependencies (if you add any)
 node_modules/
-package-lock.json
 yarn.lock
 
 # Generated frontend bundles (built from src/)

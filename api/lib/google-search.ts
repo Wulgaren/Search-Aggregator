@@ -149,15 +149,24 @@ async function getGoogleAccessToken(): Promise<string> {
     return accessToken;
 }
 
+type GoogleSearchResult = {
+    title: string;
+    url: string;
+    displayUrl: string;
+    snippet: string;
+    source: string;
+};
+
 export async function fetchGoogle(query: string, page: number, resultsPerPage: number) {
+    const empty = { results: [] as GoogleSearchResult[], hasMore: false, totalResults: "0" };
     const cx = process.env.GOOGLE_CX?.trim();
     if (!cx || !isGoogleConfigured()) {
-        return { results: [], hasMore: false, totalResults: "0" };
+        return empty;
     }
 
     const startIndex = (page - 1) * resultsPerPage + 1;
     if (startIndex > 91) {
-        return { results: [], hasMore: false, totalResults: "0" };
+        return empty;
     }
 
     const accessToken = await getGoogleAccessToken();

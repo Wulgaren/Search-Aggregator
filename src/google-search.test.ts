@@ -51,7 +51,7 @@ function installCacheStorageStub() {
         delete: async (name: string) => cachesMap.delete(name),
         has: async (name: string) => cachesMap.has(name),
         keys: async () => [...cachesMap.keys()],
-        match: async () => undefined,
+        match: async (): Promise<Response | undefined> => undefined,
         _map: cachesMap,
     };
 
@@ -70,7 +70,7 @@ function seedGoogleConfig(opts?: { token?: boolean }) {
 }
 
 function googleCseFetchMock(handler: (url: URL) => Response | Promise<Response>) {
-    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    return vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
         const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
         if (url.hostname === 'www.googleapis.com' && url.pathname === '/customsearch/v1') {
             return handler(url);
