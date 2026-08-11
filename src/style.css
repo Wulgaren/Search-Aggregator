@@ -312,6 +312,12 @@ a:hover {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .infobox-btn.shine:not(.active)::after {
+    animation: none;
+  }
+}
+
 .ai-icon {
   font-size: 1.25rem;
   color: transparent;
