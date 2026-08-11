@@ -76,18 +76,61 @@ describe('createInfoboxComponent', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
-    it('shows empty state when response has no infobox data', async () => {
+    it('hides infobox when response has no infobox data', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('empty');
 
+        expect(elements.infobox.style.display).toBe('none');
+        expect(elements.infobox.classList.contains('infobox--empty')).toBe(false);
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infoboxDescription.textContent).toBe('');
+    });
+
+    it('collapses empty infobox then hides after height animation', async () => {
+        vi.useFakeTimers();
+        document.body.appendChild(elements.infobox);
+        Object.defineProperty(elements.infobox, 'offsetParent', {
+            configurable: true,
+            get: () => document.body,
+        });
+        elements.infobox.getBoundingClientRect = () =>
+            ({
+                x: 0,
+                y: 0,
+                top: 0,
+                left: 0,
+                bottom: 200,
+                right: 400,
+                width: 400,
+                height: 200,
+                toJSON: () => ({}),
+            }) as DOMRect;
+
+        vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
+        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+
+        await fetchInfobox('empty-collapse');
+
         expect(elements.infobox.style.display).toBe('flex');
         expect(elements.infobox.classList.contains('infobox--empty')).toBe(true);
-        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infobox.classList.contains('infobox--collapsing')).toBe(true);
         expect(elements.infoboxDescription.textContent).toBe('No infobox available');
+        expect(elements.infobox.style.height).toBe('0px');
+
+        elements.infobox.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'height' }));
+
+        expect(elements.infobox.style.display).toBe('none');
+        expect(elements.infobox.classList.contains('infobox--empty')).toBe(false);
+        expect(elements.infobox.classList.contains('infobox--collapsing')).toBe(false);
+        expect(elements.infoboxDescription.textContent).toBe('');
+
+        vi.useRealTimers();
+        elements.infobox.remove();
     });
 
     it('shows skeleton while loading then clears it on success', async () => {

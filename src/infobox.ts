@@ -25,32 +25,27 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             heightAnimCleanup();
             heightAnimCleanup = null;
         }
-        elements.infobox.classList.remove('infobox--height-animating');
+        elements.infobox.classList.remove('infobox--height-animating', 'infobox--collapsing');
         elements.infobox.style.height = '';
     }
 
-    function withHeightTransition(updateDom: () => void) {
+    function isInfoboxLaidOut() {
         const el = elements.infobox;
-        const visible = el.style.display !== 'none' && el.offsetParent !== null;
-        if (!visible || typeof el.getBoundingClientRect !== 'function') {
-            updateDom();
-            return;
-        }
+        return el.style.display !== 'none' && el.offsetParent !== null && typeof el.getBoundingClientRect === 'function';
+    }
 
-        const fromHeight = el.getBoundingClientRect().height;
-        clearHeightAnimation();
-        updateDom();
-
-        // Measure natural height after DOM update
-        el.style.height = 'auto';
-        const toHeight = el.getBoundingClientRect().height;
+    function runHeightTransition(fromHeight: number, toHeight: number, onComplete?: () => void) {
+        const el = elements.infobox;
         if (!Number.isFinite(fromHeight) || !Number.isFinite(toHeight) || Math.abs(fromHeight - toHeight) < 1) {
             el.style.height = '';
+            onComplete?.();
             return;
         }
 
         const token = ++heightAnimToken;
+        const collapsing = toHeight === 0;
         el.classList.add('infobox--height-animating');
+        if (collapsing) el.classList.add('infobox--collapsing');
         el.style.height = `${fromHeight}px`;
         // Force reflow so the browser registers the starting height before transitioning
         void el.offsetHeight;
@@ -58,9 +53,10 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
 
         const finish = () => {
             if (token !== heightAnimToken) return;
-            el.classList.remove('infobox--height-animating');
+            el.classList.remove('infobox--height-animating', 'infobox--collapsing');
             el.style.height = '';
             heightAnimCleanup = null;
+            onComplete?.();
         };
 
         const onEnd = (event: TransitionEvent) => {
@@ -77,11 +73,50 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         heightAnimCleanup = () => {
             window.clearTimeout(timeoutId);
             el.removeEventListener('transitionend', onEnd);
-            el.classList.remove('infobox--height-animating');
+            el.classList.remove('infobox--height-animating', 'infobox--collapsing');
             el.style.height = '';
         };
 
         el.addEventListener('transitionend', onEnd);
+    }
+
+    function withHeightTransition(updateDom: () => void) {
+        const el = elements.infobox;
+        if (!isInfoboxLaidOut()) {
+            updateDom();
+            return;
+        }
+
+        const fromHeight = el.getBoundingClientRect().height;
+        clearHeightAnimation();
+        updateDom();
+
+        el.style.height = 'auto';
+        const toHeight = el.getBoundingClientRect().height;
+        runHeightTransition(fromHeight, toHeight);
+    }
+
+    function collapseAndHide() {
+        const el = elements.infobox;
+        const fromHeight = isInfoboxLaidOut() ? el.getBoundingClientRect().height : 0;
+        clearHeightAnimation();
+
+        clearInfoboxUi();
+        el.classList.add('infobox--empty');
+        elements.infoboxDescription.textContent = 'No infobox available';
+        el.style.display = 'flex';
+
+        const hide = () => {
+            clearInfoboxUi();
+            el.style.display = 'none';
+        };
+
+        if (!isInfoboxLaidOut() || fromHeight < 1) {
+            hide();
+            return;
+        }
+
+        runHeightTransition(fromHeight, 0, hide);
     }
 
     function clearInfoboxUi() {
@@ -108,12 +143,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     }
 
     function showEmpty() {
-        withHeightTransition(() => {
-            clearInfoboxUi();
-            elements.infobox.classList.add('infobox--empty');
-            elements.infoboxDescription.textContent = 'No infobox available';
-            elements.infobox.style.display = 'flex';
-        });
+        collapseAndHide();
     }
 
     async function fetchInfobox(query: string) {
