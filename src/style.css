@@ -948,10 +948,12 @@ a:hover {
 
 /* Image Slider Section */
 .image-slider-section {
+  width: 100%;
   max-width: 95%;
   margin: 0 auto 1.5rem;
   padding: 0 1.5rem;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .image-slider-header {
@@ -1595,7 +1597,8 @@ a:hover {
 }
 
 .infobox--empty {
-  min-height: auto;
+  min-height: calc(180px + 3rem);
+  align-items: center;
 }
 
 .infobox--empty .infobox-image-container,
@@ -1607,7 +1610,8 @@ a:hover {
 }
 
 .infobox--empty .infobox-content {
-  min-height: 0;
+  min-height: 180px;
+  justify-content: center;
 }
 
 .infobox--empty .infobox-description {
@@ -1663,6 +1667,14 @@ a:hover {
 
   .infobox--skeleton .infobox-description {
     height: 3.5rem;
+  }
+
+  .infobox--empty {
+    min-height: calc(130px + 2.5rem);
+  }
+
+  .infobox--empty .infobox-content {
+    min-height: 130px;
   }
 }
 
