@@ -10,9 +10,38 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         activeQuery = '';
         state.data = null;
         state.loading = false;
+        clearInfoboxUi();
         elements.infobox.style.display = 'none';
+    }
+
+    function clearInfoboxUi() {
+        elements.infobox.classList.remove('infobox--skeleton', 'infobox--empty', 'no-image-fallback');
+        elements.infoboxTitle.textContent = '';
+        elements.infoboxDescription.textContent = '';
+        elements.infoboxLinks.innerHTML = '';
         elements.infoboxCast.hidden = true;
         elements.infoboxCast.innerHTML = '';
+        elements.infoboxSource.href = '';
+        elements.infoboxImage.removeAttribute('src');
+        elements.infoboxImage.alt = '';
+        elements.infoboxImage.classList.remove('no-image');
+        elements.infoboxImage.style.cursor = '';
+        elements.infoboxImage.onclick = null;
+        elements.infoboxImage.onerror = null;
+        elements.infoboxImage.onload = null;
+    }
+
+    function showSkeleton() {
+        clearInfoboxUi();
+        elements.infobox.classList.add('infobox--skeleton');
+        elements.infobox.style.display = 'flex';
+    }
+
+    function showEmpty() {
+        clearInfoboxUi();
+        elements.infobox.classList.add('infobox--empty');
+        elements.infoboxDescription.textContent = 'No infobox available';
+        elements.infobox.style.display = 'flex';
     }
 
     async function fetchInfobox(query: string) {
@@ -20,6 +49,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         const requestId = ++activeRequestId;
         activeQuery = query;
         state.loading = true;
+        showSkeleton();
         try {
             let response: Response;
             const earlyInfobox = await deps.takeEarlyFetch('infobox', query);
@@ -30,8 +60,10 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             if (requestId !== activeRequestId || query !== activeQuery) return;
             state.data = data.infobox;
             if (data.infobox) renderInfobox(data.infobox);
+            else showEmpty();
         } catch (error) {
             console.error('Error fetching infobox:', error);
+            if (requestId === activeRequestId && query === activeQuery) showEmpty();
         } finally {
             if (requestId === activeRequestId) state.loading = false;
         }
@@ -39,11 +71,10 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
 
     function renderInfobox(data: InfoboxData) {
         if (!data) {
-            elements.infobox.style.display = 'none';
+            showEmpty();
             return;
         }
-        const wasHidden = elements.infobox.style.display === 'none';
-        if (wasHidden) deps.storeElementPositionBeforeContent();
+        elements.infobox.classList.remove('infobox--skeleton', 'infobox--empty');
         elements.infoboxTitle.textContent = data.title;
         elements.infoboxDescription.textContent = data.description;
 
@@ -114,7 +145,6 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         }
         elements.infoboxSource.href = data.url;
         elements.infobox.style.display = 'flex';
-        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     function buildCastCard(member: InfoboxCastMember) {

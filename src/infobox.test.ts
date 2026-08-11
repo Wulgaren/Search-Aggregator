@@ -35,8 +35,6 @@ function createDeps(overrides: Partial<InfoboxDeps> = {}): InfoboxDeps {
     return {
         apiFetch: vi.fn(),
         takeEarlyFetch: vi.fn().mockResolvedValue(null),
-        storeElementPositionBeforeContent: vi.fn(),
-        maintainMousePosition: vi.fn(),
         openImagePreview: vi.fn(),
         ...overrides,
     };
@@ -67,10 +65,6 @@ const sampleInfobox: InfoboxData = {
     ],
 };
 
-async function flushRaf() {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-}
-
 describe('createInfoboxComponent', () => {
     let elements: InfoboxElements;
     let deps: InfoboxDeps;
@@ -84,15 +78,37 @@ describe('createInfoboxComponent', () => {
         vi.restoreAllMocks();
     });
 
-    it('stays hidden when response has no infobox data', async () => {
+    it('shows empty state when response has no infobox data', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('empty');
 
-        expect(elements.infobox.style.display).toBe('none');
-        expect(elements.infoboxTitle.textContent).toBe('');
-        expect(deps.storeElementPositionBeforeContent).not.toHaveBeenCalled();
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infobox.classList.contains('infobox--empty')).toBe(true);
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infoboxDescription.textContent).toBe('No infobox available');
+    });
+
+    it('shows skeleton while loading then clears it on success', async () => {
+        let resolveFetch!: (value: Response) => void;
+        const pending = new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+        });
+        vi.mocked(deps.apiFetch).mockReturnValue(pending);
+        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+
+        const fetchPromise = fetchInfobox('loading');
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
+        expect(elements.infoboxCast.hidden).toBe(true);
+        expect(elements.infoboxCast.innerHTML).toBe('');
+
+        resolveFetch(jsonResponse({ infobox: sampleInfobox }));
+        await fetchPromise;
+
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
     });
 
     it('renders title, description, links, and source href', async () => {
@@ -100,14 +116,11 @@ describe('createInfoboxComponent', () => {
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('blade runner');
-        await flushRaf();
 
         expect(elements.infobox.style.display).toBe('flex');
         expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
         expect(elements.infoboxDescription.textContent).toBe('A 1982 science fiction film.');
         expect(elements.infoboxSource.href).toBe('https://en.wikipedia.org/wiki/Blade_Runner');
-        expect(deps.storeElementPositionBeforeContent).toHaveBeenCalledOnce();
-        expect(deps.maintainMousePosition).toHaveBeenCalledOnce();
 
         const links = elements.infoboxLinks.querySelectorAll('a.infobox-link');
         expect(links).toHaveLength(2);
@@ -224,6 +237,7 @@ describe('createInfoboxComponent', () => {
         const { fetchInfobox, reset } = createInfoboxComponent(elements, deps);
 
         const fetchPromise = fetchInfobox('stale');
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
         reset();
         resolveFetch(jsonResponse({ infobox: sampleInfobox }));
         await fetchPromise;
@@ -232,7 +246,7 @@ describe('createInfoboxComponent', () => {
         expect(elements.infoboxTitle.textContent).toBe('');
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
-        expect(deps.storeElementPositionBeforeContent).not.toHaveBeenCalled();
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
     });
 
     it('reset hides infobox and clears cast', async () => {

@@ -63,9 +63,6 @@ function makeDeps(overrides: Partial<SearchDeps> = {}): SearchDeps {
         hasGoogleSearchConfigured: vi.fn(() => true),
         hasTavilySearchConfigured: vi.fn(() => false),
         openApiSettingsDialog: vi.fn(),
-        hasPendingStoredPosition: vi.fn(() => false),
-        storeElementPositionBeforeContent: vi.fn(),
-        maintainMousePosition: vi.fn(),
         onGoogleCorrection: vi.fn(),
         ...overrides,
     };
@@ -130,6 +127,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('startSearch fetches brave, marginalia, and wiby via apiFetch when no early fetch', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const apiFetch = apiFetchBySource({
             brave: () =>
                 jsonResponse({
@@ -171,6 +169,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('fetchTavily merges Tavily results into the commercial column', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const apiFetch = apiFetchBySource({
             brave: () =>
                 jsonResponse({
@@ -205,6 +204,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('uses takeEarlyFetch for page-1 brave when present', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const early = jsonResponse({
             brave: sourcePayload({
                 results: [makeResult({ title: 'Early Brave', url: 'https://brave.example/early', source: 'brave' })],
@@ -228,6 +228,53 @@ describe('createSearchResultsComponent', () => {
             .mocked(deps.apiFetch)
             .mock.calls.filter(([path]) => String(path).includes('source=brave'));
         expect(braveApiCalls).toHaveLength(0);
+    });
+
+    it('paints Google first then waits for rest gate before Brave', async () => {
+        let resolveBrave!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
+        deps.apiFetch = apiFetchBySource({
+            brave: () => bravePromise,
+            google: () =>
+                jsonResponse({
+                    google: sourcePayload({
+                        results: [makeResult({ title: 'Google Hit', url: 'https://google.example/a', source: 'google' })],
+                    }),
+                }),
+            marginalia: () => jsonResponse({ marginalia: sourcePayload() }),
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('gate');
+        component.fetchGoogle('gate');
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Google Hit');
+        });
+        expect(elements.commercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+        expect(elements.noncommercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+        });
+        expect(elements.commercialResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
+        const titles = [...elements.commercialResults.querySelectorAll('.result-title')].map((el) => el.textContent);
+        expect(titles[0]).toContain('Google Hit');
+        expect(titles[1]).toContain('Brave Hit');
     });
 
     it('fetchGoogle uses apiFetch/takeEarlyFetch for google source', async () => {
@@ -349,6 +396,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('reset clears query and restores placeholder empty-states', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         deps.apiFetch = apiFetchBySource({
             brave: () =>
                 jsonResponse({

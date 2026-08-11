@@ -8,6 +8,8 @@ import type {
 } from './types';
 import { redirectToGoogleSearch } from './query-bangs';
 
+type Page1Source = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby';
+
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
     let searchSessionId = 0;
@@ -17,11 +19,19 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     let marginaliaState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let wibyState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let mergedState = { loading: false };
-    let suppressMergedAnimations = false;
     let renderedCommercialUrls = new Set<string>();
     let renderedNoncommercialUrls = new Set<string>();
     let renderedMergedUrls = new Set<string>();
     let googleFallbackRedirected = false;
+    let page1Settled: Record<Page1Source, boolean> = createPage1Settled(deps);
+
+    function resetPage1Settled() {
+        page1Settled = createPage1Settled(deps);
+    }
+
+    function restGateReady() {
+        return page1Settled.brave && page1Settled.tavily && page1Settled.marginalia && page1Settled.wiby;
+    }
 
     function reset() {
         searchSessionId += 1;
@@ -36,6 +46,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
         googleFallbackRedirected = false;
+        resetPage1Settled();
         elements.commercialResults.innerHTML = `<div class="empty-state"><p>Commercial results will appear here</p></div>`;
         elements.noncommercialResults.innerHTML = `<div class="empty-state"><p>Non-commercial results will appear here</p></div>`;
         elements.mergedResults.innerHTML = `<div class="empty-state"><p>Search results will appear here</p></div>`;
@@ -80,22 +91,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }, observerOptions);
         window.scrollObservers = { commercialObserver, noncommercialObserver, mergedObserver };
         window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
-    }
-
-    function renderMergedResultsPreservingPosition() {
-        const shouldPreservePosition = deps.isMergedView() && window.scrollY > 0;
-        const reusingPendingAnchor = shouldPreservePosition && deps.hasPendingStoredPosition();
-        if (shouldPreservePosition && !reusingPendingAnchor) {
-            deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
-        }
-        suppressMergedAnimations = shouldPreservePosition;
-        renderMergedResults();
-        suppressMergedAnimations = false;
-        if (shouldPreservePosition) {
-            requestAnimationFrame(() => {
-                deps.maintainMousePosition();
-            });
-        }
     }
 
     async function fetchSource(
@@ -153,6 +148,11 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if ((source === 'brave' || source === 'google' || source === 'tavily') && page === 1) {
             maybeRedirectToGoogleFallback(query, sessionId, page);
         }
+        if (page === 1) {
+            page1Settled[source] = true;
+            updatePage1Views();
+            return;
+        }
         if (source === 'marginalia' || source === 'wiby') renderNoncommercialResults();
         else {
             renderCommercialResults();
@@ -160,7 +160,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                 renderNoncommercialResults();
         }
         if (deps.isMergedView()) {
-            renderMergedResultsPreservingPosition();
+            renderMergedResults();
         }
     }
 
@@ -178,6 +178,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         renderedNoncommercialUrls = new Set();
         renderedMergedUrls = new Set();
         googleFallbackRedirected = false;
+        resetPage1Settled();
         showLoading(elements.commercialResults);
         showLoading(elements.noncommercialResults);
         showLoading(elements.mergedResults);
@@ -186,6 +187,74 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         void fetchSource('brave', query, 1, sessionId);
         void fetchSource('marginalia', query, 1, sessionId);
         void fetchSource('wiby', query, 1, sessionId);
+    }
+
+    function updatePage1Views() {
+        if (deps.isMergedView()) {
+            updateMergedPage1();
+            return;
+        }
+        updateCommercialPage1();
+        updateNoncommercialPage1();
+    }
+
+    function updateCommercialPage1() {
+        if (!page1Settled.google) return;
+        if (!restGateReady()) {
+            renderCommercialGooglePartial();
+            return;
+        }
+        renderCommercialResults();
+    }
+
+    function updateNoncommercialPage1() {
+        if (!restGateReady()) return;
+        renderNoncommercialResults();
+    }
+
+    function updateMergedPage1() {
+        if (!page1Settled.google) return;
+        if (!restGateReady()) {
+            renderMergedGooglePartial();
+            return;
+        }
+        renderMergedResults();
+    }
+
+    function renderCommercialGooglePartial() {
+        const googleResults = deduplicateResults(googleState.results);
+        if (googleResults.length === 0) {
+            showLoading(elements.commercialResults);
+            elements.commercialCount.textContent = '';
+            return;
+        }
+        elements.commercialResults.innerHTML =
+            googleResults
+                .map((result, index) => renderStandardResultArticle(result, index, 'google', 'Google'))
+                .join('') + generateSkeletonHTML(3);
+        applyNoAnimateToRenderedItems(elements.commercialResults, renderedCommercialUrls);
+        attachPrefetchListeners(elements.commercialResults);
+        updateCount(elements.commercialCount, googleResults.length, true);
+    }
+
+    function renderMergedGooglePartial() {
+        const allResults: MergedItem[] = [];
+        const seen = new Set<string>();
+        for (const result of googleState.results) {
+            maybePushMerged('commercial', result, seen, allResults);
+        }
+        if (allResults.length === 0) {
+            showLoading(elements.mergedResults);
+            return;
+        }
+        elements.mergedResults.innerHTML =
+            allResults
+                .map((item, index) =>
+                    renderStandardResultArticle(item.result, index, 'commercial', 'Google', 'result-source')
+                )
+                .join('') + generateSkeletonHTML(3);
+        applyNoAnimateToRenderedItems(elements.mergedResults, renderedMergedUrls);
+        attachPrefetchListeners(elements.mergedResults);
     }
 
     function applyBraveFallback(data: SearchApiResponse, page: number, sessionId: number, query: string) {
@@ -225,7 +294,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function forceRenderMergedIfNeeded() {
-        if (deps.isMergedView() && currentQuery) renderMergedResults();
+        if (!deps.isMergedView() || !currentQuery) return;
+        if (!page1Settled.google) return;
+        if (!restGateReady()) {
+            renderMergedGooglePartial();
+            return;
+        }
+        renderMergedResults();
     }
 
     function getCurrentQuery() {
@@ -237,7 +312,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const tavilyNeedsMore = tavilyState.hasMore && !tavilyState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore) return;
-        deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.commercialResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -254,13 +328,11 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
         await Promise.all(promises);
         removeLoadingMore(elements.commercialResults);
-        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     async function loadMoreNoncommercial() {
         if (marginaliaState.loading || wibyState.loading) return;
         if (!marginaliaState.hasMore && !wibyState.hasMore) return;
-        deps.storeElementPositionBeforeContent();
         showLoadingMore(elements.noncommercialResults);
         const promises: Promise<void>[] = [];
         if (marginaliaState.hasMore && !marginaliaState.loading) {
@@ -273,7 +345,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
         await Promise.all(promises);
         removeLoadingMore(elements.noncommercialResults);
-        requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     async function loadMoreMergedResults() {
@@ -285,7 +356,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore && !marginaliaNeedsMore && !wibyNeedsMore)
             return;
         mergedState.loading = true;
-        deps.storeElementPositionBeforeContent({ allowFallbackAnchor: true });
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
@@ -311,15 +381,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);
         mergedState.loading = false;
-        requestAnimationFrame(() => {
-            deps.maintainMousePosition();
-        });
     }
 
     function renderCommercialResults() {
-        const interleaved = deduplicateResults(
-            interleaveArrays(googleState.results, braveState.results, tavilyState.results)
-        );
+        const interleaved = deduplicateResults([
+            ...googleState.results,
+            ...interleaveArrays(braveState.results, tavilyState.results),
+        ]);
         const anyLoading = braveState.loading || googleState.loading || tavilyState.loading;
         if (interleaved.length === 0) {
             if (!anyLoading) {
@@ -386,20 +454,21 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function renderMergedResults() {
-        const combinedNc = deduplicateResults(interleaveArrays(marginaliaState.results, wibyState.results));
         const allResults: MergedItem[] = [];
         const seen = new Set<string>();
-        const maxLen = Math.max(
-            googleState.results.length,
-            braveState.results.length,
-            tavilyState.results.length,
-            combinedNc.length
+        for (const result of googleState.results) {
+            maybePushMerged('commercial', result, seen, allResults);
+        }
+        const rest = interleaveArrays(
+            braveState.results,
+            tavilyState.results,
+            marginaliaState.results,
+            wibyState.results
         );
-        for (let i = 0; i < maxLen; i++) {
-            if (i < googleState.results.length) maybePushMerged('commercial', googleState.results[i], seen, allResults);
-            if (i < combinedNc.length) maybePushMerged('noncommercial', combinedNc[i], seen, allResults);
-            if (i < braveState.results.length) maybePushMerged('commercial', braveState.results[i], seen, allResults);
-            if (i < tavilyState.results.length) maybePushMerged('commercial', tavilyState.results[i], seen, allResults);
+        for (const result of rest) {
+            const type =
+                result.source === 'marginalia' || result.source === 'wiby' ? 'noncommercial' : 'commercial';
+            maybePushMerged(type, result, seen, allResults);
         }
         const anyLoading =
             braveState.loading ||
@@ -439,8 +508,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                     index,
                     item.type === 'commercial' ? 'commercial' : 'noncommercial',
                     sourceLabel,
-                    'result-source',
-                    !suppressMergedAnimations
+                    'result-source'
                 );
             })
             .join('');
@@ -713,4 +781,14 @@ function removeLoadingMore(container: HTMLElement) {
 
 function updateCount(element: HTMLElement, count: number, hasMore: boolean) {
     element.textContent = hasMore ? `${count}+ results` : `${count} results`;
+}
+
+function createPage1Settled(deps: SearchDeps): Record<Page1Source, boolean> {
+    return {
+        brave: false,
+        google: !deps.hasGoogleSearchConfigured(),
+        tavily: !deps.hasTavilySearchConfigured(),
+        marginalia: false,
+        wiby: false,
+    };
 }

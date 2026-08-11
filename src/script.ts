@@ -1,7 +1,7 @@
 import { apiSettings, hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch as apiFetch } from './search-fetch';
-import type { EarlyFetchKey, ElementPositionBeforeContent, MousePosition } from './types';
+import type { EarlyFetchKey } from './types';
 import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
@@ -50,8 +50,6 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
 
 const searchForm = byId<HTMLFormElement>('search-form');
 const searchInput = byId<HTMLInputElement>('search-input');
-const resultsContainer = byId('results');
-const mergedResultsContainer = byId('merged-results');
 const spellBanner = byId('spell-banner');
 let bypassGoogleCorrectionForQuery: string | null = null;
 
@@ -70,179 +68,12 @@ const searchResults = createSearchResultsComponent(
         hasGoogleSearchConfigured,
         hasTavilySearchConfigured,
         openApiSettingsDialog: apiSettings.openApiSettingsDialog,
-        hasPendingStoredPosition: () => elementPositionBeforeContent !== null,
-        storeElementPositionBeforeContent,
-        maintainMousePosition,
         onGoogleCorrection: handleGoogleCorrection,
     }
 );
 
-let mousePosition: MousePosition = { x: null, y: null, isInsideResults: false };
-let elementPositionBeforeContent: ElementPositionBeforeContent | null = null;
-let hasNavigatedPage = false;
-
-function resetViewportTracking() {
-    mousePosition = { x: null, y: null, isInsideResults: false };
-    elementPositionBeforeContent = null;
-    hasNavigatedPage = false;
-}
-
-function markPageNavigation() {
-    hasNavigatedPage = true;
-}
-
-function isEditableTarget(target: EventTarget | null) {
-    const el = target as HTMLElement | null;
-    return !!el?.closest('input, textarea, select, [contenteditable="true"]');
-}
-
-function isScrollNavigationKey(event: KeyboardEvent) {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
-    if (isEditableTarget(event.target)) return false;
-    return (
-        event.key === 'ArrowDown' ||
-        event.key === 'ArrowUp' ||
-        event.key === 'PageDown' ||
-        event.key === 'PageUp' ||
-        event.key === 'Home' ||
-        event.key === 'End' ||
-        event.key === ' '
-    );
-}
-
 function scrollToPageTop() {
     window.scrollTo({ top: 0, behavior: 'auto' });
-}
-
-function setupMouseTracking() {
-    const updateTrackedPoint = (clientX: number, clientY: number) => {
-        const rect = resultsContainer.getBoundingClientRect();
-        const isInside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-        mousePosition = { x: isInside ? clientX : null, y: isInside ? clientY : null, isInsideResults: isInside };
-    };
-
-    document.addEventListener('mousemove', (e) => {
-        markPageNavigation();
-        updateTrackedPoint(e.clientX, e.clientY);
-    });
-
-    document.addEventListener(
-        'touchstart',
-        (e) => {
-            const t = e.touches[0] ?? e.changedTouches[0];
-            if (!t) return;
-            updateTrackedPoint(t.clientX, t.clientY);
-        },
-        { passive: true }
-    );
-
-    document.addEventListener(
-        'touchmove',
-        (e) => {
-            const t = e.touches[0] ?? e.changedTouches[0];
-            if (!t) return;
-            markPageNavigation();
-            updateTrackedPoint(t.clientX, t.clientY);
-        },
-        { passive: true }
-    );
-
-    document.addEventListener(
-        'touchend',
-        (e) => {
-            const t = e.changedTouches[0];
-            if (!t) return;
-            updateTrackedPoint(t.clientX, t.clientY);
-        },
-        { passive: true }
-    );
-
-    document.addEventListener('wheel', markPageNavigation, { passive: true });
-    document.addEventListener('keydown', (e) => {
-        if (isScrollNavigationKey(e)) markPageNavigation();
-    });
-}
-
-function getActiveResultsRoot() {
-    return window.innerWidth <= 900 ? mergedResultsContainer : resultsContainer;
-}
-
-function storeResultAnchor(resultItem: HTMLElement) {
-    elementPositionBeforeContent = {
-        element: resultItem,
-        viewportTop: resultItem.getBoundingClientRect().top,
-        activeResultUrlKey: resultItem.dataset.urlKey,
-    };
-}
-
-function storeElementPositionBeforeContent(options?: { allowFallbackAnchor?: boolean }) {
-    const allowFallbackAnchor = (options?.allowFallbackAnchor ?? false) && hasNavigatedPage;
-    const elementAtMouse =
-        mousePosition.isInsideResults && mousePosition.x !== null && mousePosition.y !== null
-            ? document.elementFromPoint(mousePosition.x, mousePosition.y)
-            : null;
-    const resultItem = elementAtMouse?.closest('.result-item[data-url-key]') as HTMLElement | null;
-    const activeResultsRoot = getActiveResultsRoot();
-    if (resultItem) {
-        storeResultAnchor(resultItem);
-        return;
-    }
-
-    let fallbackResult: HTMLElement | null = null;
-    if (allowFallbackAnchor) {
-        const resultItems = Array.from(activeResultsRoot.querySelectorAll('.result-item[data-url-key]')) as HTMLElement[];
-        const firstFullyVisibleResult = resultItems.find((item) => {
-            const rect = item.getBoundingClientRect();
-            return rect.top >= 0 && rect.bottom <= window.innerHeight;
-        });
-        const resultsRect = activeResultsRoot.getBoundingClientRect();
-        const sampleX = Math.min(Math.max(resultsRect.left + 24, window.innerWidth / 2), resultsRect.right - 24);
-        const sampleY = Math.min(Math.max(resultsRect.top + 24, window.innerHeight * 0.4), resultsRect.bottom - 24);
-        const sampleResult = document.elementFromPoint(sampleX, sampleY)?.closest('.result-item[data-url-key]') as HTMLElement | null;
-        const topVisibleResult = resultItems.find((item) => {
-            const rect = item.getBoundingClientRect();
-            return rect.bottom > 0 && rect.top < window.innerHeight;
-        });
-        fallbackResult = sampleResult ?? firstFullyVisibleResult ?? topVisibleResult ?? null;
-    }
-    if (fallbackResult) {
-        storeResultAnchor(fallbackResult);
-        return;
-    }
-
-    if (!elementAtMouse) {
-        elementPositionBeforeContent = null;
-        return;
-    }
-
-    elementPositionBeforeContent = { element: elementAtMouse, viewportTop: elementAtMouse.getBoundingClientRect().top };
-}
-
-function maintainMousePosition() {
-    if (!elementPositionBeforeContent) return;
-    const storedElement = elementPositionBeforeContent.element;
-    const activeResultUrlKey = elementPositionBeforeContent.activeResultUrlKey;
-    const viewportTopStored = elementPositionBeforeContent.viewportTop;
-
-    let targetElement: Element | null = null;
-    if (storedElement && document.contains(storedElement)) targetElement = storedElement;
-
-    // The stored element might have been replaced during re-render (e.g. infinite scroll).
-    // If we have a stable result key, try to re-find the same card.
-    if (!targetElement && activeResultUrlKey) {
-        const safeKey = CSS.escape(activeResultUrlKey);
-        targetElement = getActiveResultsRoot().querySelector(`.result-item[data-url-key="${safeKey}"]`) ?? null;
-    }
-
-    if (!targetElement) {
-        elementPositionBeforeContent = null;
-        return;
-    }
-
-    const moved = targetElement.getBoundingClientRect().top - viewportTopStored;
-    const scrollYBefore = window.scrollY;
-    if (Math.abs(moved) > 1) window.scrollTo({ top: scrollYBefore + moved, behavior: 'auto' });
-    elementPositionBeforeContent = null;
 }
 
 function escapeHtml(text: string) {
@@ -265,7 +96,7 @@ const images = createImagesComponent(
         previewNext: byId<HTMLButtonElement>('preview-next'),
         previewCounter: byId('preview-counter'),
     },
-    { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q), escapeHtml, storeElementPositionBeforeContent, maintainMousePosition }
+    { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q), escapeHtml }
 );
 
 const infobox = createInfoboxComponent(
@@ -281,8 +112,6 @@ const infobox = createInfoboxComponent(
     {
         apiFetch,
         takeEarlyFetch: (k, q) => takeEarlyFetch(k, q),
-        storeElementPositionBeforeContent,
-        maintainMousePosition,
         openImagePreview: images.openImagePreview,
     }
 );
@@ -301,7 +130,6 @@ const ai = createAIComponent(
 );
 
 function performSearch(query: string) {
-    resetViewportTracking();
     searchResults.startSearch(query);
     images.reset();
     infobox.reset();
@@ -416,7 +244,6 @@ document.addEventListener('DOMContentLoaded', () => {
     apiSettings.setupApiSettingsPanel();
     apiSettings.maybeNotifyMissingCommercialKeys();
     searchResults.initInfiniteScroll();
-    setupMouseTracking();
     ai.setupEvents(() => searchInput.value);
     images.setupEvents(() => searchResults.getCurrentQuery());
     restoreSearchState({ scrollToTop: true });

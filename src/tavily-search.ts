@@ -166,7 +166,7 @@ async function fetchTavily(query: string, page: number, resultsPerPage: number):
         },
         body: JSON.stringify({
             query,
-            search_depth: 'fast',
+            search_depth: 'basic',
             include_answer: false,
             max_results: Math.min(Math.max(1, resultsPerPage), TAVILY_MAX_RESULTS),
         }),

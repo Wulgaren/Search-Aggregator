@@ -67,8 +67,6 @@ function buildDeps(overrides: Partial<ImageDeps> = {}): ImageDeps {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;'),
-        storeElementPositionBeforeContent: vi.fn(),
-        maintainMousePosition: vi.fn(),
         ...overrides,
     };
 }

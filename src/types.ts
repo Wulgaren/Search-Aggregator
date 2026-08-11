@@ -59,8 +59,6 @@ export type ImageDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'images', query: string) => Promise<Response | null>;
     escapeHtml: (text: string) => string;
-    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
-    maintainMousePosition: () => void;
 };
 
 export type ImageItem = {
@@ -125,8 +123,6 @@ export type InfoboxElements = {
 export type InfoboxDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'infobox', query: string) => Promise<Response | null>;
-    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
-    maintainMousePosition: () => void;
     openImagePreview: (img: PreviewImage) => void;
 };
 
@@ -191,25 +187,12 @@ export type SearchDeps = {
     hasGoogleSearchConfigured: () => boolean;
     hasTavilySearchConfigured: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
-    hasPendingStoredPosition: () => boolean;
-    storeElementPositionBeforeContent: (options?: { allowFallbackAnchor?: boolean }) => void;
-    maintainMousePosition: () => void;
     onGoogleCorrection?: (query: string, correctedQuery: string) => void;
 };
 
 export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
 export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string; tavilyApiKey: string };
 export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
-export type ElementPositionBeforeContent = {
-    element: Element;
-    viewportTop: number;
-    /**
-     * When the hovered element gets replaced during re-render (e.g. infinite scroll),
-     * we can re-find the same result by this stable key.
-     */
-    activeResultUrlKey?: string;
-};
-export type MousePosition = { x: number | null; y: number | null; isInsideResults: boolean };
 
 export type ServiceAccountConfig = {
     client_email: string;

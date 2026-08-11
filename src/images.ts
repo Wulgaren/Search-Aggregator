@@ -29,11 +29,8 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     const SKELETON_TILE_COUNT = 8;
 
     function showImageSkeleton() {
-        const wasHidden = elements.imageSection.style.display === 'none';
-        if (wasHidden) deps.storeElementPositionBeforeContent();
         elements.sliderTrack.innerHTML = Array.from({ length: SKELETON_TILE_COUNT }, () => '<div class="slider-image-skeleton" aria-hidden="true"></div>').join('');
         elements.imageSection.style.display = 'block';
-        if (wasHidden) requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     function showImageStatus(kind: 'empty' | 'error') {
@@ -46,10 +43,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     }
 
     function revealImageSection() {
-        const wasHidden = elements.imageSection.style.display === 'none';
-        if (wasHidden) deps.storeElementPositionBeforeContent();
         elements.imageSection.style.display = 'block';
-        if (wasHidden) requestAnimationFrame(() => deps.maintainMousePosition());
     }
 
     function reset() {

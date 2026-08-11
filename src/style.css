@@ -848,6 +848,11 @@ a:hover {
   color: var(--commercial-accent);
 }
 
+.result-item[data-engine="tavily"] .result-source-tag {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
 .result-item[data-engine="marginalia"] .result-source-tag {
   background: rgba(34, 197, 94, 0.2);
   color: #4ade80;
@@ -860,6 +865,10 @@ a:hover {
 
 .result-item[data-source="commercial"] .result-source {
   color: var(--commercial-accent);
+}
+
+.result-item[data-engine="tavily"][data-source="commercial"] .result-source {
+  color: #f87171;
 }
 
 .result-item[data-source="noncommercial"] .result-source {
@@ -1018,7 +1027,7 @@ a:hover {
 .image-slider-status {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem;
   flex: 1;
   min-width: 100%;
@@ -1256,6 +1265,8 @@ a:hover {
 /* Infobox (Knowledge Panel) */
 .infobox {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 1.25rem;
   background: linear-gradient(
     135deg,
@@ -1340,6 +1351,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-height: 180px;
 }
 
 .infobox-title {
@@ -1359,6 +1371,7 @@ a:hover {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  flex: 1 1 auto;
 }
 
 .infobox-cast {
@@ -1486,7 +1499,6 @@ a:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: auto;
 }
 
 .infobox-link {
@@ -1521,7 +1533,7 @@ a:hover {
   font-size: 0.7rem;
   color: var(--text-muted);
   text-decoration: none;
-  margin-top: 0.5rem;
+  margin-top: auto;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border-color);
   transition: color 0.15s ease;
@@ -1535,31 +1547,108 @@ a:hover {
   opacity: 0.6;
 }
 
-/* Responsive infobox */
+.infobox--skeleton .infobox-image {
+  display: none;
+}
+
+.infobox--skeleton .infobox-image-container {
+  display: block;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+.infobox--skeleton .infobox-title,
+.infobox--skeleton .infobox-description,
+.infobox--skeleton .infobox-source {
+  border-radius: 6px;
+  color: transparent !important;
+  background: var(--bg-tertiary);
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+  border: none;
+  padding: 0;
+}
+
+.infobox--skeleton .infobox-title {
+  height: 1.4rem;
+  width: 55%;
+  margin: 0;
+}
+
+.infobox--skeleton .infobox-description {
+  height: 4.5rem;
+  width: 100%;
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: hidden;
+}
+
+.infobox--skeleton .infobox-source {
+  height: 0.85rem;
+  width: 42%;
+  margin-top: auto;
+}
+
+.infobox--skeleton .infobox-source svg,
+.infobox--skeleton .infobox-links,
+.infobox--skeleton .infobox-cast {
+  display: none !important;
+}
+
+.infobox--empty {
+  min-height: auto;
+}
+
+.infobox--empty .infobox-image-container,
+.infobox--empty .infobox-title,
+.infobox--empty .infobox-cast,
+.infobox--empty .infobox-links,
+.infobox--empty .infobox-source {
+  display: none !important;
+}
+
+.infobox--empty .infobox-content {
+  min-height: 0;
+}
+
+.infobox--empty .infobox-description {
+  color: var(--text-muted);
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  flex: none;
+}
+
+/* Responsive infobox — keep image left of text */
 @media (max-width: 900px) {
   .infobox {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
     padding: 1.25rem;
     margin: 0 0.75rem 1rem;
+    gap: 1rem;
   }
 
   .infobox-image-container {
-    width: 120px;
-    height: 150px;
+    width: 100px;
+    height: 130px;
   }
 
   .infobox-content {
-    align-items: center;
+    align-items: stretch;
+    min-height: 130px;
+  }
+
+  .infobox-title {
+    font-size: 1.15rem;
   }
 
   .infobox-links {
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .infobox-cast-heading {
-    text-align: center;
+    text-align: left;
     width: 100%;
   }
 
@@ -1569,7 +1658,11 @@ a:hover {
   }
 
   .infobox-source {
-    justify-content: center;
+    justify-content: flex-start;
+  }
+
+  .infobox--skeleton .infobox-description {
+    height: 3.5rem;
   }
 }
 
