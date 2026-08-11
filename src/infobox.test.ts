@@ -11,8 +11,10 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 }
 
 function createElements(): InfoboxElements {
+    const infoboxBtn = document.createElement('button');
     const infobox = document.createElement('div');
     infobox.style.display = 'none';
+    infobox.scrollIntoView = vi.fn();
     const infoboxImage = document.createElement('img');
     const infoboxTitle = document.createElement('h2');
     const infoboxDescription = document.createElement('p');
@@ -21,6 +23,7 @@ function createElements(): InfoboxElements {
     const infoboxLinks = document.createElement('div');
     const infoboxSource = document.createElement('a');
     return {
+        infoboxBtn,
         infobox,
         infoboxImage,
         infoboxTitle,
@@ -78,19 +81,21 @@ describe('createInfoboxComponent', () => {
         vi.restoreAllMocks();
     });
 
-    it('shows empty state when response has no infobox data', async () => {
+    it('keeps panel closed and does not shine when response has no infobox data', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: null }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('empty');
 
-        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infobox.style.display).toBe('none');
         expect(elements.infobox.classList.contains('infobox--empty')).toBe(true);
         expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
         expect(elements.infoboxDescription.textContent).toBe('No infobox available');
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
+        expect(elements.infoboxBtn.classList.contains('ready')).toBe(false);
     });
 
-    it('shows skeleton while loading then clears it on success', async () => {
+    it('loads in background then shines when data is ready', async () => {
         let resolveFetch!: (value: Response) => void;
         const pending = new Promise<Response>((resolve) => {
             resolveFetch = resolve;
@@ -99,23 +104,72 @@ describe('createInfoboxComponent', () => {
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
         const fetchPromise = fetchInfobox('loading');
-        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infobox.style.display).toBe('none');
         expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
 
         resolveFetch(jsonResponse({ infobox: sampleInfobox }));
         await fetchPromise;
 
+        expect(elements.infobox.style.display).toBe('none');
         expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
         expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
+        expect(elements.infoboxBtn.classList.contains('ready')).toBe(true);
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(true);
+        expect(elements.infoboxBtn.classList.contains('active')).toBe(false);
+    });
+
+    it('toggles panel open and closed from the button', async () => {
+        vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: sampleInfobox }));
+        const { fetchInfobox, setupEvents } = createInfoboxComponent(elements, deps);
+        setupEvents();
+
+        await fetchInfobox('blade runner');
+        expect(elements.infobox.style.display).toBe('none');
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(true);
+
+        elements.infoboxBtn.click();
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infoboxBtn.classList.contains('active')).toBe(true);
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
+        expect(elements.infobox.scrollIntoView).toHaveBeenCalled();
+
+        elements.infoboxBtn.click();
+        expect(elements.infobox.style.display).toBe('none');
+        expect(elements.infoboxBtn.classList.contains('active')).toBe(false);
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(true);
+    });
+
+    it('shows skeleton in the open panel while loading', async () => {
+        let resolveFetch!: (value: Response) => void;
+        const pending = new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+        });
+        vi.mocked(deps.apiFetch).mockReturnValue(pending);
+        const { fetchInfobox, setOpen } = createInfoboxComponent(elements, deps);
+
+        const fetchPromise = fetchInfobox('open-loading');
+        setOpen(true);
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(true);
+        expect(elements.infoboxBtn.classList.contains('active')).toBe(true);
+
+        resolveFetch(jsonResponse({ infobox: sampleInfobox }));
+        await fetchPromise;
+
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
     });
 
     it('renders title, description, links, and source href', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: sampleInfobox }));
-        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+        const { fetchInfobox, setOpen } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('blade runner');
+        setOpen(true);
 
         expect(elements.infobox.style.display).toBe('flex');
         expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
@@ -165,9 +219,10 @@ describe('createInfoboxComponent', () => {
     it('adds no-image classes when image is missing', async () => {
         const noImage: InfoboxData = { ...sampleInfobox, image: undefined, imageFull: undefined };
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: noImage }));
-        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+        const { fetchInfobox, setOpen } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('no image');
+        setOpen(true);
 
         expect(elements.infoboxImage.classList.contains('no-image')).toBe(true);
         expect(elements.infobox.classList.contains('no-image-fallback')).toBe(true);
@@ -247,13 +302,15 @@ describe('createInfoboxComponent', () => {
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
         expect(elements.infobox.classList.contains('infobox--skeleton')).toBe(false);
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
     });
 
     it('reset hides infobox and clears cast', async () => {
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: sampleInfobox }));
-        const { fetchInfobox, reset } = createInfoboxComponent(elements, deps);
+        const { fetchInfobox, reset, setOpen } = createInfoboxComponent(elements, deps);
 
         await fetchInfobox('blade runner');
+        setOpen(true);
         expect(elements.infobox.style.display).toBe('flex');
         expect(elements.infoboxCast.hidden).toBe(false);
         expect(elements.infoboxCast.innerHTML).not.toBe('');
@@ -263,6 +320,8 @@ describe('createInfoboxComponent', () => {
         expect(elements.infobox.style.display).toBe('none');
         expect(elements.infoboxCast.hidden).toBe(true);
         expect(elements.infoboxCast.innerHTML).toBe('');
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(false);
+        expect(elements.infoboxBtn.classList.contains('active')).toBe(false);
     });
 
     it('uses early fetch when available instead of apiFetch', async () => {
@@ -274,5 +333,6 @@ describe('createInfoboxComponent', () => {
         expect(deps.takeEarlyFetch).toHaveBeenCalledWith('infobox', 'early');
         expect(deps.apiFetch).not.toHaveBeenCalled();
         expect(elements.infoboxTitle.textContent).toBe('Blade Runner');
+        expect(elements.infoboxBtn.classList.contains('shine')).toBe(true);
     });
 });

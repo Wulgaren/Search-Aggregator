@@ -234,7 +234,8 @@ a:hover {
   background: var(--bg-tertiary);
 }
 
-/* AI Button */
+/* Infobox / AI header buttons */
+.infobox-btn,
 .ai-btn {
   display: flex;
   align-items: center;
@@ -249,23 +250,66 @@ a:hover {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
 }
 
+.infobox-btn:hover,
 .ai-btn:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent);
   color: var(--accent);
 }
 
+.infobox-btn.active,
 .ai-btn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
 
+.infobox-btn:disabled,
 .ai-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.infobox-btn-icon {
+  width: 20px;
+  height: 20px;
+  transition: color 0.15s ease;
+}
+
+.infobox-btn.ready:not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.infobox-btn.shine:not(.active)::after {
+  content: "";
+  position: absolute;
+  inset: -40% -60%;
+    background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.08) 45%,
+    color-mix(in srgb, var(--accent) 40%, transparent) 50%,
+    rgba(255, 255, 255, 0.08) 55%,
+    transparent 70%
+  );
+  transform: translateX(-30%);
+  animation: infoboxBtnShine 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes infoboxBtnShine {
+  0% {
+    transform: translateX(-45%);
+  }
+  55%,
+  100% {
+    transform: translateX(45%);
+  }
 }
 
 .ai-icon {
@@ -2077,6 +2121,7 @@ a:hover {
 }
 
 @media (max-width: 600px) {
+  .infobox-btn,
   .ai-btn {
     width: 51px;
     height: 51px;

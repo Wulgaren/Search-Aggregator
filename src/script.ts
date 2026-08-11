@@ -101,6 +101,7 @@ const images = createImagesComponent(
 
 const infobox = createInfoboxComponent(
     {
+        infoboxBtn: byId<HTMLButtonElement>('infobox-btn'),
         infobox: byId('infobox'),
         infoboxImage: byId<HTMLImageElement>('infobox-image'),
         infoboxTitle: byId('infobox-title'),
@@ -245,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
     apiSettings.maybeNotifyMissingCommercialKeys();
     searchResults.initInfiniteScroll();
     ai.setupEvents(() => searchInput.value);
+    infobox.setupEvents();
     images.setupEvents(() => searchResults.getCurrentQuery());
     restoreSearchState({ scrollToTop: true });
     let wasMerged = window.innerWidth <= 900;

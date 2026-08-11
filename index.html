@@ -7,12 +7,12 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=54" as="style" />
-    <link rel="stylesheet" href="style.css?v=54" />
+    <link rel="preload" href="style.css?v=56" as="style" />
+    <link rel="stylesheet" href="style.css?v=56" />
 
     <!-- IIFE: runs during parse (before deferred script.js) to start ?q= fetches early -->
     <script src="early-fetch-entry.js?v=66"></script>
-    <script defer src="script.js?v=65"></script>
+    <script defer src="script.js?v=67"></script>
   </head>
   <body>
     <div class="container">
@@ -40,6 +40,28 @@
               </svg>
             </button>
           </form>
+          <button
+            type="button"
+            class="infobox-btn"
+            id="infobox-btn"
+            title="Knowledge panel"
+            aria-pressed="false"
+            aria-label="Toggle knowledge panel"
+          >
+            <svg
+              class="infobox-btn-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+          </button>
           <button
             type="button"
             class="ai-btn"

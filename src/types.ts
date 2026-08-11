@@ -111,6 +111,7 @@ export type InfoboxData = {
 };
 
 export type InfoboxElements = {
+    infoboxBtn: HTMLButtonElement;
     infobox: HTMLElement;
     infoboxImage: HTMLImageElement;
     infoboxTitle: HTMLElement;

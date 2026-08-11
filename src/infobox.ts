@@ -4,14 +4,42 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     const state: InfoboxState = { data: null, loading: false };
     let activeRequestId = 0;
     let activeQuery = '';
+    let open = false;
+    let hasCompletedRequest = false;
 
     function reset() {
         activeRequestId += 1;
         activeQuery = '';
         state.data = null;
         state.loading = false;
+        open = false;
+        hasCompletedRequest = false;
         clearInfoboxUi();
         elements.infobox.style.display = 'none';
+        syncButton();
+    }
+
+    function syncButton() {
+        const ready = hasCompletedRequest && !!state.data && !state.loading;
+        elements.infoboxBtn.classList.toggle('active', open);
+        elements.infoboxBtn.classList.toggle('ready', ready);
+        elements.infoboxBtn.classList.toggle('shine', ready && !open);
+        elements.infoboxBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
+        elements.infoboxBtn.disabled = false;
+        if (state.loading) {
+            elements.infoboxBtn.title = 'Loading knowledge panel…';
+        } else if (ready) {
+            elements.infoboxBtn.title = open ? 'Hide knowledge panel' : 'Show knowledge panel';
+        } else if (hasCompletedRequest) {
+            elements.infoboxBtn.title = 'No knowledge panel for this search';
+        } else {
+            elements.infoboxBtn.title = 'Knowledge panel';
+        }
+    }
+
+    function applyVisibility() {
+        elements.infobox.style.display = open ? 'flex' : 'none';
+        syncButton();
     }
 
     function clearInfoboxUi() {
@@ -34,14 +62,27 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     function showSkeleton() {
         clearInfoboxUi();
         elements.infobox.classList.add('infobox--skeleton');
-        elements.infobox.style.display = 'flex';
+        applyVisibility();
     }
 
     function showEmpty() {
         clearInfoboxUi();
         elements.infobox.classList.add('infobox--empty');
         elements.infoboxDescription.textContent = 'No infobox available';
-        elements.infobox.style.display = 'flex';
+        applyVisibility();
+    }
+
+    function setOpen(next: boolean) {
+        open = next;
+        applyVisibility();
+        if (open) {
+            elements.infobox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function toggle() {
+        if (!open && !state.loading && !hasCompletedRequest) return;
+        setOpen(!open);
     }
 
     async function fetchInfobox(query: string) {
@@ -49,6 +90,8 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         const requestId = ++activeRequestId;
         activeQuery = query;
         state.loading = true;
+        state.data = null;
+        hasCompletedRequest = false;
         showSkeleton();
         try {
             let response: Response;
@@ -59,13 +102,21 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             const data = await response.json();
             if (requestId !== activeRequestId || query !== activeQuery) return;
             state.data = data.infobox;
+            hasCompletedRequest = true;
             if (data.infobox) renderInfobox(data.infobox);
             else showEmpty();
         } catch (error) {
             console.error('Error fetching infobox:', error);
-            if (requestId === activeRequestId && query === activeQuery) showEmpty();
+            if (requestId === activeRequestId && query === activeQuery) {
+                state.data = null;
+                hasCompletedRequest = true;
+                showEmpty();
+            }
         } finally {
-            if (requestId === activeRequestId) state.loading = false;
+            if (requestId === activeRequestId) {
+                state.loading = false;
+                syncButton();
+            }
         }
     }
 
@@ -144,7 +195,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             });
         }
         elements.infoboxSource.href = data.url;
-        elements.infobox.style.display = 'flex';
+        applyVisibility();
     }
 
     function buildCastCard(member: InfoboxCastMember) {
@@ -202,5 +253,14 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         return card;
     }
 
-    return { reset, fetchInfobox };
+    function setupEvents() {
+        elements.infoboxBtn.addEventListener('click', () => {
+            toggle();
+        });
+        syncButton();
+    }
+
+    syncButton();
+
+    return { reset, fetchInfobox, setupEvents, toggle, setOpen };
 }
