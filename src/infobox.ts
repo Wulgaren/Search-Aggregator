@@ -1,122 +1,20 @@
 import type { InfoboxCastMember, InfoboxData, InfoboxDeps, InfoboxElements, InfoboxLink, InfoboxState } from './types';
-
-const HEIGHT_TRANSITION_MS = 650;
+import { createHeightTransition } from './height-transition';
 
 export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxDeps) {
     const state: InfoboxState = { data: null, loading: false };
     let activeRequestId = 0;
     let activeQuery = '';
-    let heightAnimToken = 0;
-    let heightAnimCleanup: (() => void) | null = null;
+    const heightTx = createHeightTransition(elements.infobox);
 
     function reset() {
         activeRequestId += 1;
         activeQuery = '';
         state.data = null;
         state.loading = false;
-        clearHeightAnimation();
+        heightTx.clear();
         clearInfoboxUi();
         elements.infobox.style.display = 'none';
-    }
-
-    function clearHeightAnimation() {
-        heightAnimToken += 1;
-        if (heightAnimCleanup) {
-            heightAnimCleanup();
-            heightAnimCleanup = null;
-        }
-        elements.infobox.classList.remove('infobox--height-animating', 'infobox--collapsing');
-        elements.infobox.style.height = '';
-    }
-
-    function isInfoboxLaidOut() {
-        const el = elements.infobox;
-        return el.style.display !== 'none' && el.offsetParent !== null && typeof el.getBoundingClientRect === 'function';
-    }
-
-    function runHeightTransition(fromHeight: number, toHeight: number, onComplete?: () => void) {
-        const el = elements.infobox;
-        if (!Number.isFinite(fromHeight) || !Number.isFinite(toHeight) || Math.abs(fromHeight - toHeight) < 1) {
-            el.style.height = '';
-            onComplete?.();
-            return;
-        }
-
-        const token = ++heightAnimToken;
-        const collapsing = toHeight === 0;
-        el.classList.add('infobox--height-animating');
-        if (collapsing) el.classList.add('infobox--collapsing');
-        el.style.height = `${fromHeight}px`;
-        // Force reflow so the browser registers the starting height before transitioning
-        void el.offsetHeight;
-        el.style.height = `${toHeight}px`;
-
-        const finish = () => {
-            if (token !== heightAnimToken) return;
-            el.classList.remove('infobox--height-animating', 'infobox--collapsing');
-            el.style.height = '';
-            heightAnimCleanup = null;
-            onComplete?.();
-        };
-
-        const onEnd = (event: TransitionEvent) => {
-            if (event.target !== el || event.propertyName !== 'height') return;
-            el.removeEventListener('transitionend', onEnd);
-            finish();
-        };
-
-        const timeoutId = window.setTimeout(() => {
-            el.removeEventListener('transitionend', onEnd);
-            finish();
-        }, HEIGHT_TRANSITION_MS + 100);
-
-        heightAnimCleanup = () => {
-            window.clearTimeout(timeoutId);
-            el.removeEventListener('transitionend', onEnd);
-            el.classList.remove('infobox--height-animating', 'infobox--collapsing');
-            el.style.height = '';
-        };
-
-        el.addEventListener('transitionend', onEnd);
-    }
-
-    function withHeightTransition(updateDom: () => void) {
-        const el = elements.infobox;
-        if (!isInfoboxLaidOut()) {
-            updateDom();
-            return;
-        }
-
-        const fromHeight = el.getBoundingClientRect().height;
-        clearHeightAnimation();
-        updateDom();
-
-        el.style.height = 'auto';
-        const toHeight = el.getBoundingClientRect().height;
-        runHeightTransition(fromHeight, toHeight);
-    }
-
-    function collapseAndHide() {
-        const el = elements.infobox;
-        const fromHeight = isInfoboxLaidOut() ? el.getBoundingClientRect().height : 0;
-        clearHeightAnimation();
-
-        clearInfoboxUi();
-        el.classList.add('infobox--empty');
-        elements.infoboxDescription.textContent = 'No infobox available';
-        el.style.display = 'flex';
-
-        const hide = () => {
-            clearInfoboxUi();
-            el.style.display = 'none';
-        };
-
-        if (!isInfoboxLaidOut() || fromHeight < 1) {
-            hide();
-            return;
-        }
-
-        runHeightTransition(fromHeight, 0, hide);
     }
 
     function clearInfoboxUi() {
@@ -140,6 +38,29 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         clearInfoboxUi();
         elements.infobox.classList.add('infobox--skeleton');
         elements.infobox.style.display = 'flex';
+    }
+
+    function collapseAndHide() {
+        const el = elements.infobox;
+        const fromHeight = heightTx.isLaidOut() ? el.getBoundingClientRect().height : 0;
+        heightTx.clear();
+
+        clearInfoboxUi();
+        el.classList.add('infobox--empty');
+        elements.infoboxDescription.textContent = 'No infobox available';
+        el.style.display = 'flex';
+
+        const hide = () => {
+            clearInfoboxUi();
+            el.style.display = 'none';
+        };
+
+        if (!heightTx.isLaidOut() || fromHeight < 1) {
+            hide();
+            return;
+        }
+
+        heightTx.animateFromTo(fromHeight, 0, hide);
     }
 
     function showEmpty() {
@@ -172,7 +93,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     }
 
     function applyNoImageFallback() {
-        withHeightTransition(() => {
+        heightTx.withTransition(() => {
             elements.infoboxImage.classList.add('no-image');
             elements.infobox.classList.add('no-image-fallback');
             elements.infoboxImage.style.cursor = '';
@@ -186,7 +107,7 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             return;
         }
 
-        withHeightTransition(() => {
+        heightTx.withTransition(() => {
             elements.infobox.classList.remove('infobox--skeleton', 'infobox--empty');
             elements.infoboxTitle.textContent = data.title;
             elements.infoboxDescription.textContent = data.description;
