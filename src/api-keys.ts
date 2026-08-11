@@ -126,7 +126,7 @@ export function hasTavilySearchConfigured(): boolean {
 }
 
 function hasCommercialApiKeys(): boolean {
-    return hasGoogleSearchConfigured();
+    return hasGoogleSearchConfigured() && hasTavilySearchConfigured();
 }
 
 function loadApiSettingsFields() {
@@ -166,7 +166,7 @@ function maybeNotifyMissingCommercialKeys() {
     if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
     sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
     openApiSettingsDialog(
-        'Add Google Custom Search credentials (cx + service account JSON) for Google results. Optionally paste a Tavily API key for extra commercial results. Brave, Marginalia, and Groq use Vercel environment variables (BRAVE_API_KEY, MARGINALIA_API_KEY, GROQ_API_KEY).'
+        'Add Google Custom Search credentials (cx + service account JSON) and a Tavily API key for commercial results. Brave, Marginalia, and Groq use Vercel environment variables (BRAVE_API_KEY, MARGINALIA_API_KEY, GROQ_API_KEY).'
     );
 }
 

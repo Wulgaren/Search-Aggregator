@@ -283,7 +283,7 @@ a:hover {
   text-shadow: 0 0 0 white;
 }
 
-/* API keys dialog (Google only) */
+/* API keys dialog (Google + Tavily) */
 .api-settings-dialog {
   position: fixed;
   left: 50%;
