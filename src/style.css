@@ -849,8 +849,8 @@ a:hover {
 }
 
 .result-item[data-engine="tavily"] .result-source-tag {
-  background: rgba(239, 68, 68, 0.18);
-  color: #f87171;
+  background: rgba(251, 146, 60, 0.15);
+  color: var(--commercial-accent);
 }
 
 .result-item[data-engine="marginalia"] .result-source-tag {
@@ -865,10 +865,6 @@ a:hover {
 
 .result-item[data-source="commercial"] .result-source {
   color: var(--commercial-accent);
-}
-
-.result-item[data-engine="tavily"][data-source="commercial"] .result-source {
-  color: #f87171;
 }
 
 .result-item[data-source="noncommercial"] .result-source {
