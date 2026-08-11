@@ -106,7 +106,7 @@ describe('handleTavilySearchRequest', () => {
         const body = JSON.parse(String(init!.body));
         expect(body).toMatchObject({
             query: 'cats',
-            search_depth: 'basic',
+            search_depth: 'ultra-fast',
             include_answer: false,
             max_results: 10,
         });
