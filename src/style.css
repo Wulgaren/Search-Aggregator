@@ -1283,6 +1283,12 @@ a:hover {
   animation: fadeSlideIn 0.4s ease-out;
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
+}
+
+.infobox.infobox--height-animating {
+  overflow: hidden;
+  transition: height 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .infobox::before {
@@ -1597,7 +1603,7 @@ a:hover {
 }
 
 .infobox--empty {
-  min-height: calc(180px + 3rem);
+  min-height: auto;
   align-items: center;
 }
 
@@ -1610,7 +1616,7 @@ a:hover {
 }
 
 .infobox--empty .infobox-content {
-  min-height: 180px;
+  min-height: 0;
   justify-content: center;
 }
 
@@ -1667,14 +1673,6 @@ a:hover {
 
   .infobox--skeleton .infobox-description {
     height: 3.5rem;
-  }
-
-  .infobox--empty {
-    min-height: calc(130px + 2.5rem);
-  }
-
-  .infobox--empty .infobox-content {
-    min-height: 130px;
   }
 }
 
