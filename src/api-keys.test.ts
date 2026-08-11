@@ -7,6 +7,7 @@ vi.mock('./google-search', () => ({
 
 vi.mock('./tavily-search', () => ({
     invalidateTavilySearchCache: vi.fn(),
+    primeTavilyConnection: vi.fn(),
 }));
 
 import {

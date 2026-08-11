@@ -12,6 +12,30 @@ const TAVILY_SEARCH_CACHE_NAME = 'search-api-tavily-v1';
 const TAVILY_SEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const TAVILY_SEARCH_EXPIRES_HEADER = 'X-Search-Cache-Expires';
 const TAVILY_MAX_RESULTS = 10;
+const TAVILY_API_ORIGIN = 'https://api.tavily.com';
+const TAVILY_PRECONNECT_ATTR = 'data-tavily-preconnect';
+
+/**
+ * Warm DNS + TLS to Tavily when a key is configured (homepage or before search).
+ * Skips injecting duplicate link tags. Does not send an API request.
+ */
+export function primeTavilyConnection(): void {
+    if (typeof document === 'undefined') return;
+    if (document.head.querySelector(`link[${TAVILY_PRECONNECT_ATTR}]`)) return;
+
+    const dns = document.createElement('link');
+    dns.rel = 'dns-prefetch';
+    dns.href = TAVILY_API_ORIGIN;
+    dns.setAttribute(TAVILY_PRECONNECT_ATTR, '1');
+
+    const pre = document.createElement('link');
+    pre.rel = 'preconnect';
+    pre.href = TAVILY_API_ORIGIN;
+    pre.crossOrigin = 'anonymous';
+    pre.setAttribute(TAVILY_PRECONNECT_ATTR, '1');
+
+    document.head.append(dns, pre);
+}
 
 type TavilyResultItem = {
     title?: string;

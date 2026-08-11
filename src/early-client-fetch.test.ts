@@ -11,6 +11,10 @@ vi.mock('./api-keys', () => ({
     hasTavilySearchConfigured: vi.fn(() => false),
 }));
 
+vi.mock('./tavily-search', () => ({
+    primeTavilyConnection: vi.fn(),
+}));
+
 vi.mock('./query-bangs', async (importOriginal) => {
     const actual = await importOriginal<typeof import('./query-bangs')>();
     return {
@@ -22,10 +26,12 @@ vi.mock('./query-bangs', async (importOriginal) => {
 import { hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys';
 import { bootstrapEarlyFetch } from './early-client-fetch';
 import { redirectForBang } from './query-bangs';
+import { primeTavilyConnection } from './tavily-search';
 
 const hasGoogle = vi.mocked(hasGoogleSearchConfigured);
 const hasTavily = vi.mocked(hasTavilySearchConfigured);
 const redirect = vi.mocked(redirectForBang);
+const primeTavily = vi.mocked(primeTavilyConnection);
 
 type EarlyKey = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby' | 'images' | 'infobox';
 
@@ -61,6 +67,7 @@ describe('bootstrapEarlyFetch', () => {
         hasGoogle.mockReturnValue(false);
         hasTavily.mockReturnValue(false);
         redirect.mockReset();
+        primeTavily.mockReset();
         window.__earlyFetch = undefined;
         window.history.replaceState({}, '', '/');
     });
@@ -72,6 +79,15 @@ describe('bootstrapEarlyFetch', () => {
 
     it('no-ops without ?q=', () => {
         expect(() => bootstrapEarlyFetch()).not.toThrow();
+        expect(window.__earlyFetch).toBeUndefined();
+        expect(searchApiFetch).not.toHaveBeenCalled();
+        expect(primeTavily).not.toHaveBeenCalled();
+    });
+
+    it('primes Tavily connection on homepage when key configured', () => {
+        hasTavily.mockReturnValue(true);
+        bootstrapEarlyFetch();
+        expect(primeTavily).toHaveBeenCalledTimes(1);
         expect(window.__earlyFetch).toBeUndefined();
         expect(searchApiFetch).not.toHaveBeenCalled();
     });
@@ -121,6 +137,7 @@ describe('bootstrapEarlyFetch', () => {
         window.history.replaceState({}, '', '/?q=cats');
         bootstrapEarlyFetch();
 
+        expect(primeTavily).toHaveBeenCalledTimes(1);
         expect(window.__earlyFetch!.tavily).toBeInstanceOf(Promise);
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths.some((p) => p.includes('source=tavily'))).toBe(true);

@@ -1,6 +1,6 @@
 /** Google Custom Search + Tavily credentials + OAuth token cache (localStorage). */
 import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
-import { invalidateTavilySearchCache } from './tavily-search';
+import { invalidateTavilySearchCache, primeTavilyConnection } from './tavily-search';
 import type { ApiSecretsFields, ApplyApiSecretsResult, StoredGoogleToken } from './types';
 
 export const LS_KEYS = {
@@ -210,6 +210,9 @@ function setupApiSettingsPanel() {
         void invalidateGoogleSearchCache();
         if (getApiSecret('TAVILY_API_KEY') !== beforeTavily) {
             void invalidateTavilySearchCache();
+        }
+        if (hasTavilySearchConfigured()) {
+            primeTavilyConnection();
         }
         sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();

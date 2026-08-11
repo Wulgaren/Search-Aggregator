@@ -8,6 +8,7 @@ import { getApiSecret } from './api-keys';
 import {
     handleTavilySearchRequest,
     isTavilyClientSearchUrl,
+    primeTavilyConnection,
 } from './tavily-search';
 
 const getSecret = vi.mocked(getApiSecret);
@@ -21,6 +22,30 @@ describe('isTavilyClientSearchUrl', () => {
             isTavilyClientSearchUrl(new URL('https://example.test/api/search?q=a&source=brave'))
         ).toBe(false);
         expect(isTavilyClientSearchUrl(new URL('https://example.test/api/ai'))).toBe(false);
+    });
+});
+
+describe('primeTavilyConnection', () => {
+    beforeEach(() => {
+        document.head.querySelectorAll('link[data-tavily-preconnect]').forEach((el) => el.remove());
+    });
+
+    afterEach(() => {
+        document.head.querySelectorAll('link[data-tavily-preconnect]').forEach((el) => el.remove());
+    });
+
+    it('injects dns-prefetch and preconnect once', () => {
+        primeTavilyConnection();
+        primeTavilyConnection();
+        const links = [...document.head.querySelectorAll('link[data-tavily-preconnect]')];
+        expect(links).toHaveLength(2);
+        expect(links.map((l) => (l as HTMLLinkElement).rel).sort()).toEqual([
+            'dns-prefetch',
+            'preconnect',
+        ]);
+        expect(links.every((l) => (l as HTMLLinkElement).href === 'https://api.tavily.com/')).toBe(
+            true
+        );
     });
 });
 

@@ -1,12 +1,17 @@
 import { hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch } from './search-fetch';
+import { primeTavilyConnection } from './tavily-search';
 
 /**
  * Starts `?q=` search fetches ASAP (wired from HTML before deferred `script.js`).
  * Shares `searchApiFetch` with the main bundle so Google/Tavily caching stays consistent.
+ * When a Tavily key is present, primes DNS/TLS even on the homepage (no `?q=`).
  */
 export function bootstrapEarlyFetch(): void {
+    const hasTavily = hasTavilySearchConfigured();
+    if (hasTavily) primeTavilyConnection();
+
     const q = new URLSearchParams(window.location.search).get('q');
     if (!q) return;
     const resolved = resolveQueryForBangHandling(q);
@@ -18,7 +23,6 @@ export function bootstrapEarlyFetch(): void {
     if (!searchQ.trim()) return;
     const base = `/api/search?q=${encodeURIComponent(searchQ)}&page=1&source=`;
     const hasGoogle = hasGoogleSearchConfigured();
-    const hasTavily = hasTavilySearchConfigured();
     const enc = encodeURIComponent(searchQ);
     const imgGoogle = `/api/search?q=${enc}&source=images&imageSource=google&page=1`;
     const imgGooglePromise = hasGoogle ? searchApiFetch(imgGoogle) : null;
