@@ -117,7 +117,7 @@ Set these in **Project → Settings → Environment Variables** so `/api/search`
 
 ### Result Sources
 
-- **Commercial**: Results from Google and Brave Search
+- **Commercial**: Results from Google, Brave Search, and optional Tavily (localStorage API key)
 - **Non-commercial**: Results from Marginalia Search (indie web, personal sites, blogs)
 
 ## Development
@@ -133,7 +133,7 @@ npm run build
 
 2. Serve `public/` with any static server (e.g. `npx serve public`) and open `index.html`. Same-origin `/api/*` routes require `vercel dev` or a deployed preview.
 
-Use `npm run typecheck` for TypeScript-only checks. Use `npm run watch` to rebuild client bundles when editing `src/`. Use `npm test` / `npm run test:watch` for Vitest.
+Use `npm run typecheck` for TypeScript-only checks. Use `npm run watch` to rebuild client bundles when editing `src/`. Use `npm test` / `npm run test:watch` for Vitest. Use `npm run check` to run typecheck + lint + tests (also runs via Husky on `git commit`).
 
 ### Code Structure
 
