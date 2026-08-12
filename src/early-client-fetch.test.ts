@@ -27,16 +27,15 @@ import { hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys
 import { bootstrapEarlyFetch } from './early-client-fetch';
 import { redirectForBang } from './query-bangs';
 import { primeTavilyConnection } from './tavily-search';
+import type { EarlyFetchKey } from './types';
 
 const hasGoogle = vi.mocked(hasGoogleSearchConfigured);
 const hasTavily = vi.mocked(hasTavilySearchConfigured);
 const redirect = vi.mocked(redirectForBang);
 const primeTavily = vi.mocked(primeTavilyConnection);
 
-type EarlyKey = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby' | 'images' | 'infobox';
-
 /** Mirrors script.ts takeEarlyFetchPromise consumption (not exported from early-client-fetch). */
-function takeEarlyFetchPromise(key: EarlyKey, query: string): Promise<Response> | null {
+function takeEarlyFetchPromise(key: EarlyFetchKey, query: string): Promise<Response> | null {
     const early = window.__earlyFetch;
     if (!early || early.query !== query) return null;
     const promise = early[key];
@@ -49,7 +48,8 @@ function takeEarlyFetchPromise(key: EarlyKey, query: string): Promise<Response> 
         !early.marginalia &&
         !early.wiby &&
         !early.images &&
-        !early.infobox
+        !early.infobox &&
+        !early.utility
     ) {
         delete window.__earlyFetch;
     }
@@ -70,6 +70,10 @@ describe('bootstrapEarlyFetch', () => {
         primeTavily.mockReset();
         delete window.__earlyFetch;
         window.history.replaceState({}, '', '/');
+        Object.defineProperty(window.navigator, 'language', {
+            configurable: true,
+            get: () => 'en-US',
+        });
     });
 
     afterEach(() => {
@@ -106,6 +110,7 @@ describe('bootstrapEarlyFetch', () => {
         expect(early!.google).toBeUndefined();
         expect(early!.tavily).toBeUndefined();
         expect(early!.images).toBeUndefined();
+        expect(early!.utility).toBeUndefined();
 
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths).toEqual(
@@ -118,6 +123,7 @@ describe('bootstrapEarlyFetch', () => {
         );
         expect(paths.some((p) => p.includes('source=google'))).toBe(false);
         expect(paths.some((p) => p.includes('source=tavily'))).toBe(false);
+        expect(paths.some((p) => p.includes('source=utility'))).toBe(false);
     });
 
     it('adds google + images early fetches when Google configured', () => {
@@ -141,6 +147,88 @@ describe('bootstrapEarlyFetch', () => {
         expect(window.__earlyFetch!.tavily).toBeInstanceOf(Promise);
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths.some((p) => p.includes('source=tavily'))).toBe(true);
+    });
+
+    it('skips utility early fetch for non-intent queries', () => {
+        window.history.replaceState({}, '', '/?q=cats');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeUndefined();
+        const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
+        expect(paths.some((p) => p.includes('source=utility'))).toBe(false);
+        expect(paths).toHaveLength(4);
+    });
+
+    it('registers utility early fetch for currency intent', () => {
+        window.history.replaceState({}, '', '/?q=100+usd+to+eur');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
+        expect(paths).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('source=utility&kind=currency'),
+            ])
+        );
+        const utilityPath = paths.find((p) => p.includes('source=utility'));
+        expect(utilityPath).toContain('amount=100');
+        expect(utilityPath).toContain('from=USD');
+        expect(utilityPath).toContain('to=EUR');
+    });
+
+    it('registers utility early fetch for translate intent', () => {
+        window.history.replaceState({}, '', '/?q=translate+hello+to+french');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        const utilityPath = searchApiFetch.mock.calls
+            .map((c) => String(c[0]))
+            .find((p) => p.includes('source=utility'));
+        expect(utilityPath).toContain('kind=translate');
+        expect(utilityPath).toContain('text=hello');
+        expect(utilityPath).toContain('to=fr');
+    });
+
+    it('registers utility early fetch for timezone intent', () => {
+        window.history.replaceState({}, '', '/?q=time+in+japan');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        const utilityPath = searchApiFetch.mock.calls
+            .map((c) => String(c[0]))
+            .find((p) => p.includes('source=utility'));
+        expect(utilityPath).toContain('kind=timezone');
+        expect(utilityPath).toContain('country=jp');
+    });
+
+    it('skips utility network for empty language keyword', () => {
+        window.history.replaceState({}, '', '/?q=language');
+        bootstrapEarlyFetch();
+        expect(window.__earlyFetch?.utility).toBeUndefined();
+        expect(
+            searchApiFetch.mock.calls.map((c) => String(c[0])).some((p) => p.includes('source=utility'))
+        ).toBe(false);
+    });
+
+    it('skips utility network for empty currency keyword', () => {
+        window.history.replaceState({}, '', '/?q=currency');
+        bootstrapEarlyFetch();
+        expect(window.__earlyFetch?.utility).toBeUndefined();
+        expect(
+            searchApiFetch.mock.calls.map((c) => String(c[0])).some((p) => p.includes('source=utility'))
+        ).toBe(false);
+    });
+
+    it('registers utility early fetch for empty timezone keyword (locale default)', () => {
+        window.history.replaceState({}, '', '/?q=timezone');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        const utilityPath = searchApiFetch.mock.calls
+            .map((c) => String(c[0]))
+            .find((p) => p.includes('source=utility'));
+        expect(utilityPath).toContain('kind=timezone');
+        expect(utilityPath).toContain('country=us');
     });
 
     it('bang redirect does not register __earlyFetch', () => {
@@ -168,5 +256,18 @@ describe('bootstrapEarlyFetch', () => {
             void takeEarlyFetchPromise(key, 'cats');
         }
         expect(window.__earlyFetch).toBeUndefined();
+    });
+
+    it('takeEarlyFetch-style consumption returns utility promise once', async () => {
+        window.history.replaceState({}, '', '/?q=100+usd+to+eur');
+        bootstrapEarlyFetch();
+
+        const first = takeEarlyFetchPromise('utility', '100 usd to eur');
+        expect(first).toBeInstanceOf(Promise);
+        const res = await first!;
+        const body = await res.json();
+        expect(body.path).toContain('source=utility&kind=currency');
+
+        expect(takeEarlyFetchPromise('utility', '100 usd to eur')).toBeNull();
     });
 });
