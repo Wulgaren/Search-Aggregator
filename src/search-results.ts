@@ -121,18 +121,12 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         source: EdgeSource | 'google',
         sourceData: SourcePayload | undefined,
         page: number,
-        sessionId: number,
         query: string
     ) {
         const state = getState(source);
         if (sourceData?.error) {
             state.hasMore = false;
             state.error = sourceData.error;
-            if (source === 'google' && shouldOpenGoogleSettings(String(sourceData.error))) {
-                if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
-                    deps.openApiSettingsDialog(String(sourceData.error));
-                }
-            }
         } else if (sourceData) {
             state.hasMore = sourceData.hasMore;
             state.results = [...state.results, ...sourceData.results];
@@ -183,7 +177,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             const data = parseSearchApiResponse(raw);
             if (sessionId !== searchSessionId || query !== currentQuery) return;
             for (const source of applySources) {
-                applySourcePayload(source, data[source], page, sessionId, query);
+                applySourcePayload(source, data[source], page, query);
             }
         } catch (error) {
             if (isAbortError(error)) return;
@@ -240,18 +234,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             const raw: unknown = await response.json();
             const data = parseSearchApiResponse(raw);
             if (sessionId !== searchSessionId || query !== currentQuery) return;
-            applySourcePayload(source, data[source], page, sessionId, query);
+            applySourcePayload(source, data[source], page, query);
             applyBraveFallback(data, page, sessionId, query);
         } catch (error) {
             if (isAbortError(error)) return;
             const errMsg = error instanceof Error ? error.message : String(error);
             state.hasMore = false;
             state.error = errMsg;
-            if (shouldOpenGoogleSettings(errMsg)) {
-                if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
-                    deps.openApiSettingsDialog(errMsg);
-                }
-            }
         } finally {
             if (sessionId === searchSessionId && query === currentQuery) state.loading = false;
         }
@@ -381,10 +370,12 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (braveState.results.length > 0 || googleState.results.length > 0 || tavilyState.results.length > 0)
             return false;
 
-        const googleConfigured = deps.hasGoogleSearchConfigured();
-        const braveFailed = Boolean(braveState['error']);
-        const googleFailed = googleConfigured ? Boolean(googleState['error']) : true;
-        if (!braveFailed || !googleFailed) return false;
+        // Redirect only when Google + Brave + Tavily all hard-failed (error in state).
+        // Missing Google/Tavily env is quiet empty (no error) and must not redirect alone.
+        const braveFailed = Boolean(braveState.error);
+        const googleFailed = Boolean(googleState.error);
+        const tavilyFailed = Boolean(tavilyState.error);
+        if (!braveFailed || !googleFailed || !tavilyFailed) return false;
 
         googleFallbackRedirected = true;
         redirectToGoogleSearch(query);
@@ -486,8 +477,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const anyLoading = braveState.loading || googleState.loading || tavilyState.loading;
         if (interleaved.length === 0) {
             if (!anyLoading) {
+                // Google failures stay quiet in the UI (error kept in state for redirect only).
                 elements.commercialResults.innerHTML =
-                    googleState.error && braveState.error
+                    braveState.error && tavilyState.error
                         ? `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`
                         : `<div class="empty-state"><p>No results found</p></div>`;
             }
@@ -572,9 +564,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             marginaliaState.loading ||
             wibyState.loading;
         const allErrors = Boolean(
-            googleState.error &&
+            braveState.error &&
+                tavilyState.error &&
                 marginaliaState.error &&
-                braveState.error &&
                 wibyState.error
         );
         if (allResults.length === 0) {
@@ -641,33 +633,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         forceRenderMergedIfNeeded,
         getCurrentQuery,
     };
-}
-
-function isPermanentGoogleApiError(message: string): boolean {
-    if (!message || typeof message !== 'string') return false;
-    const m = message.toLowerCase();
-    if (m.includes('does not have the access to custom search')) return true;
-    if (m.includes('custom search json api')) return true;
-    if (m.includes('quota exceeded') || m.includes('daily limit')) return true;
-    if (m.includes('billing') && m.includes('enable')) return true;
-    return false;
-}
-
-function shouldOpenGoogleSettings(message: string): boolean {
-    return isAuthLikeApiError(message) && !isPermanentGoogleApiError(message);
-}
-
-function isAuthLikeApiError(message: string): boolean {
-    if (!message || typeof message !== 'string') return false;
-    const m = message.toLowerCase();
-    if (m.includes('401') || m.includes('403')) return true;
-    if (m.includes('unauthorized') || m.includes('forbidden')) return true;
-    if (m.includes('not configured')) return true;
-    if (m.includes('invalid') && (m.includes('key') || m.includes('token') || m.includes('credential'))) return true;
-    if (m.includes('token exchange failed')) return true;
-    if (m.includes('api key')) return true;
-    if (m.includes('authentication')) return true;
-    return false;
 }
 
 function interleaveArrays(...arrays: SearchResult[][]): SearchResult[] {
@@ -881,10 +846,10 @@ function updateCount(element: HTMLElement, count: number, hasMore: boolean) {
     element.textContent = hasMore ? `${count}+ results` : `${count} results`;
 }
 
-function createPage1Settled(deps: SearchDeps): Record<Page1Source, boolean> {
+function createPage1Settled(_deps?: SearchDeps): Record<Page1Source, boolean> {
     return {
         brave: false,
-        google: !deps.hasGoogleSearchConfigured(),
+        google: false,
         // Always wait for aggregate's tavily section (empty when server has no key).
         tavily: false,
         marginalia: false,

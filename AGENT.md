@@ -7,8 +7,8 @@
 - **Resolution:** Use `pool: 'forks'` + `poolOptions.forks.execArgv: ['--no-webstorage']` (gate on `nodeMajor >= 25`). Optionally `environmentOptions.jsdom.url: 'http://localhost/'` for opaque-origin SecurityError. `NODE_OPTIONS=--no-webstorage` also works as a fallback.
 
 ### Google Cache Storage in jsdom
-- **Struggle:** jsdom has no `caches` API; `createCachedGoogleSearchGet` needs hit/miss/expiry coverage.
-- **Resolution:** Stub `caches` with an in-memory Map keyed by request URL; set `X-Search-Cache-Expires` via fake timers for expiry. Seed `localStorage` OAuth token to skip JWT/`crypto.subtle` when testing CSE fetch.
+- **Struggle:** (Historical) Client Google CSE used Cache Storage; jsdom has no `caches` API.
+- **Resolution:** Google CSE now runs on Vercel Edge (`api/lib/google-search.ts`); client Cache API path removed. Edge tests mock `fetch` only.
 
 ### ESLint `assertionStyle: never` + `noPropertyAccessFromIndexSignature`
 - **Struggle:** Replacing `as` casts with `Record<string, unknown>` narrowing still fails `tsc` on `obj.prop` (index signature) and `exactOptionalPropertyTypes` when assigning `T | undefined` into optional fields.

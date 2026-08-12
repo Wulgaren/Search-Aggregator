@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ImageDeps, ImageElements, ImageItem } from './types';
-
-vi.mock('./api-keys', () => ({
-    hasGoogleSearchConfigured: vi.fn(() => false),
-}));
-
-import { hasGoogleSearchConfigured } from './api-keys';
 import { createImagesComponent } from './images';
-
-const hasGoogle = vi.mocked(hasGoogleSearchConfigured);
 
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500): Response {
     return {
@@ -87,7 +79,6 @@ describe('createImagesComponent', () => {
 
     beforeEach(() => {
         vi.useRealTimers();
-        hasGoogle.mockReturnValue(false);
         elements = buildElements();
         deps = buildDeps();
     });
@@ -151,7 +142,6 @@ describe('createImagesComponent', () => {
     });
 
     it('dedupes by normalized full URL (protocol + trailing slash)', async () => {
-        hasGoogle.mockReturnValue(true);
         deps.takeEarlyFetch = vi.fn(async () =>
             jsonResponse({
                 images: [
@@ -222,8 +212,7 @@ describe('createImagesComponent', () => {
         expect(elements.sliderTrack.querySelector('.image-slider-status--error')).toBeNull();
     });
 
-    it('consumes early Brave images when Google is not configured', async () => {
-        hasGoogle.mockReturnValue(false);
+    it('consumes early combined images when present', async () => {
         deps.takeEarlyFetch = vi.fn(async () =>
             jsonResponse({
                 images: [img({ full: 'https://cdn.example/b.jpg', title: 'Brave', thumbnail: 'https://cdn.example/b-t.jpg' })],
@@ -257,13 +246,12 @@ describe('createImagesComponent', () => {
     it('appends page-2 images without replacing page-1 thumbs', async () => {
         let pageCalls = 0;
         deps.apiFetch = vi.fn(async (path: string) => {
-            if (path.includes('page=1') || path.includes('imageSource=brave')) {
-                pageCalls += 1;
+            pageCalls += 1;
+            if (path.includes('page=1')) {
                 return jsonResponse({
                     images: [img({ full: 'https://cdn.example/p1.jpg', title: 'P1', thumbnail: 'https://cdn.example/p1-t.jpg' })],
                 });
             }
-            pageCalls += 1;
             return jsonResponse({
                 images: [img({ full: 'https://cdn.example/p2.jpg', title: 'P2', thumbnail: 'https://cdn.example/p2-t.jpg' })],
                 hasMore: false,
@@ -274,7 +262,6 @@ describe('createImagesComponent', () => {
         await images.fetchImages('cats', 1);
         expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(1);
 
-        // trigger scroll pagination path via public fetchImages page 2
         await images.fetchImages('cats', 2);
 
         const thumbs = elements.sliderTrack.querySelectorAll('.slider-image');
@@ -284,8 +271,7 @@ describe('createImagesComponent', () => {
         expect(pageCalls).toBeGreaterThanOrEqual(2);
     });
 
-    it('uses combined images URL when Google configured and no early fetch', async () => {
-        hasGoogle.mockReturnValue(true);
+    it('uses combined images URL when no early fetch', async () => {
         deps.takeEarlyFetch = vi.fn(async () => null);
         deps.apiFetch = vi.fn(async () =>
             jsonResponse({
@@ -308,7 +294,6 @@ describe('createImagesComponent', () => {
     });
 
     it('does not schedule delayed Brave after combined early response', async () => {
-        hasGoogle.mockReturnValue(true);
         deps.takeEarlyFetch = vi.fn(async () =>
             jsonResponse({
                 images: [
@@ -332,8 +317,7 @@ describe('createImagesComponent', () => {
         expect(deps.apiFetch).not.toHaveBeenCalled();
     });
 
-    it('shows empty when Google configured but both sources return empty ok', async () => {
-        hasGoogle.mockReturnValue(true);
+    it('shows empty when combined sources return empty ok', async () => {
         deps.takeEarlyFetch = vi.fn(async () => jsonResponse({ images: [] }));
         deps.apiFetch = vi.fn(async () => jsonResponse({ images: [] }));
 

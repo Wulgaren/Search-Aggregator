@@ -178,40 +178,8 @@ export type SearchDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
     takeEarlyFetch: (key: 'aggregate' | 'google', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
-    hasGoogleSearchConfigured: () => boolean;
-    openApiSettingsDialog: (message?: string) => void;
     onGoogleCorrection?: (query: string, correctedQuery: string) => void;
 };
-
-export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
-export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string };
-export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
-
-export type ServiceAccountConfig = {
-    client_email: string;
-    private_key: string;
-};
-export type PartialServiceAccountConfig = {
-    client_email?: string;
-    private_key?: string;
-};
-
-export type OAuthTokenErrorData = { error_description?: string };
-export type GoogleApiErrorData = { error?: { message?: string } };
-export type GoogleWebItem = { title: string; link: string; displayLink: string; snippet?: string };
-export type GoogleImageMeta = { thumbnailLink?: string; width?: number; height?: number; contextLink?: string };
-export type GoogleImageItem = { title?: string; link?: string; image?: GoogleImageMeta };
-export type GoogleImageCandidate = {
-    thumbnail?: string;
-    full?: string;
-    title: string;
-    sourceUrl?: string;
-    width?: number;
-    height?: number;
-    source?: string;
-};
-
-export type SearchHandler = (request: Request) => Promise<Response>;
 
 declare global {
     interface Window {

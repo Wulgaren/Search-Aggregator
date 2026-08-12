@@ -1,4 +1,3 @@
-import { hasGoogleSearchConfigured } from './api-keys';
 import type { ImageDeps, ImageElements, ImageItem, ImageState } from './types';
 import { asArray, asRecord, isRecord, readBoolean, readNumber, readString } from './unknown';
 
@@ -179,41 +178,23 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 const earlyImages = await deps.takeEarlyFetch('images', query);
                 if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
 
-                if (hasGoogleSearchConfigured()) {
-                    // Combined Google+Brave (client handler merges both; no delayed Brave top-up).
-                    const combinedResponse =
-                        earlyImages ??
-                        (await deps.apiFetch(
-                            `/api/search?q=${encodeURIComponent(query)}&source=images&page=1`,
-                            { signal }
-                        ));
+                const combinedResponse =
+                    earlyImages ??
+                    (await deps.apiFetch(
+                        `/api/search?q=${encodeURIComponent(query)}&source=images&page=1`,
+                        { signal }
+                    ));
+                if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
+                if (combinedResponse.ok) {
+                    sourceSucceeded = true;
+                    const data: unknown = await combinedResponse.json();
                     if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                    if (combinedResponse.ok) {
-                        sourceSucceeded = true;
-                        const data: unknown = await combinedResponse.json();
-                        if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                        state.images = uniqueImages(parseImageItems(isRecord(data) ? data['images'] : undefined));
-                        if (state.images.length > 0) {
-                            renderImageSlider();
-                            revealImageSection();
-                            setupImageSliderScroll(query);
-                        }
+                    state.images = uniqueImages(parseImageItems(isRecord(data) ? data['images'] : undefined));
+                    if (state.images.length > 0) {
+                        renderImageSlider();
+                        revealImageSection();
+                        setupImageSliderScroll(query);
                     }
-                } else if (earlyImages) {
-                    if (earlyImages.ok) {
-                        sourceSucceeded = true;
-                        const data: unknown = await earlyImages.json();
-                        if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                        state.images = uniqueImages(parseImageItems(isRecord(data) ? data['images'] : undefined));
-                        if (state.images.length > 0) {
-                            renderImageSlider();
-                            revealImageSection();
-                            setupImageSliderScroll(query);
-                        }
-                    }
-                } else {
-                    const braveOk = await fetchBraveImages(query, requestId, signal);
-                    if (braveOk) sourceSucceeded = true;
                 }
                 if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
                 if (state.images.length === 0) {
@@ -245,37 +226,6 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         } finally {
             if (requestId === activeRequestId) state.loading = false;
             if (page > 1) removeImageLoadingIndicator();
-        }
-    }
-
-    /** @returns true if request completed without hard failure */
-    async function fetchBraveImages(query: string, requestId: number, signal: AbortSignal): Promise<boolean> {
-        if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return true;
-        try {
-            const braveResponse = await deps.apiFetch(
-                `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=brave&page=1`,
-                { signal }
-            );
-            if (!braveResponse.ok) return false;
-            const braveData: unknown = await braveResponse.json();
-            if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return true;
-            const braveImages = parseImageItems(isRecord(braveData) ? braveData['images'] : undefined);
-            const uniqueBraveImages = uniqueImages(braveImages, state.images);
-            if (uniqueBraveImages.length === 0) return true;
-            const hadImages = state.images.length > 0;
-            state.images = [...state.images, ...uniqueBraveImages];
-            if (!hadImages) {
-                renderImageSlider();
-                revealImageSection();
-                setupImageSliderScroll(query);
-            } else {
-                appendImagesToSlider(uniqueBraveImages);
-            }
-            return true;
-        } catch (error) {
-            if (isAbortError(error)) return true;
-            console.error('Error fetching Brave images:', error);
-            return false;
         }
     }
 

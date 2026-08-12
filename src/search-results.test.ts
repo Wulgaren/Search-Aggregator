@@ -70,8 +70,6 @@ function makeDeps(overrides: Partial<SearchDeps> = {}): SearchDeps {
         apiFetch: vi.fn(async () => jsonResponse({})),
         takeEarlyFetch: vi.fn(async () => null),
         isMergedView: vi.fn(() => false),
-        hasGoogleSearchConfigured: vi.fn(() => true),
-        openApiSettingsDialog: vi.fn(),
         onGoogleCorrection: vi.fn(),
         ...overrides,
     };
@@ -132,7 +130,6 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('startSearch fetches one aggregate (no source) when no early fetch', async () => {
-        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const apiFetch = apiFetchByRoute({
             aggregate: () =>
                 jsonResponse(
@@ -154,6 +151,7 @@ describe('createSearchResultsComponent', () => {
                         }),
                     })
                 ),
+            google: () => jsonResponse({ google: sourcePayload() }),
         });
         deps.apiFetch = apiFetch;
         deps.takeEarlyFetch = vi.fn(async () => null);
@@ -161,21 +159,20 @@ describe('createSearchResultsComponent', () => {
         component.initInfiniteScroll();
 
         component.startSearch('cats');
+        component.fetchGoogle('cats');
         await vi.waitFor(() => {
             expect(elements.commercialResults.querySelector('.result-item')).toBeTruthy();
             expect(elements.noncommercialResults.querySelectorAll('.result-item').length).toBeGreaterThan(0);
         });
 
         const paths = apiFetch.mock.calls.map(([path]) => path as string);
-        expect(paths).toHaveLength(1);
-        expect(paths[0]).toBe('/api/search?q=cats&page=1');
-        expect(paths[0]).not.toContain('source=');
+        expect(paths).toContain('/api/search?q=cats&page=1');
+        expect(paths.some((p) => p.includes('source=google'))).toBe(true);
         expect(elements.commercialResults.textContent).toContain('Brave Hit');
         expect(elements.noncommercialResults.textContent).toMatch(/Marg Hit|Wiby Hit/);
     });
 
     it('includes Tavily from aggregate in the commercial column', async () => {
-        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const apiFetch = apiFetchByRoute({
             aggregate: () =>
                 jsonResponse(
@@ -196,6 +193,7 @@ describe('createSearchResultsComponent', () => {
                         }),
                     })
                 ),
+            google: () => jsonResponse({ google: sourcePayload() }),
         });
         deps.apiFetch = apiFetch;
         deps.takeEarlyFetch = vi.fn(async () => null);
@@ -203,16 +201,15 @@ describe('createSearchResultsComponent', () => {
         component.initInfiniteScroll();
 
         component.startSearch('cats');
+        component.fetchGoogle('cats');
         await vi.waitFor(() => {
             expect(elements.commercialResults.textContent).toContain('Tavily Hit');
             expect(elements.commercialResults.textContent).toContain('Brave Hit');
         });
         expect(elements.commercialResults.textContent).toContain('Tavily');
-        expect(apiFetch.mock.calls).toHaveLength(1);
     });
 
     it('uses takeEarlyFetch aggregate for page-1 when present', async () => {
-        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const early = jsonResponse(
             aggregateBody({
                 brave: sourcePayload({
@@ -222,12 +219,17 @@ describe('createSearchResultsComponent', () => {
                 }),
             })
         );
-        deps.takeEarlyFetch = vi.fn(async (key) => (key === 'aggregate' ? early : null));
+        deps.takeEarlyFetch = vi.fn(async (key) => {
+            if (key === 'aggregate') return early;
+            if (key === 'google') return jsonResponse({ google: sourcePayload() });
+            return null;
+        });
         deps.apiFetch = apiFetchByRoute({});
         const component = createSearchResultsComponent(elements, deps);
         component.initInfiniteScroll();
 
         component.startSearch('early');
+        component.fetchGoogle('early');
         await vi.waitFor(() => {
             expect(elements.commercialResults.textContent).toContain('Early Brave');
         });
@@ -316,10 +318,33 @@ describe('createSearchResultsComponent', () => {
         ).toBe(true);
     });
 
-    it('shows commercial error-state when brave and google both fail', async () => {
+    it('keeps Google error in state but shows empty (no Google error text) when only Google fails', async () => {
+        deps.apiFetch = apiFetchByRoute({
+            aggregate: () => jsonResponse(aggregateBody()),
+            google: () => jsonResponse({ google: sourcePayload({ error: 'CSE quota exceeded', hasMore: false }) }),
+        });
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('fail');
+        component.fetchGoogle('fail');
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.querySelector('.empty-state')).toBeTruthy();
+        });
+        expect(elements.commercialResults.textContent).toContain('No results found');
+        expect(elements.commercialResults.textContent).not.toContain('CSE quota');
+        expect(redirectToGoogleSearch).not.toHaveBeenCalled();
+    });
+
+    it('shows commercial error-state when brave and tavily both fail (Google quiet)', async () => {
         deps.apiFetch = apiFetchByRoute({
             aggregate: () =>
-                jsonResponse(aggregateBody({ brave: sourcePayload({ error: 'brave down', hasMore: false }) })),
+                jsonResponse(
+                    aggregateBody({
+                        brave: sourcePayload({ error: 'brave down', hasMore: false }),
+                        tavily: sourcePayload({ error: 'tavily down', hasMore: false }),
+                    })
+                ),
             google: () => jsonResponse({ google: sourcePayload({ error: 'google down', hasMore: false }) }),
         });
         const component = createSearchResultsComponent(elements, deps);
@@ -331,6 +356,50 @@ describe('createSearchResultsComponent', () => {
             expect(elements.commercialResults.querySelector('.error-state')).toBeTruthy();
         });
         expect(elements.commercialResults.textContent).toContain('Something went wrong');
+        expect(elements.commercialResults.textContent).not.toContain('google down');
+    });
+
+    it('redirects to google.com only when google, brave, and tavily all hard-fail', async () => {
+        deps.apiFetch = apiFetchByRoute({
+            aggregate: () =>
+                jsonResponse(
+                    aggregateBody({
+                        brave: sourcePayload({ error: 'brave down', hasMore: false }),
+                        tavily: sourcePayload({ error: 'tavily down', hasMore: false }),
+                    })
+                ),
+            google: () => jsonResponse({ google: sourcePayload({ error: 'google down', hasMore: false }) }),
+        });
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('all-fail');
+        component.fetchGoogle('all-fail');
+        await vi.waitFor(() => {
+            expect(redirectToGoogleSearch).toHaveBeenCalledWith('all-fail');
+        });
+    });
+
+    it('does not redirect when Google is quiet-empty (no error) even if Brave fails', async () => {
+        deps.apiFetch = apiFetchByRoute({
+            aggregate: () =>
+                jsonResponse(
+                    aggregateBody({
+                        brave: sourcePayload({ error: 'brave down', hasMore: false }),
+                        tavily: sourcePayload({ error: 'tavily down', hasMore: false }),
+                    })
+                ),
+            google: () => jsonResponse({ google: sourcePayload() }),
+        });
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('quiet-google');
+        component.fetchGoogle('quiet-google');
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.querySelector('.error-state, .empty-state')).toBeTruthy();
+        });
+        expect(redirectToGoogleSearch).not.toHaveBeenCalled();
     });
 
     it('treats error-only source payloads (no results key) as errors', async () => {
@@ -343,7 +412,7 @@ describe('createSearchResultsComponent', () => {
                         brave: { error: 'brave down' },
                         marginalia: sourcePayload(),
                         wiby: sourcePayload(),
-                        tavily: sourcePayload(),
+                        tavily: { error: 'tavily down' },
                     }),
                 }) as Response,
             google: () => jsonResponse({ google: sourcePayload({ error: 'google down', hasMore: false }) }),
@@ -357,6 +426,7 @@ describe('createSearchResultsComponent', () => {
             expect(elements.commercialResults.querySelector('.error-state')).toBeTruthy();
         });
         expect(elements.commercialResults.textContent).toContain('Something went wrong');
+        expect(redirectToGoogleSearch).toHaveBeenCalledWith('err-only');
     });
 
     it('shows commercial empty-state when sources return no results', async () => {
@@ -383,10 +453,12 @@ describe('createSearchResultsComponent', () => {
                         wiby: sourcePayload({ error: 'wiby fail', hasMore: false }),
                     })
                 ),
+            google: () => jsonResponse({ google: sourcePayload() }),
         });
         const component = createSearchResultsComponent(elements, deps);
 
         component.startSearch('nc-fail');
+        component.fetchGoogle('nc-fail');
         await vi.waitFor(() => {
             expect(elements.noncommercialResults.querySelector('.error-state')).toBeTruthy();
         });
@@ -396,10 +468,12 @@ describe('createSearchResultsComponent', () => {
     it('shows noncommercial empty-state when both return no results', async () => {
         deps.apiFetch = apiFetchByRoute({
             aggregate: () => jsonResponse(aggregateBody()),
+            google: () => jsonResponse({ google: sourcePayload() }),
         });
         const component = createSearchResultsComponent(elements, deps);
 
         component.startSearch('nc-empty');
+        component.fetchGoogle('nc-empty');
         await vi.waitFor(() => {
             expect(elements.noncommercialResults.querySelector('.empty-state')).toBeTruthy();
         });
@@ -456,7 +530,6 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('reset clears query and restores placeholder empty-states', async () => {
-        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         deps.apiFetch = apiFetchByRoute({
             aggregate: () =>
                 jsonResponse(
@@ -468,11 +541,13 @@ describe('createSearchResultsComponent', () => {
                         }),
                     })
                 ),
+            google: () => jsonResponse({ google: sourcePayload() }),
         });
         const component = createSearchResultsComponent(elements, deps);
         component.initInfiniteScroll();
 
         component.startSearch('keep');
+        component.fetchGoogle('keep');
         await vi.waitFor(() => {
             expect(elements.commercialResults.textContent).toContain('Keep');
         });
@@ -537,11 +612,14 @@ describe('createSearchResultsComponent', () => {
         expect(elements.mergedResults.textContent).toMatch(/Brave M|Google M|Marg M/);
     });
 
-    it('network failure on commercial sources yields error-state after google also fails', async () => {
+    it('network failure on brave+tavily yields commercial error-state; Google fail stays quiet', async () => {
         deps.apiFetch = vi.fn(async (path: string) => {
             const source = new URL(path, 'https://example.test').searchParams.get('source');
-            if (!source || source === 'google') {
+            if (!source) {
                 throw new Error('network down');
+            }
+            if (source === 'google') {
+                throw new Error('google network down');
             }
             return jsonResponse(aggregateBody());
         });
@@ -553,6 +631,8 @@ describe('createSearchResultsComponent', () => {
         await vi.waitFor(() => {
             expect(elements.commercialResults.querySelector('.error-state')).toBeTruthy();
         });
+        expect(elements.commercialResults.textContent).not.toContain('google network');
+        expect(redirectToGoogleSearch).toHaveBeenCalledWith('net');
     });
 
     it('load-more commercial uses one aggregate request for edge sources', async () => {
@@ -570,11 +650,14 @@ describe('createSearchResultsComponent', () => {
         }
         vi.stubGlobal('IntersectionObserver', CapturingIO);
 
-        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         const pages: string[] = [];
         deps.apiFetch = vi.fn(async (path: string) => {
             const url = new URL(path, 'https://example.test');
-            expect(url.searchParams.get('source')).toBeNull();
+            const source = url.searchParams.get('source');
+            if (source === 'google') {
+                return jsonResponse({ google: sourcePayload() });
+            }
+            expect(source).toBeNull();
             const page = url.searchParams.get('page') ?? '1';
             pages.push(page);
             if (page === '1') {
@@ -621,6 +704,7 @@ describe('createSearchResultsComponent', () => {
         component.initInfiniteScroll();
 
         component.startSearch('more');
+        component.fetchGoogle('more');
         await vi.waitFor(() => {
             expect(elements.commercialResults.textContent).toContain('Brave 1');
         });

@@ -1,4 +1,3 @@
-import { apiSettings, hasGoogleSearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch as apiFetch } from './search-fetch';
 import type { EarlyFetchKey } from './types';
@@ -62,8 +61,6 @@ const searchResults = createSearchResultsComponent(
         apiFetch,
         takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
         isMergedView: () => window.innerWidth <= 900,
-        hasGoogleSearchConfigured,
-        openApiSettingsDialog: apiSettings.openApiSettingsDialog,
         onGoogleCorrection: handleGoogleCorrection,
     }
 );
@@ -130,7 +127,7 @@ function performSearch(query: string) {
     images.reset();
     infobox.reset();
     ai.reset();
-    if (hasGoogleSearchConfigured()) searchResults.fetchGoogle(query);
+    searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
     if (shouldAutoOpenAIForQuery(query)) {
@@ -236,8 +233,6 @@ function restoreSearchState(options?: { scrollToTop?: boolean }) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    apiSettings.setupApiSettingsPanel();
-    apiSettings.maybeNotifyMissingCommercialKeys();
     searchResults.initInfiniteScroll();
     ai.setupEvents(() => searchInput.value);
     images.setupEvents(() => searchResults.getCurrentQuery());

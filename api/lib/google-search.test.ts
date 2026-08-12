@@ -3,6 +3,7 @@ import {
     dedupeImages,
     fetchGoogle,
     fetchGoogleImages,
+    interleaveImages,
     isGoogleConfigured,
 } from './google-search';
 
@@ -278,5 +279,11 @@ describe('google-search lib', () => {
                 { full: 'https://example.com/b' },
             ])
         ).toEqual([{ full: 'https://example.com/a/' }, { full: 'https://example.com/b' }]);
+    });
+
+    it('interleaveImages round-robins Google then Brave', () => {
+        expect(interleaveImages(['g0', 'g1'], ['b0'])).toEqual(['g0', 'b0', 'g1']);
+        expect(interleaveImages(['g0'], ['b0', 'b1'])).toEqual(['g0', 'b0', 'b1']);
+        expect(interleaveImages([], ['b0'])).toEqual(['b0']);
     });
 });

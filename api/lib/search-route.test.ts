@@ -21,6 +21,8 @@ describe('aggregateEdgeRequest', () => {
         delete process.env["GROQ_API_KEY"];
         delete process.env["MARGINALIA_API_KEY"];
         delete process.env["TAVILY_API_KEY"];
+        delete process.env["GOOGLE_CX"];
+        delete process.env["GOOGLE_SERVICE_ACCOUNT"];
     });
 
     afterEach(() => {
@@ -211,14 +213,219 @@ describe('aggregateEdgeRequest', () => {
         });
     });
 
-    it('source=images without imageSource → 400 (browser-handled)', async () => {
+    it('source=google without env returns quiet empty google payload', async () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=cats&source=google')
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.google).toEqual({ results: [], hasMore: false, totalResults: '0' });
+        expect(body.google.error).toBeUndefined();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('source=google with CSE failure returns google.error and empty results', async () => {
+        process.env["GOOGLE_CX"] = 'test-cx';
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await (async () => {
+            const keyPair = await crypto.subtle.generateKey(
+                {
+                    name: 'RSASSA-PKCS1-v1_5',
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([1, 0, 1]),
+                    hash: 'SHA-256',
+                },
+                true,
+                ['sign', 'verify']
+            );
+            const pkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
+            const wrapped = (b64.match(/.{1,64}/g) || [b64]).join('\n');
+            return JSON.stringify({
+                client_email: 'vitest@example.iam.gserviceaccount.com',
+                private_key: `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----\n`,
+            });
+        })();
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const u =
+                typeof input === 'string'
+                    ? input
+                    : input instanceof URL
+                      ? input.href
+                      : input.url;
+            if (u.includes('oauth2.googleapis.com/token')) {
+                return new Response(
+                    JSON.stringify({ access_token: 'ya29.fail', expires_in: 3600 }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            if (u.includes('customsearch/v1')) {
+                return new Response(
+                    JSON.stringify({ error: { message: 'CSE quota exceeded' } }),
+                    { status: 403, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            throw new Error(`unexpected ${u}`);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=cats&source=google')
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.google).toMatchObject({
+            error: 'CSE quota exceeded',
+            results: [],
+            hasMore: false,
+        });
+    });
+
+    it('source=images without imageSource interleaves Google then Brave and dedupes', async () => {
+        process.env["BRAVE_API_KEY"] = 'brave-test';
+        process.env["GOOGLE_CX"] = 'test-cx';
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await (async () => {
+            const keyPair = await crypto.subtle.generateKey(
+                {
+                    name: 'RSASSA-PKCS1-v1_5',
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([1, 0, 1]),
+                    hash: 'SHA-256',
+                },
+                true,
+                ['sign', 'verify']
+            );
+            const pkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
+            const wrapped = (b64.match(/.{1,64}/g) || [b64]).join('\n');
+            return JSON.stringify({
+                client_email: `vitest-img-${Date.now()}@example.iam.gserviceaccount.com`,
+                private_key: `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----\n`,
+            });
+        })();
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const u =
+                typeof input === 'string'
+                    ? input
+                    : input instanceof URL
+                      ? input.href
+                      : input.url;
+            if (u.includes('oauth2.googleapis.com/token')) {
+                return new Response(
+                    JSON.stringify({ access_token: 'ya29.img', expires_in: 3600 }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            if (u.includes('searchType=image')) {
+                return new Response(
+                    JSON.stringify({
+                        items: [
+                            {
+                                title: 'G1',
+                                link: 'https://cdn.example/g1.jpg',
+                                image: {
+                                    thumbnailLink: 'https://cdn.example/g1-t.jpg',
+                                    contextLink: 'https://example.com/g1',
+                                },
+                            },
+                            {
+                                title: 'Dup shared',
+                                link: 'https://cdn.example/shared.jpg',
+                                image: {
+                                    thumbnailLink: 'https://cdn.example/shared-t.jpg',
+                                    contextLink: 'https://example.com/shared',
+                                },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            if (u.includes('api.search.brave.com/res/v1/images')) {
+                return new Response(
+                    JSON.stringify({
+                        results: [
+                            {
+                                title: 'B1',
+                                url: 'https://example.com/b1',
+                                thumbnail: { src: 'https://cdn.example/b1-t.jpg' },
+                                properties: { url: 'https://cdn.example/b1.jpg' },
+                            },
+                            {
+                                title: 'Dup brave',
+                                url: 'https://example.com/shared',
+                                thumbnail: { src: 'https://cdn.example/shared-t2.jpg' },
+                                properties: { url: 'https://cdn.example/shared.jpg' },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            throw new Error(`unexpected ${u}`);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
         const res = await aggregateEdgeRequest(
             jsonRequest('https://example.com/api/search?q=cats&source=images')
         );
-        expect(res.status).toBe(400);
-        await expect(readJson(res)).resolves.toEqual({
-            error: 'Google and combined image search are handled in the browser',
-        });
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.hasMore).toBe(true);
+        expect(body.images.map((img: { title: string; source: string }) => `${img.source}:${img.title}`)).toEqual([
+            'google:G1',
+            'brave:B1',
+            'google:Dup shared',
+        ]);
+    });
+
+    it('source=images without Google env is Brave-only quietly', async () => {
+        process.env["BRAVE_API_KEY"] = 'brave-test';
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    results: [
+                        {
+                            title: 'Brave only',
+                            url: 'https://example.com/page',
+                            thumbnail: { src: 'https://example.com/thumb.jpg' },
+                            properties: { url: 'https://example.com/full.jpg' },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=cats&source=images')
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.images).toEqual([
+            expect.objectContaining({ title: 'Brave only', source: 'brave' }),
+        ]);
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringContaining('api.search.brave.com/res/v1/images/search'),
+            expect.anything()
+        );
+        expect(
+            fetchMock.mock.calls.every((c) => {
+                const u =
+                    typeof c[0] === 'string'
+                        ? c[0]
+                        : c[0] instanceof URL
+                          ? c[0].href
+                          : c[0] instanceof Request
+                            ? c[0].url
+                            : '';
+                return !u.includes('googleapis.com');
+            })
+        ).toBe(true);
     });
 
     it('source=images&imageSource=brave returns images with mocked Brave', async () => {

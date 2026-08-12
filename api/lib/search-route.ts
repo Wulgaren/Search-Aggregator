@@ -1,5 +1,11 @@
 // Shared handler for Vercel Edge `/api/search` + `/api/ai`.
 
+import {
+    dedupeImages,
+    fetchGoogle,
+    fetchGoogleImages,
+    interleaveImages,
+} from "./google-search.ts";
 import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
@@ -217,10 +223,34 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     });
 
     if (source === "google") {
-        return new Response(
-            JSON.stringify({ error: "Google Custom Search runs in the browser (configure cx + service account in the site settings)." }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        try {
+            const google = await fetchGoogle(searchQuery, page, resultsPerPage);
+            return new Response(JSON.stringify({ page, google }), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error("[edge-search] Google web search failed", {
+                reqId,
+                requestKey,
+                error: msg,
+            });
+            return new Response(
+                JSON.stringify({
+                    page,
+                    google: { error: msg, results: [], hasMore: false },
+                }),
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Cache-Control": SEARCH_JSON_CACHE,
+                    },
+                }
+            );
+        }
     }
 
     // Handle infobox request
@@ -236,23 +266,36 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     }
 
     if (source === "images") {
-        if (imageSource === "google" || !imageSource) {
+        // Brave-only when explicitly requested; otherwise Google + Brave interleaved.
+        if (imageSource === "brave") {
+            const braveImages = await fetchBraveImages(
+                searchQuery,
+                page,
+                reqId,
+                requestKey
+            );
             return new Response(
-                JSON.stringify({
-                    error: "Google and combined image search are handled in the browser",
-                }),
-                { status: 400, headers: { "Content-Type": "application/json" } }
+                JSON.stringify({ images: braveImages, hasMore: page < 3 }),
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Cache-Control": SEARCH_JSON_CACHE,
+                    },
+                }
             );
         }
 
-        const braveImages = await fetchBraveImages(
-            searchQuery,
-            page,
-            reqId,
-            requestKey
-        );
+        const [braveSettled, googleSettled] = await Promise.allSettled([
+            fetchBraveImages(searchQuery, page, reqId, requestKey),
+            fetchGoogleImages(searchQuery, page),
+        ]);
+        const braveImages =
+            braveSettled.status === "fulfilled" ? braveSettled.value : [];
+        const googleImages =
+            googleSettled.status === "fulfilled" ? googleSettled.value : [];
+        const images = dedupeImages(interleaveImages(googleImages, braveImages));
         return new Response(
-            JSON.stringify({ images: braveImages, hasMore: page < 3 }),
+            JSON.stringify({ images, hasMore: page < 3 }),
             {
                 headers: {
                     "Content-Type": "application/json",

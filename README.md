@@ -13,7 +13,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **AI Answer**: Groq-powered streaming answers (optional API key)
 - **Infinite Scroll**: Automatic pagination for seamless browsing
 - **Dark Theme**: Modern, minimal dark interface
-- **Fast Performance**: Search and AI requests run in the browser bundle with optional Cache Storage for repeat queries
+- **Fast Performance**: Parallel edge fetches for Google + aggregate; CDN cache headers on `/api/search`
 
 ## Tech Stack
 
@@ -59,13 +59,20 @@ This writes `early-fetch-entry.js`, `script.js`, and `style.css` under `public/`
    - Import the repo in the Vercel dashboard (or use `vercel link` / `vercel deploy`)
    - Set environment variables (see below)
 
-### API keys (browser)
+### API keys (Vercel)
 
-Google Custom Search credentials (`cx`, service account JSON) are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets. Google CSE runs in the browser (direct to Google) and merges into the commercial results column.
+All search credentials are **server-side** environment variables on Vercel (never localStorage / browser dialogs):
 
-Tavily, Brave, Marginalia, and Groq use **server-side** env vars on Vercel so keys stay off the client.
+| Variable | Purpose |
+| -------- | ------- |
+| `BRAVE_API_KEY` | Brave web + image search |
+| `GOOGLE_CX` | Google Custom Search Engine ID (optional; quiet no-op if unset) |
+| `GOOGLE_SERVICE_ACCOUNT` | Google service account JSON string (optional; pair with `GOOGLE_CX`) |
+| `TAVILY_API_KEY` | Optional Tavily web results |
+| `MARGINALIA_API_KEY` | Marginalia Search API v2 (`API-Key` header; falls back to sample `public`) |
+| `GROQ_API_KEY` | Optional streaming AI answers |
 
-**Security note:** Treat browser-stored credentials as a personal or trusted-user setup, not a hidden server-side secret store.
+Google web runs as a separate `/api/search?source=google` edge request (parallel with the aggregate). Images use `/api/search?source=images` (Google + Brave interleaved on the edge).
 
 ## Project Structure
 
@@ -94,6 +101,8 @@ Set these in **Project → Settings → Environment Variables** so `/api/search`
 | Variable | Purpose |
 | -------- | ------- |
 | `BRAVE_API_KEY` | Brave web + image search |
+| `GOOGLE_CX` | Google Custom Search Engine ID (optional) |
+| `GOOGLE_SERVICE_ACCOUNT` | Full service account JSON as a string (optional; with `GOOGLE_CX`) |
 | `TAVILY_API_KEY` | Optional Tavily web results (commercial column via edge aggregate) |
 | `MARGINALIA_API_KEY` | [Marginalia Search API v2](https://about.marginalia-search.com/article/api/) (`API-Key` header). If unset, the handler falls back to the sample key `public` (shared rate limit). |
 | `GROQ_API_KEY` | Optional streaming AI answers |
@@ -138,8 +147,8 @@ Use `npm run typecheck` for TypeScript-only checks. Use `npm run watch` to rebui
 
 ### Code Structure
 
-- **UI** (`src/script.ts` → `public/script.js`): DOM, search state, infinite scroll, image previews, API settings
-- **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/lib/search-route.ts`): Vercel Edge handlers for same-origin `/api` paths
+- **UI** (`src/script.ts` → `public/script.js`): DOM, search state, infinite scroll, image previews
+- **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/lib/search-route.ts`): Vercel Edge handlers for same-origin `/api` paths (including Google CSE via env)
 - **Styles** (`src/style.css` → `public/style.css`)
 
 ## API Endpoints (in-bundle)
@@ -153,12 +162,14 @@ The app issues `fetch()` calls to same-origin paths handled by Vercel Edge:
 - `q` (required) - Search query
 - `page` (optional) - Page number (default: 1)
 - `source` (optional) - Filter by source: `brave`, `google`, `marginalia`, `images`, `infobox`
-- `imageSource` (optional) - For image search: `google`, `brave`, or both
+- `imageSource` (optional) - For image search: `brave` for Brave-only; omit for Google+Brave interleaved
 
 **Example:**
 
 ```
 GET /api/search?q=javascript&page=1&source=brave
+GET /api/search?q=javascript&page=1&source=google
+GET /api/search?q=javascript&source=images&page=1
 ```
 
 ## Browser Support
@@ -170,8 +181,8 @@ GET /api/search?q=javascript&page=1&source=brave
 
 - No tracking or analytics
 - No cookies
-- Search queries are sent from the browser to third-party search APIs
-- Optional response caching (Cache Storage for repeat GET `/api/search` queries; configurable TTL in code)
+- Search queries are sent from the browser to same-origin edge routes, which call third-party search APIs
+- Optional CDN/browser cache headers on JSON search responses
 
 ## Third-Party Services
 
