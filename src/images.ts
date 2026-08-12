@@ -48,7 +48,6 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     let touchStartY = 0;
     let activeQuery = '';
     let activeRequestId = 0;
-    let braveTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let sessionAbort: AbortController | null = null;
 
     function abortActiveSession() {
@@ -106,10 +105,6 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         state.loading = false;
         state.page = 1;
         state.hasMore = true;
-        if (braveTimeoutId) {
-            clearTimeout(braveTimeoutId);
-            braveTimeoutId = null;
-        }
         if (imageSliderScrollHandler) {
             elements.sliderTrack.removeEventListener('scroll', imageSliderScrollHandler);
             imageSliderScrollHandler = null;
@@ -180,34 +175,43 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 state.images = [];
                 state.page = 1;
                 showImageSkeleton();
-                let googleOk = false;
                 let sourceSucceeded = false;
+                const earlyImages = await deps.takeEarlyFetch('images', query);
+                if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
+
                 if (hasGoogleSearchConfigured()) {
-                    let googleResponse: Response;
-                    const earlyImages = await deps.takeEarlyFetch('images', query);
-                    if (earlyImages) googleResponse = earlyImages;
-                    else {
-                        googleResponse = await deps.apiFetch(
-                            `/api/search?q=${encodeURIComponent(query)}&source=images&imageSource=google&page=1`,
+                    // Combined Google+Brave (client handler merges both; no delayed Brave top-up).
+                    const combinedResponse =
+                        earlyImages ??
+                        (await deps.apiFetch(
+                            `/api/search?q=${encodeURIComponent(query)}&source=images&page=1`,
                             { signal }
-                        );
-                    }
+                        ));
                     if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                    if (googleResponse.ok) {
+                    if (combinedResponse.ok) {
                         sourceSucceeded = true;
-                        const googleData: unknown = await googleResponse.json();
+                        const data: unknown = await combinedResponse.json();
                         if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                        state.images = uniqueImages(parseImageItems(isRecord(googleData) ? googleData['images'] : undefined));
-                        googleOk = state.images.length > 0;
-                        if (googleOk) {
+                        state.images = uniqueImages(parseImageItems(isRecord(data) ? data['images'] : undefined));
+                        if (state.images.length > 0) {
                             renderImageSlider();
                             revealImageSection();
                             setupImageSliderScroll(query);
-                            scheduleBraveImagesDelayed(query, requestId, signal);
                         }
                     }
-                }
-                if (!googleOk) {
+                } else if (earlyImages) {
+                    if (earlyImages.ok) {
+                        sourceSucceeded = true;
+                        const data: unknown = await earlyImages.json();
+                        if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
+                        state.images = uniqueImages(parseImageItems(isRecord(data) ? data['images'] : undefined));
+                        if (state.images.length > 0) {
+                            renderImageSlider();
+                            revealImageSection();
+                            setupImageSliderScroll(query);
+                        }
+                    }
+                } else {
                     const braveOk = await fetchBraveImages(query, requestId, signal);
                     if (braveOk) sourceSucceeded = true;
                 }
@@ -242,13 +246,6 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
             if (requestId === activeRequestId) state.loading = false;
             if (page > 1) removeImageLoadingIndicator();
         }
-    }
-
-    function scheduleBraveImagesDelayed(query: string, requestId: number, signal: AbortSignal) {
-        if (braveTimeoutId) clearTimeout(braveTimeoutId);
-        braveTimeoutId = setTimeout(() => {
-            void fetchBraveImages(query, requestId, signal);
-        }, 2000);
     }
 
     /** @returns true if request completed without hard failure */

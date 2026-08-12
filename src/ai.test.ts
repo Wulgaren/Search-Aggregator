@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAIComponent } from './ai';
-import type { AIDeps, AIElements, AISource, AIStreamChunk } from './types';
+import type { AIDeps, AIElements, AISource } from './types';
 
-function encodeSSE(chunks: AIStreamChunk[]): Uint8Array {
+function encodeSSE(chunks: unknown[]): Uint8Array {
     const text = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('');
     return new TextEncoder().encode(text);
 }
 
-function streamResponse(chunks: AIStreamChunk[], ok = true, status = 200): Response {
+function streamResponse(chunks: unknown[], ok = true, status = 200): Response {
     const body = new ReadableStream<Uint8Array>({
         start(controller) {
             controller.enqueue(encodeSSE(chunks));
@@ -209,6 +209,28 @@ describe('createAIComponent', () => {
         expect(links[0]?.getAttribute('href')).toBe('https://example.com/a');
         expect(links[0]?.querySelector('.ai-source-title')?.textContent).toBe('Source A');
         expect(elements.aiAnswer.querySelector('.source-ref')?.getAttribute('data-source')).toBe('1');
+    });
+
+    it('uses url hostname as source title when title is missing', async () => {
+        apiFetch.mockResolvedValue(
+            streamResponse([
+                { content: 'See [1] and [2].' },
+                {
+                    sources: [
+                        { url: 'https://docs.example.org/a' },
+                        { url: 'https://other.example.net/b', title: '  ' },
+                        { url: 'not-a-url' },
+                    ],
+                },
+            ])
+        );
+
+        const { fetchAIAnswer } = createAIComponent(elements, deps);
+        await fetchAIAnswer('q');
+
+        expect(elements.aiPanelFooter.style.display).toBe('block');
+        const titles = [...elements.aiSources.querySelectorAll('.ai-source-title')].map((el) => el.textContent);
+        expect(titles).toEqual(['docs.example.org', 'other.example.net', 'not-a-url']);
     });
 
     it('does not show sources footer without citation cues', async () => {

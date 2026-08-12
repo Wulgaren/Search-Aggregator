@@ -1,4 +1,4 @@
-import { apiSettings, hasGoogleSearchConfigured, hasTavilySearchConfigured } from './api-keys';
+import { apiSettings, hasGoogleSearchConfigured } from './api-keys';
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch as apiFetch } from './search-fetch';
 import type { EarlyFetchKey } from './types';
@@ -26,16 +26,7 @@ function shouldAutoOpenAIForQuery(query: string): boolean {
 function maybeClearEarlyFetch(): void {
     const early = window.__earlyFetch;
     if (!early) return;
-    if (
-        early.brave ||
-        early.google ||
-        early.tavily ||
-        early.marginalia ||
-        early.wiby ||
-        early.images ||
-        early.infobox
-    )
-        return;
+    if (early.aggregate || early.google || early.images || early.infobox) return;
     delete window.__earlyFetch;
 }
 
@@ -72,7 +63,6 @@ const searchResults = createSearchResultsComponent(
         takeEarlyFetch: (key, query) => takeEarlyFetch(key, query),
         isMergedView: () => window.innerWidth <= 900,
         hasGoogleSearchConfigured,
-        hasTavilySearchConfigured,
         openApiSettingsDialog: apiSettings.openApiSettingsDialog,
         onGoogleCorrection: handleGoogleCorrection,
     }
@@ -141,7 +131,6 @@ function performSearch(query: string) {
     infobox.reset();
     ai.reset();
     if (hasGoogleSearchConfigured()) searchResults.fetchGoogle(query);
-    if (hasTavilySearchConfigured()) searchResults.fetchTavily(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
     if (shouldAutoOpenAIForQuery(query)) {

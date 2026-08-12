@@ -163,13 +163,11 @@ describe('createImagesComponent', () => {
         );
         deps.apiFetch = vi.fn(async () => jsonResponse({ images: [] }));
 
-        vi.useFakeTimers();
         const images = createImagesComponent(elements, deps);
-        const done = images.fetchImages('cats');
-        await vi.runAllTimersAsync();
-        await done;
+        await images.fetchImages('cats');
 
         expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(2);
+        expect(deps.apiFetch).not.toHaveBeenCalled();
     });
 
     it('ignores stale response after reset()', async () => {
@@ -224,43 +222,22 @@ describe('createImagesComponent', () => {
         expect(elements.sliderTrack.querySelector('.image-slider-status--error')).toBeNull();
     });
 
-    it('ignores stale delayed Brave when newer requestId wins', async () => {
-        hasGoogle.mockReturnValue(true);
+    it('consumes early Brave images when Google is not configured', async () => {
+        hasGoogle.mockReturnValue(false);
         deps.takeEarlyFetch = vi.fn(async () =>
             jsonResponse({
-                images: [img({ full: 'https://cdn.example/g.jpg', title: 'G', thumbnail: 'https://cdn.example/g-t.jpg' })],
+                images: [img({ full: 'https://cdn.example/b.jpg', title: 'Brave', thumbnail: 'https://cdn.example/b-t.jpg' })],
             })
         );
-        const bravePending = deferred<Response>();
-        deps.apiFetch = vi.fn(() => bravePending.promise);
+        deps.apiFetch = vi.fn(async () => jsonResponse({ images: [] }));
 
-        vi.useFakeTimers();
         const images = createImagesComponent(elements, deps);
-        await images.fetchImages('old');
+        await images.fetchImages('cats');
+
+        expect(deps.takeEarlyFetch).toHaveBeenCalledWith('images', 'cats');
+        expect(deps.apiFetch).not.toHaveBeenCalled();
         expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(1);
-
-        // New page-1 search bumps requestId; old 2s Brave must not append.
-        hasGoogle.mockReturnValue(false);
-        deps.apiFetch = vi.fn(async () =>
-            jsonResponse({
-                images: [img({ full: 'https://cdn.example/new.jpg', title: 'New', thumbnail: 'https://cdn.example/new-t.jpg' })],
-            })
-        );
-        await images.fetchImages('new');
-        expect((elements.sliderTrack.querySelector('.slider-image') as HTMLImageElement).alt).toBe('New');
-
-        await vi.advanceTimersByTimeAsync(2000);
-        bravePending.resolve(
-            jsonResponse({
-                images: [img({ full: 'https://cdn.example/stale-brave.jpg', title: 'Stale' })],
-            })
-        );
-        await Promise.resolve();
-        await Promise.resolve();
-
-        const thumbs = elements.sliderTrack.querySelectorAll('.slider-image');
-        expect(thumbs).toHaveLength(1);
-        expect((thumbs[0] as HTMLImageElement).alt).toBe('New');
+        expect((elements.sliderTrack.querySelector('.slider-image') as HTMLImageElement).alt).toBe('Brave');
     });
 
     it('reset() hides image section', async () => {
@@ -307,38 +284,52 @@ describe('createImagesComponent', () => {
         expect(pageCalls).toBeGreaterThanOrEqual(2);
     });
 
-    it('schedules delayed Brave merge after Google success (fake timers)', async () => {
+    it('uses combined images URL when Google configured and no early fetch', async () => {
+        hasGoogle.mockReturnValue(true);
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        deps.apiFetch = vi.fn(async () =>
+            jsonResponse({
+                images: [
+                    img({ full: 'https://cdn.example/g.jpg', title: 'G', thumbnail: 'https://cdn.example/g-t.jpg' }),
+                    img({ full: 'https://cdn.example/b.jpg', title: 'B', thumbnail: 'https://cdn.example/b-t.jpg' }),
+                ],
+            })
+        );
+
+        const images = createImagesComponent(elements, deps);
+        await images.fetchImages('cats');
+
+        expect(deps.apiFetch).toHaveBeenCalledWith(
+            '/api/search?q=cats&source=images&page=1',
+            expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
+        expect(deps.apiFetch).toHaveBeenCalledTimes(1);
+        expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(2);
+    });
+
+    it('does not schedule delayed Brave after combined early response', async () => {
         hasGoogle.mockReturnValue(true);
         deps.takeEarlyFetch = vi.fn(async () =>
             jsonResponse({
-                images: [img({ full: 'https://cdn.example/g.jpg', title: 'G', thumbnail: 'https://cdn.example/g-t.jpg' })],
+                images: [
+                    img({ full: 'https://cdn.example/g.jpg', title: 'G', thumbnail: 'https://cdn.example/g-t.jpg' }),
+                    img({ full: 'https://cdn.example/b.jpg', title: 'B', thumbnail: 'https://cdn.example/b-t.jpg' }),
+                ],
             })
         );
-        deps.apiFetch = vi.fn(async () =>
-            jsonResponse({
-                images: [img({ full: 'https://cdn.example/b.jpg', title: 'B', thumbnail: 'https://cdn.example/b-t.jpg' })],
-            })
-        );
+        deps.apiFetch = vi.fn(async () => jsonResponse({ images: [] }));
 
         vi.useFakeTimers();
         const images = createImagesComponent(elements, deps);
-        const done = images.fetchImages('cats');
-        await Promise.resolve();
-        await Promise.resolve();
-        await done;
+        await images.fetchImages('cats');
 
-        expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(1);
+        expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(2);
         expect(deps.apiFetch).not.toHaveBeenCalled();
 
-        await vi.advanceTimersByTimeAsync(2000);
-        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(5000);
         await Promise.resolve();
 
-        expect(deps.apiFetch).toHaveBeenCalledWith(
-            expect.stringContaining('imageSource=brave'),
-            expect.objectContaining({ signal: expect.any(AbortSignal) })
-        );
-        expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(2);
+        expect(deps.apiFetch).not.toHaveBeenCalled();
     });
 
     it('shows empty when Google configured but both sources return empty ok', async () => {
@@ -351,5 +342,6 @@ describe('createImagesComponent', () => {
 
         expect(elements.sliderTrack.textContent).toContain('No images');
         expect(elements.imageSection.style.display).toBe('block');
+        expect(deps.apiFetch).not.toHaveBeenCalled();
     });
 });

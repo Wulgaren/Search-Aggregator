@@ -89,6 +89,69 @@ describe('createInfoboxComponent', () => {
         expect(elements.infoboxDescription.textContent).toBe('');
     });
 
+    it('stays hidden when description is empty or whitespace-only', async () => {
+        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+
+        vi.mocked(deps.apiFetch).mockResolvedValue(
+            jsonResponse({
+                infobox: {
+                    title: 'No Desc',
+                    description: '',
+                    url: 'https://en.wikipedia.org/wiki/No_Desc',
+                },
+            })
+        );
+        await fetchInfobox('blank-desc');
+        expect(elements.infobox.style.display).toBe('none');
+
+        vi.mocked(deps.apiFetch).mockResolvedValue(
+            jsonResponse({
+                infobox: {
+                    title: 'Whitespace',
+                    description: '   \n\t  ',
+                    url: 'https://en.wikipedia.org/wiki/Whitespace',
+                },
+            })
+        );
+        await fetchInfobox('ws-desc');
+        expect(elements.infobox.style.display).toBe('none');
+    });
+
+    it('falls back to url hostname for title when title is missing', async () => {
+        vi.mocked(deps.apiFetch).mockResolvedValue(
+            jsonResponse({
+                infobox: {
+                    description: 'A usable description.',
+                    url: 'https://en.wikipedia.org/wiki/Untitled_Page',
+                },
+            })
+        );
+        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+
+        await fetchInfobox('no-title');
+
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infoboxTitle.textContent).toBe('en.wikipedia.org');
+        expect(elements.infoboxDescription.textContent).toBe('A usable description.');
+    });
+
+    it('falls back to Untitled when title and url hostname are unusable', async () => {
+        vi.mocked(deps.apiFetch).mockResolvedValue(
+            jsonResponse({
+                infobox: {
+                    description: 'Still a description.',
+                    url: 'not-a-url',
+                },
+            })
+        );
+        const { fetchInfobox } = createInfoboxComponent(elements, deps);
+
+        await fetchInfobox('bad-url-title');
+
+        expect(elements.infobox.style.display).toBe('flex');
+        expect(elements.infoboxTitle.textContent).toBe('Untitled');
+    });
+
     it('stays hidden while loading then expands on success', async () => {
         elements.infobox.getBoundingClientRect = () =>
             ({

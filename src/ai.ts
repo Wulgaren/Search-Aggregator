@@ -178,8 +178,16 @@ function parseAISource(value: unknown): AISource | null {
     const record = asRecord(value);
     if (!record) return null;
     const url = readString(record, 'url');
-    const title = readString(record, 'title');
-    if (!url || title === undefined) return null;
+    if (!url) return null;
+    const rawTitle = readString(record, 'title');
+    let title = rawTitle?.trim() || '';
+    if (!title) {
+        try {
+            title = new URL(url).hostname || url;
+        } catch {
+            title = url;
+        }
+    }
     return { url, title };
 }
 

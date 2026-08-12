@@ -6,6 +6,52 @@ import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readStr
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
+/** Soft cap per upstream inside aggregate / single-source edge fetches (not Google/infobox). */
+const UPSTREAM_TIMEOUT_MS = 5000;
+const TAVILY_MAX_RESULTS = 10;
+
+type SourceErrorPayload = { error: string; results: SearchResultItem[]; hasMore: false };
+
+function emptySourceError(message: string): SourceErrorPayload {
+    return { error: message, results: [], hasMore: false };
+}
+
+function upstreamSignal(parent?: AbortSignal): AbortSignal {
+    const timed = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+    if (!parent) return timed;
+    if (typeof AbortSignal.any === "function") return AbortSignal.any([parent, timed]);
+    return timed;
+}
+
+async function withUpstreamTimeout<T>(
+    label: string,
+    run: (signal: AbortSignal) => Promise<T>,
+    parent?: AbortSignal
+): Promise<T> {
+    const signal = upstreamSignal(parent);
+    try {
+        return await run(signal);
+    } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") {
+            if (parent?.aborted) throw e;
+            throw new Error(`${label} timed out after ${UPSTREAM_TIMEOUT_MS}ms`);
+        }
+        throw e;
+    }
+}
+
+function displayUrlFromHref(href: string): string {
+    try {
+        return new URL(href).hostname;
+    } catch {
+        try {
+            return new URL(href, "https://example.com").hostname;
+        } catch {
+            return href;
+        }
+    }
+}
+
 type SearchResultItem = {
     title: string;
     url: string;
@@ -216,64 +262,85 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
         );
     }
 
-    // Determine which sources to fetch
-    const fetchBravePromise =
-        !source || source === "brave"
-            ? fetchBrave(searchQuery, page, resultsPerPage, reqId, requestKey)
-            : Promise.resolve(null);
+    // Determine which sources to fetch (!source = aggregate: brave+marginalia+wiby+tavily)
+    const parentSignal = request.signal;
+    const wantBrave = !source || source === "brave";
+    const wantMarginalia = !source || source === "marginalia";
+    const wantWiby = !source || source === "wiby";
+    const wantTavily = !source || source === "tavily";
 
-    const fetchMarginaliaPromise =
-        !source || source === "marginalia"
-            ? fetchMarginalia(searchQuery, page, resultsPerPage)
-            : Promise.resolve(null);
+    const fetchBravePromise = wantBrave
+        ? withUpstreamTimeout(
+              "Brave",
+              (signal) =>
+                  fetchBrave(searchQuery, page, resultsPerPage, reqId, requestKey, signal),
+              parentSignal
+          )
+        : Promise.resolve(null);
 
-    const fetchWibyPromise =
-        !source || source === "wiby" ? fetchWiby(searchQuery, page) : Promise.resolve(null);
+    const fetchMarginaliaPromise = wantMarginalia
+        ? withUpstreamTimeout(
+              "Marginalia",
+              (signal) => fetchMarginalia(searchQuery, page, resultsPerPage, signal),
+              parentSignal
+          )
+        : Promise.resolve(null);
 
-    const [braveResults, marginaliaResults, wibyResults] = await Promise.allSettled([
+    const fetchWibyPromise = wantWiby
+        ? withUpstreamTimeout("Wiby", (signal) => fetchWiby(searchQuery, page, signal), parentSignal)
+        : Promise.resolve(null);
+
+    const fetchTavilyPromise = wantTavily
+        ? withUpstreamTimeout(
+              "Tavily",
+              (signal) => fetchTavily(searchQuery, page, resultsPerPage, signal),
+              parentSignal
+          )
+        : Promise.resolve(null);
+
+    const [braveResults, marginaliaResults, wibyResults, tavilyResults] = await Promise.allSettled([
         fetchBravePromise,
         fetchMarginaliaPromise,
         fetchWibyPromise,
+        fetchTavilyPromise,
     ]);
 
     const response: {
         page: number;
-        brave?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
-        marginalia?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
-        wiby?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
+        brave?: SearchSourcePayload | SourceErrorPayload;
+        marginalia?: SearchSourcePayload | SourceErrorPayload;
+        wiby?: SearchSourcePayload | SourceErrorPayload;
+        tavily?: SearchSourcePayload | SourceErrorPayload;
     } = { page };
 
-    if (!source || source === "brave") {
+    if (wantBrave) {
         response.brave =
             braveResults.status === "fulfilled" && braveResults.value
                 ? braveResults.value
-                : {
-                    error: settledErrorMessage(braveResults, "Failed to fetch Brave results"),
-                    results: [],
-                };
+                : emptySourceError(settledErrorMessage(braveResults, "Failed to fetch Brave results"));
     }
 
-    if (!source || source === "marginalia") {
+    if (wantMarginalia) {
         response.marginalia =
             marginaliaResults.status === "fulfilled" && marginaliaResults.value
                 ? marginaliaResults.value
-                : {
-                    error: settledErrorMessage(
-                        marginaliaResults,
-                        "Failed to fetch Marginalia results"
-                    ),
-                    results: [],
-                };
+                : emptySourceError(
+                      settledErrorMessage(marginaliaResults, "Failed to fetch Marginalia results")
+                  );
     }
 
-    if (!source || source === "wiby") {
+    if (wantWiby) {
         response.wiby =
             wibyResults.status === "fulfilled" && wibyResults.value
                 ? wibyResults.value
-                : {
-                    error: settledErrorMessage(wibyResults, "Failed to fetch Wiby results"),
-                    results: [],
-                };
+                : emptySourceError(settledErrorMessage(wibyResults, "Failed to fetch Wiby results"));
+    }
+
+    if (wantTavily) {
+        response.tavily =
+            tavilyResults.status === "fulfilled" && tavilyResults.value
+                ? tavilyResults.value
+                : emptySourceError(settledErrorMessage(tavilyResults, "Failed to fetch Tavily results"));
     }
 
     return new Response(JSON.stringify(response), {
@@ -289,7 +356,8 @@ async function fetchBrave(
     page: number,
     resultsPerPage: number,
     reqId: string,
-    requestKey: string
+    requestKey: string,
+    signal?: AbortSignal
 ): Promise<SearchSourcePayload> {
     const apiKey = process.env["BRAVE_API_KEY"];
 
@@ -324,6 +392,7 @@ async function fetchBrave(
             "X-Subscription-Token": apiKey,
             Accept: "application/json",
         },
+        ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -399,7 +468,8 @@ async function fetchBrave(
 async function fetchMarginalia(
     query: string,
     page: number,
-    resultsPerPage: number
+    resultsPerPage: number,
+    signal?: AbortSignal
 ): Promise<SearchSourcePayload> {
     const count = Math.min(100, Math.max(1, resultsPerPage));
     const url = new URL("https://api2.marginalia-search.com/search");
@@ -415,6 +485,7 @@ async function fetchMarginalia(
             "API-Key": apiKey,
             "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)",
         },
+        ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -473,7 +544,11 @@ async function fetchMarginalia(
     };
 }
 
-async function fetchWiby(query: string, page: number): Promise<SearchSourcePayload> {
+async function fetchWiby(
+    query: string,
+    page: number,
+    signal?: AbortSignal
+): Promise<SearchSourcePayload> {
     const url = new URL("https://wiby.me/json/");
     url.searchParams.set("q", query);
     url.searchParams.set("p", String(Math.max(1, page)));
@@ -483,6 +558,7 @@ async function fetchWiby(query: string, page: number): Promise<SearchSourcePaylo
             Accept: "application/json",
             "User-Agent": "Search-Aggregator/1.0 (https://github.com/Wulgaren/Search-Aggregator)",
         },
+        ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -535,6 +611,84 @@ async function fetchWiby(query: string, page: number): Promise<SearchSourcePaylo
     return {
         results,
         hasMore: results.length > 0,
+        totalResults: String(results.length),
+    };
+}
+
+async function fetchTavily(
+    query: string,
+    page: number,
+    resultsPerPage: number,
+    signal?: AbortSignal
+): Promise<SearchSourcePayload> {
+    const apiKey = process.env["TAVILY_API_KEY"];
+    if (!apiKey) {
+        return { results: [], hasMore: false, totalResults: "0" };
+    }
+
+    // Tavily has no offset pagination; only serve the first page.
+    if (page > 1) {
+        return { results: [], hasMore: false, totalResults: "0" };
+    }
+
+    const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            query,
+            search_depth: "basic",
+            include_answer: false,
+            max_results: Math.min(Math.max(1, resultsPerPage), TAVILY_MAX_RESULTS),
+        }),
+        ...(signal ? { signal } : {}),
+    });
+
+    if (!response.ok) {
+        let message = `Tavily API error: ${response.status}`;
+        try {
+            const errorData: unknown = await response.json();
+            const record = asRecord(errorData);
+            const detail = record ? record["detail"] : undefined;
+            if (typeof detail === "string" && detail) message = detail;
+            else if (isRecord(detail)) {
+                const nested = readString(detail, "error");
+                if (nested) message = nested;
+            } else {
+                const err = record ? readString(record, "error") : undefined;
+                if (err) message = err;
+            }
+        } catch {
+            // keep status message
+        }
+        throw new Error(message);
+    }
+
+    const data: unknown = await response.json();
+    const dataRecord = asRecord(data);
+    const rawResults = dataRecord ? (readArray(dataRecord, "results") ?? []) : [];
+    const results: SearchResultItem[] = rawResults.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const itemUrl = readString(item, "url");
+        const title = readString(item, "title");
+        if (!itemUrl || !title) return [];
+        return [
+            {
+                title,
+                url: itemUrl,
+                displayUrl: displayUrlFromHref(itemUrl),
+                snippet: readString(item, "content") || "",
+                source: "tavily",
+            },
+        ];
+    });
+
+    return {
+        results,
+        hasMore: false,
         totalResults: String(results.length),
     };
 }

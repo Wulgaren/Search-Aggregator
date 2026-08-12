@@ -205,13 +205,21 @@ export async function fetchGoogle(query: string, page: number, resultsPerPage: n
         if (!item) return [];
         const title = readString(item, "title");
         const link = readString(item, "link");
+        if (!title || !link) return [];
         const displayLink = readString(item, "displayLink");
-        if (!title || !link || !displayLink) return [];
+        let displayUrl = displayLink?.trim() || "";
+        if (!displayUrl) {
+            try {
+                displayUrl = new URL(link).hostname;
+            } catch {
+                displayUrl = link;
+            }
+        }
         return [
             {
                 title,
                 url: link,
-                displayUrl: displayLink,
+                displayUrl,
                 snippet: readString(item, "snippet") || "",
                 source: "google",
             },

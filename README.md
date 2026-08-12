@@ -23,7 +23,7 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
   - [Google Custom Search API](https://developers.google.com/custom-search)
-  - [Tavily Search API](https://docs.tavily.com/) (optional; browser localStorage key)
+  - [Tavily Search API](https://docs.tavily.com/) (optional; `TAVILY_API_KEY` on Vercel)
   - [Marginalia Search API](https://about.marginalia-search.com/article/api/) (`api2.marginalia-search.com`)
   - [Wikipedia API](https://www.mediawiki.org/wiki/API:Main_page)
 
@@ -61,9 +61,9 @@ This writes `early-fetch-entry.js`, `script.js`, and `style.css` under `public/`
 
 ### API keys (browser)
 
-Google Custom Search credentials (`cx`, service account JSON) and an optional **Tavily API key** are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets. Tavily runs in the browser (direct to Tavily, like Google CSE) and merges into the commercial results column.
+Google Custom Search credentials (`cx`, service account JSON) are stored in **localStorage** via **API configuration** in the app—not as Vercel secrets. Google CSE runs in the browser (direct to Google) and merges into the commercial results column.
 
-Optional keys you can also store in the browser: `braveApiKey`, `groqApiKey` (see `src/api-keys.ts`). Production setups usually rely on **server-side** env vars for Brave, Marginalia, and Groq so keys stay off the client.
+Tavily, Brave, Marginalia, and Groq use **server-side** env vars on Vercel so keys stay off the client.
 
 **Security note:** Treat browser-stored credentials as a personal or trusted-user setup, not a hidden server-side secret store.
 
@@ -94,6 +94,7 @@ Set these in **Project → Settings → Environment Variables** so `/api/search`
 | Variable | Purpose |
 | -------- | ------- |
 | `BRAVE_API_KEY` | Brave web + image search |
+| `TAVILY_API_KEY` | Optional Tavily web results (commercial column via edge aggregate) |
 | `MARGINALIA_API_KEY` | [Marginalia Search API v2](https://about.marginalia-search.com/article/api/) (`API-Key` header). If unset, the handler falls back to the sample key `public` (shared rate limit). |
 | `GROQ_API_KEY` | Optional streaming AI answers |
 
@@ -117,7 +118,7 @@ Set these in **Project → Settings → Environment Variables** so `/api/search`
 
 ### Result Sources
 
-- **Commercial**: Results from Google, Brave Search, and optional Tavily (localStorage API key)
+- **Commercial**: Results from Google, Brave Search, and optional Tavily (`TAVILY_API_KEY` on Vercel)
 - **Non-commercial**: Results from Marginalia Search (indie web, personal sites, blogs)
 
 ## Development

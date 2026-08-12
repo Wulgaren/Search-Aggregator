@@ -114,8 +114,103 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         window.sentinels = { commercialSentinel, noncommercialSentinel, mergedSentinel };
     }
 
+    type EdgeSource = 'brave' | 'tavily' | 'marginalia' | 'wiby';
+    const EDGE_SOURCES: EdgeSource[] = ['brave', 'tavily', 'marginalia', 'wiby'];
+
+    function applySourcePayload(
+        source: EdgeSource | 'google',
+        sourceData: SourcePayload | undefined,
+        page: number,
+        sessionId: number,
+        query: string
+    ) {
+        const state = getState(source);
+        if (sourceData?.error) {
+            state.hasMore = false;
+            state.error = sourceData.error;
+            if (source === 'google' && shouldOpenGoogleSettings(String(sourceData.error))) {
+                if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
+                    deps.openApiSettingsDialog(String(sourceData.error));
+                }
+            }
+        } else if (sourceData) {
+            state.hasMore = sourceData.hasMore;
+            state.results = [...state.results, ...sourceData.results];
+            state.error = null;
+            if (source === 'google' && page === 1 && sourceData.correctedQuery && sourceData.correctedQuery !== query) {
+                deps.onGoogleCorrection?.(query, sourceData.correctedQuery);
+            }
+        }
+    }
+
+    function markEdgeLoading(sources: EdgeSource[], loading: boolean) {
+        for (const source of sources) {
+            getState(source).loading = loading;
+        }
+    }
+
+    function failEdgeSources(sources: EdgeSource[], errMsg: string) {
+        for (const source of sources) {
+            const state = getState(source);
+            state.hasMore = false;
+            state.error = errMsg;
+        }
+    }
+
+    /** One edge aggregate: brave+marginalia+wiby+tavily (no `source` query param). */
+    async function fetchEdgeAggregate(
+        query: string,
+        page: number,
+        sessionId: number,
+        signal: AbortSignal,
+        applySources: EdgeSource[]
+    ) {
+        if (sessionId !== searchSessionId || query !== currentQuery) return;
+        if (applySources.length === 0) return;
+        markEdgeLoading(applySources, true);
+        try {
+            let response: Response;
+            const fetchInit = { signal };
+            const path = `/api/search?q=${encodeURIComponent(query)}&page=${page}`;
+            if (page === 1) {
+                const early = await deps.takeEarlyFetch('aggregate', query);
+                response = early ?? (await deps.apiFetch(path, fetchInit));
+            } else {
+                response = await deps.apiFetch(path, fetchInit);
+            }
+            if (!response.ok) throw new Error(`Search failed: ${response.status}`);
+            const raw: unknown = await response.json();
+            const data = parseSearchApiResponse(raw);
+            if (sessionId !== searchSessionId || query !== currentQuery) return;
+            for (const source of applySources) {
+                applySourcePayload(source, data[source], page, sessionId, query);
+            }
+        } catch (error) {
+            if (isAbortError(error)) return;
+            const errMsg = error instanceof Error ? error.message : String(error);
+            failEdgeSources(applySources, errMsg);
+        } finally {
+            if (sessionId === searchSessionId && query === currentQuery) {
+                markEdgeLoading(applySources, false);
+            }
+        }
+
+        if (sessionId !== searchSessionId || query !== currentQuery) return;
+        if (page === 1) {
+            for (const source of EDGE_SOURCES) {
+                page1Settled[source] = true;
+            }
+            maybeRedirectToGoogleFallback(query, sessionId, page);
+            updatePage1Views();
+            return;
+        }
+        renderCommercialResults();
+        if (!deps.isMergedView()) renderNoncommercialResults();
+        if (deps.isMergedView()) renderMergedResults();
+    }
+
     async function fetchSource(
-        source: 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby',
+        source: 'google',
         query: string,
         page: number,
         sessionId: number,
@@ -145,30 +240,14 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             const raw: unknown = await response.json();
             const data = parseSearchApiResponse(raw);
             if (sessionId !== searchSessionId || query !== currentQuery) return;
-            const sourceData = data[source];
-            if (sourceData?.error) {
-                state.hasMore = false;
-                state.error = sourceData.error;
-                if (source === 'google' && shouldOpenGoogleSettings(String(sourceData.error))) {
-                    if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
-                        deps.openApiSettingsDialog(String(sourceData.error));
-                    }
-                }
-            } else if (sourceData) {
-                state.hasMore = sourceData.hasMore;
-                state.results = [...state.results, ...sourceData.results];
-                state.error = null;
-                if (source === 'google' && page === 1 && sourceData.correctedQuery && sourceData.correctedQuery !== query) {
-                    deps.onGoogleCorrection?.(query, sourceData.correctedQuery);
-                }
-            }
-            if (source === 'google') applyBraveFallback(data, page, sessionId, query);
+            applySourcePayload(source, data[source], page, sessionId, query);
+            applyBraveFallback(data, page, sessionId, query);
         } catch (error) {
             if (isAbortError(error)) return;
             const errMsg = error instanceof Error ? error.message : String(error);
             state.hasMore = false;
             state.error = errMsg;
-            if (source === 'google' && shouldOpenGoogleSettings(errMsg)) {
+            if (shouldOpenGoogleSettings(errMsg)) {
                 if (!maybeRedirectToGoogleFallback(query, sessionId, page)) {
                     deps.openApiSettingsDialog(errMsg);
                 }
@@ -178,20 +257,15 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         }
 
         if (sessionId !== searchSessionId || query !== currentQuery) return;
-        if ((source === 'brave' || source === 'google' || source === 'tavily') && page === 1) {
-            maybeRedirectToGoogleFallback(query, sessionId, page);
-        }
         if (page === 1) {
+            maybeRedirectToGoogleFallback(query, sessionId, page);
             page1Settled[source] = true;
             updatePage1Views();
             return;
         }
-        if (source === 'marginalia' || source === 'wiby') renderNoncommercialResults();
-        else {
-            renderCommercialResults();
-            if (!deps.isMergedView() && (marginaliaState.results.length > 0 || wibyState.results.length > 0))
-                renderNoncommercialResults();
-        }
+        renderCommercialResults();
+        if (!deps.isMergedView() && (marginaliaState.results.length > 0 || wibyState.results.length > 0))
+            renderNoncommercialResults();
         if (deps.isMergedView()) {
             renderMergedResults();
         }
@@ -218,9 +292,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         showLoading(elements.mergedResults);
         elements.commercialCount.textContent = '';
         elements.noncommercialCount.textContent = '';
-        void fetchSource('brave', query, 1, sessionId, signal);
-        void fetchSource('marginalia', query, 1, sessionId, signal);
-        void fetchSource('wiby', query, 1, sessionId, signal);
+        void fetchEdgeAggregate(query, 1, sessionId, signal, EDGE_SOURCES);
     }
 
     function updatePage1Views() {
@@ -324,11 +396,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             void fetchSource('google', query, 1, searchSessionId, sessionAbort.signal);
     }
 
-    function fetchTavily(query: string) {
-        if (currentQuery === query && sessionAbort)
-            void fetchSource('tavily', query, 1, searchSessionId, sessionAbort.signal);
-    }
-
     function forceRenderMergedIfNeeded() {
         if (!deps.isMergedView() || !currentQuery) return;
         if (!page1Settled.google) return;
@@ -343,26 +410,38 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         return currentQuery;
     }
 
+    function edgeSourcesNeedingMore(): EdgeSource[] {
+        return EDGE_SOURCES.filter((source) => {
+            const state = getState(source);
+            return state.hasMore && !state.loading;
+        });
+    }
+
+    /** Columns scroll together: one aggregate for all edge sources that still have more. */
+    async function loadMoreEdgeSources(signal: AbortSignal) {
+        const needing = edgeSourcesNeedingMore();
+        if (needing.length === 0) return;
+        const page = Math.max(...needing.map((s) => getState(s).page)) + 1;
+        for (const source of needing) {
+            getState(source).page = page;
+        }
+        await fetchEdgeAggregate(currentQuery, page, searchSessionId, signal, needing);
+    }
+
     async function loadMoreCommercial() {
-        const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
-        const tavilyNeedsMore = tavilyState.hasMore && !tavilyState.loading;
-        if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore) return;
+        const edgeNeedsMore = edgeSourcesNeedingMore().length > 0;
+        if (!edgeNeedsMore && !googleNeedsMore) return;
         if (!sessionAbort) return;
         const signal = sessionAbort.signal;
         showLoadingMore(elements.commercialResults);
         const promises: Promise<void>[] = [];
-        if (braveNeedsMore) {
-            braveState.page += 1;
-            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId, signal));
+        if (edgeNeedsMore) {
+            promises.push(loadMoreEdgeSources(signal));
         }
         if (googleNeedsMore) {
             googleState.page += 1;
             promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId, signal));
-        }
-        if (tavilyNeedsMore) {
-            tavilyState.page += 1;
-            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId, signal));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.commercialResults);
@@ -374,51 +453,25 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (!sessionAbort) return;
         const signal = sessionAbort.signal;
         showLoadingMore(elements.noncommercialResults);
-        const promises: Promise<void>[] = [];
-        if (marginaliaState.hasMore && !marginaliaState.loading) {
-            marginaliaState.page += 1;
-            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId, signal));
-        }
-        if (wibyState.hasMore && !wibyState.loading) {
-            wibyState.page += 1;
-            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId, signal));
-        }
-        await Promise.all(promises);
+        await loadMoreEdgeSources(signal);
         removeLoadingMore(elements.noncommercialResults);
     }
 
     async function loadMoreMergedResults() {
-        const braveNeedsMore = braveState.hasMore && !braveState.loading;
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
-        const tavilyNeedsMore = tavilyState.hasMore && !tavilyState.loading;
-        const marginaliaNeedsMore = marginaliaState.hasMore && !marginaliaState.loading;
-        const wibyNeedsMore = wibyState.hasMore && !wibyState.loading;
-        if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore && !marginaliaNeedsMore && !wibyNeedsMore)
-            return;
+        const edgeNeedsMore = edgeSourcesNeedingMore().length > 0;
+        if (!edgeNeedsMore && !googleNeedsMore) return;
         if (!sessionAbort) return;
         const signal = sessionAbort.signal;
         mergedState.loading = true;
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
-        if (braveNeedsMore) {
-            braveState.page += 1;
-            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId, signal));
+        if (edgeNeedsMore) {
+            promises.push(loadMoreEdgeSources(signal));
         }
         if (googleNeedsMore) {
             googleState.page += 1;
             promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId, signal));
-        }
-        if (tavilyNeedsMore) {
-            tavilyState.page += 1;
-            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId, signal));
-        }
-        if (marginaliaNeedsMore) {
-            marginaliaState.page += 1;
-            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId, signal));
-        }
-        if (wibyNeedsMore) {
-            wibyState.page += 1;
-            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId, signal));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);
@@ -434,7 +487,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         if (interleaved.length === 0) {
             if (!anyLoading) {
                 elements.commercialResults.innerHTML =
-                    googleState.error && braveState.error && (!deps.hasTavilySearchConfigured() || tavilyState.error)
+                    googleState.error && braveState.error
                         ? `<div class="error-state"><span class="error-icon">⚠</span><span class="error-message">Something went wrong</span></div>`
                         : `<div class="empty-state"><p>No results found</p></div>`;
             }
@@ -522,8 +575,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             googleState.error &&
                 marginaliaState.error &&
                 braveState.error &&
-                wibyState.error &&
-                (!deps.hasTavilySearchConfigured() || tavilyState.error)
+                wibyState.error
         );
         if (allResults.length === 0) {
             if (!anyLoading) {
@@ -586,7 +638,6 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         initInfiniteScroll,
         startSearch,
         fetchGoogle,
-        fetchTavily,
         forceRenderMergedIfNeeded,
         getCurrentQuery,
     };
@@ -834,7 +885,8 @@ function createPage1Settled(deps: SearchDeps): Record<Page1Source, boolean> {
     return {
         brave: false,
         google: !deps.hasGoogleSearchConfigured(),
-        tavily: !deps.hasTavilySearchConfigured(),
+        // Always wait for aggregate's tavily section (empty when server has no key).
+        tavily: false,
         marginalia: false,
         wiby: false,
     };
@@ -858,8 +910,13 @@ function parseSearchResult(value: unknown): SearchResult | null {
 
 function parseSourcePayload(value: unknown): SourcePayload | undefined {
     if (!isRecord(value)) return undefined;
+    const error = readString(value, 'error');
     const resultsRaw = readArray(value, 'results');
-    if (!resultsRaw) return undefined;
+    if (!resultsRaw) {
+        // Error-only payloads (results omitted) still count as a settled source section.
+        if (error === undefined) return undefined;
+        return { results: [], hasMore: false, error };
+    }
     const results = resultsRaw.flatMap((r) => {
         const result = parseSearchResult(r);
         return result ? [result] : [];
@@ -868,7 +925,6 @@ function parseSourcePayload(value: unknown): SourcePayload | undefined {
         hasMore: readBoolean(value, 'hasMore') ?? false,
         results,
     };
-    const error = readString(value, 'error');
     if (error !== undefined) payload.error = error;
     const correctedQuery = readString(value, 'correctedQuery');
     if (correctedQuery !== undefined) payload.correctedQuery = correctedQuery;

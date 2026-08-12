@@ -152,6 +152,74 @@ describe('google-search lib', () => {
         });
     });
 
+    it('keeps web items without displayLink and derives displayUrl from link hostname', async () => {
+        process.env["GOOGLE_CX"] = 'test-cx';
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await generateServiceAccountJson();
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = urlOf(input);
+            if (url.includes('oauth2.googleapis.com/token')) {
+                return new Response(
+                    JSON.stringify({ access_token: 'ya29.no-display', expires_in: 3600 }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            if (url.includes('googleapis.com/customsearch/v1')) {
+                return new Response(
+                    JSON.stringify({
+                        items: [
+                            {
+                                title: 'No Display',
+                                link: 'https://docs.example.org/page',
+                                snippet: 'ok',
+                            },
+                            {
+                                title: 'Empty Display',
+                                link: 'https://other.example.net/x',
+                                displayLink: '  ',
+                                snippet: 'ok',
+                            },
+                            {
+                                title: 'Bad Link',
+                                link: 'not-a-url',
+                                snippet: 'ok',
+                            },
+                        ],
+                        searchInformation: { totalResults: '3' },
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            }
+            throw new Error(`Unexpected fetch: ${url}`);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await fetchGoogle('cats', 1, 10);
+        expect(result.results).toEqual([
+            {
+                title: 'No Display',
+                url: 'https://docs.example.org/page',
+                displayUrl: 'docs.example.org',
+                snippet: 'ok',
+                source: 'google',
+            },
+            {
+                title: 'Empty Display',
+                url: 'https://other.example.net/x',
+                displayUrl: 'other.example.net',
+                snippet: 'ok',
+                source: 'google',
+            },
+            {
+                title: 'Bad Link',
+                url: 'not-a-url',
+                displayUrl: 'not-a-url',
+                snippet: 'ok',
+                source: 'google',
+            },
+        ]);
+    });
+
     it('fetchGoogleImages uses token + image searchType when configured', async () => {
         process.env["GOOGLE_CX"] = 'test-cx';
         // Unique SA so module token cache resets

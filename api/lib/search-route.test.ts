@@ -20,6 +20,7 @@ describe('aggregateEdgeRequest', () => {
         delete process.env["BRAVE_API_KEY"];
         delete process.env["GROQ_API_KEY"];
         delete process.env["MARGINALIA_API_KEY"];
+        delete process.env["TAVILY_API_KEY"];
     });
 
     afterEach(() => {
@@ -270,6 +271,117 @@ describe('aggregateEdgeRequest', () => {
                 }),
             })
         );
+    });
+
+    it('aggregate (no source) returns brave+marginalia+wiby+tavily', async () => {
+        process.env["BRAVE_API_KEY"] = 'brave-test';
+        process.env["TAVILY_API_KEY"] = 'tvly-test';
+        const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const u =
+                typeof input === 'string'
+                    ? input
+                    : input instanceof URL
+                      ? input.href
+                      : input.url;
+            if (u.includes('api.search.brave.com')) {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            web: {
+                                results: [
+                                    {
+                                        title: 'Brave Cat',
+                                        url: 'https://brave.example/cat',
+                                        description: 'brave snip',
+                                        meta_url: { hostname: 'brave.example' },
+                                    },
+                                ],
+                                total: 1,
+                            },
+                        }),
+                        { status: 200, headers: { 'Content-Type': 'application/json' } }
+                    )
+                );
+            }
+            if (u.includes('marginalia-search.com')) {
+                return Promise.resolve(
+                    new Response(JSON.stringify({ results: [], page: 1, pages: 1 }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    })
+                );
+            }
+            if (u.includes('wiby.me')) {
+                return Promise.resolve(
+                    new Response(JSON.stringify([]), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    })
+                );
+            }
+            if (u.includes('api.tavily.com')) {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            results: [
+                                {
+                                    title: 'Tavily Cat',
+                                    url: 'https://tavily.example/cat',
+                                    content: 'meow',
+                                },
+                            ],
+                        }),
+                        { status: 200, headers: { 'Content-Type': 'application/json' } }
+                    )
+                );
+            }
+            return Promise.reject(new Error(`unexpected fetch ${u}`));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=cats&page=1')
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.brave).toMatchObject({
+            results: [expect.objectContaining({ title: 'Brave Cat', source: 'brave' })],
+        });
+        expect(body.marginalia).toMatchObject({ results: [], hasMore: false });
+        expect(body.wiby).toMatchObject({ results: [] });
+        expect(body.tavily).toMatchObject({
+            results: [
+                expect.objectContaining({
+                    title: 'Tavily Cat',
+                    url: 'https://tavily.example/cat',
+                    source: 'tavily',
+                }),
+            ],
+            hasMore: false,
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            'https://api.tavily.com/search',
+            expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({
+                    Authorization: 'Bearer tvly-test',
+                }),
+            })
+        );
+    });
+
+    it('source=tavily with no TAVILY_API_KEY returns empty tavily section', async () => {
+        delete process.env["TAVILY_API_KEY"];
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=cats&source=tavily')
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body.tavily).toEqual({ results: [], hasMore: false, totalResults: '0' });
+        expect(body.brave).toBeUndefined();
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
 

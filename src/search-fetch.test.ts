@@ -18,24 +18,6 @@ vi.mock('./google-search', async (importOriginal) => {
     };
 });
 
-vi.mock('./tavily-search', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('./tavily-search')>();
-    return {
-        ...actual,
-        createCachedTavilySearchGet: (handler: (request: Request) => Promise<Response>) => {
-            return async (path: string) => {
-                const url = new URL(path, window.location.origin);
-                if (!actual.isTavilyClientSearchUrl(url)) {
-                    return handler(new Request(url.toString()));
-                }
-                return new Response(JSON.stringify({ via: 'cached-tavily', path }), {
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            };
-        },
-    };
-});
-
 import { searchApiFetch } from './search-fetch';
 
 describe('searchApiFetch', () => {
@@ -60,13 +42,11 @@ describe('searchApiFetch', () => {
         });
     });
 
-    it('routes Tavily /api/search GET through cached client handler (not edge fetch)', async () => {
+    it('routes Tavily /api/search GET through edge fetch (not client handler)', async () => {
         const res = await searchApiFetch('/api/search?q=cats&source=tavily&page=1');
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(await res.json()).toEqual({
-            via: 'cached-tavily',
-            path: '/api/search?q=cats&source=tavily&page=1',
-        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/search?q=cats&source=tavily');
+        expect(await res.text()).toBe('edge');
     });
 
     it('routes images+google /api/search GET through cached client handler', async () => {

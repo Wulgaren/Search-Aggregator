@@ -237,10 +237,18 @@ function parseInfoboxCastMember(value: unknown): InfoboxCastMember | null {
 
 function parseInfoboxData(value: unknown): InfoboxData | null {
     if (!isRecord(value)) return null;
-    const title = readString(value, 'title');
-    const description = readString(value, 'description');
     const url = readString(value, 'url');
-    if (!title || description === undefined || !url) return null;
+    const description = readString(value, 'description');
+    if (!url || description === undefined || !description.trim()) return null;
+    const rawTitle = readString(value, 'title');
+    let title = rawTitle?.trim() || '';
+    if (!title) {
+        try {
+            title = new URL(url).hostname || 'Untitled';
+        } catch {
+            title = 'Untitled';
+        }
+    }
     const data: InfoboxData = { title, description, url };
     const image = readString(value, 'image');
     if (image !== undefined) data.image = image;

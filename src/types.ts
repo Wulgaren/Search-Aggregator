@@ -1,12 +1,9 @@
-export type EarlyFetchKey = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby' | 'images' | 'infobox';
+export type EarlyFetchKey = 'aggregate' | 'google' | 'images' | 'infobox';
 
 export type EarlyFetchState = {
     query: string;
+    aggregate?: Promise<Response>;
     google?: Promise<Response>;
-    brave?: Promise<Response>;
-    tavily?: Promise<Response>;
-    marginalia?: Promise<Response>;
-    wiby?: Promise<Response>;
     images?: Promise<Response>;
     infobox?: Promise<Response>;
 };
@@ -179,19 +176,15 @@ export type SearchResultsElements = {
 
 export type SearchDeps = {
     apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
-    takeEarlyFetch: (
-        key: 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby',
-        query: string
-    ) => Promise<Response | null>;
+    takeEarlyFetch: (key: 'aggregate' | 'google', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     hasGoogleSearchConfigured: () => boolean;
-    hasTavilySearchConfigured: () => boolean;
     openApiSettingsDialog: (message?: string) => void;
     onGoogleCorrection?: (query: string, correctedQuery: string) => void;
 };
 
 export type StoredGoogleToken = { accessToken: string; expiresAtMs: number };
-export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string; tavilyApiKey: string };
+export type ApiSecretsFields = { googleCx: string; googleServiceAccount: string };
 export type ApplyApiSecretsResult = { ok: true } | { ok: false; error: string };
 
 export type ServiceAccountConfig = {

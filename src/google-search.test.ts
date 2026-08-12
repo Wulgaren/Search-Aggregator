@@ -197,6 +197,68 @@ describe('handleGoogleSearchRequest', () => {
         });
     });
 
+    it('keeps web items without displayLink and derives displayUrl from link hostname', async () => {
+        seedGoogleConfig();
+        fetchMock.mockImplementation(
+            googleCseFetchMock(() =>
+                Response.json({
+                    items: [
+                        {
+                            title: 'No Display',
+                            link: 'https://docs.example.org/page',
+                            snippet: 'ok',
+                        },
+                        {
+                            title: 'Empty Display',
+                            link: 'https://other.example.net/x',
+                            displayLink: '',
+                            snippet: 'ok',
+                        },
+                        {
+                            title: 'Bad Link',
+                            link: 'not-a-url',
+                            snippet: 'ok',
+                        },
+                        {
+                            title: 'Missing Link',
+                            displayLink: 'example.com',
+                            snippet: 'drop',
+                        },
+                    ],
+                    searchInformation: { totalResults: '4' },
+                })
+            )
+        );
+
+        const res = await handleGoogleSearchRequest(
+            new Request('http://localhost/api/search?q=cats&source=google&page=1')
+        );
+        const body = await res.json();
+        expect(body.google.results).toEqual([
+            {
+                title: 'No Display',
+                url: 'https://docs.example.org/page',
+                displayUrl: 'docs.example.org',
+                snippet: 'ok',
+                source: 'google',
+            },
+            {
+                title: 'Empty Display',
+                url: 'https://other.example.net/x',
+                displayUrl: 'other.example.net',
+                snippet: 'ok',
+                source: 'google',
+            },
+            {
+                title: 'Bad Link',
+                url: 'not-a-url',
+                displayUrl: 'not-a-url',
+                snippet: 'ok',
+                source: 'google',
+            },
+        ]);
+    });
+
     it('uses page for start index', async () => {
         seedGoogleConfig();
         fetchMock.mockImplementation(

@@ -1,6 +1,5 @@
-/** Google Custom Search + Tavily credentials + OAuth token cache (localStorage). */
+/** Google Custom Search credentials + OAuth token cache (localStorage). */
 import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
-import { invalidateTavilySearchCache, primeTavilyConnection } from './tavily-search';
 import type { ApiSecretsFields, ApplyApiSecretsResult, StoredGoogleToken } from './types';
 import { asRecord, isRecord, readNumber, readString } from './unknown';
 
@@ -8,14 +7,13 @@ export const LS_KEYS = {
     GOOGLE_SERVICE_ACCOUNT: 'searchApiGoogleServiceAccount',
     GOOGLE_CX: 'searchApiGoogleCx',
     GOOGLE_OAUTH_TOKEN: 'searchGoogleOAuthToken',
-    TAVILY_API_KEY: 'searchApiTavilyApiKey',
 } as const;
 
 const GOOGLE_TOKEN_BUFFER_MS = 60_000;
 
 export type ApiSecretId = Exclude<keyof typeof LS_KEYS, 'GOOGLE_OAUTH_TOKEN'>;
 
-const API_SECRET_IDS: ApiSecretId[] = ['GOOGLE_SERVICE_ACCOUNT', 'GOOGLE_CX', 'TAVILY_API_KEY'];
+const API_SECRET_IDS: ApiSecretId[] = ['GOOGLE_SERVICE_ACCOUNT', 'GOOGLE_CX'];
 
 export function getApiSecret(id: ApiSecretId): string {
     try {
@@ -101,14 +99,12 @@ export function getApiSecretsFields(): ApiSecretsFields {
     return {
         googleCx: getApiSecret('GOOGLE_CX'),
         googleServiceAccount,
-        tavilyApiKey: getApiSecret('TAVILY_API_KEY'),
     };
 }
 
 export function applyApiSecretsFromFields(fields: ApiSecretsFields): ApplyApiSecretsResult {
     const googleCx = fields.googleCx.trim();
     const googleServiceAccount = fields.googleServiceAccount.trim();
-    const tavilyApiKey = fields.tavilyApiKey.trim();
 
     if (googleServiceAccount && !googleServiceAccount.startsWith('{')) {
         try {
@@ -121,7 +117,6 @@ export function applyApiSecretsFromFields(fields: ApiSecretsFields): ApplyApiSec
     setApiSecrets({
         GOOGLE_CX: googleCx,
         GOOGLE_SERVICE_ACCOUNT: googleServiceAccount,
-        TAVILY_API_KEY: tavilyApiKey,
     });
 
     return { ok: true };
@@ -133,12 +128,8 @@ export function hasGoogleSearchConfigured(): boolean {
     return Boolean(getApiSecret('GOOGLE_SERVICE_ACCOUNT')) && Boolean(getApiSecret('GOOGLE_CX'));
 }
 
-export function hasTavilySearchConfigured(): boolean {
-    return Boolean(getApiSecret('TAVILY_API_KEY'));
-}
-
 function hasCommercialApiKeys(): boolean {
-    return hasGoogleSearchConfigured() && hasTavilySearchConfigured();
+    return hasGoogleSearchConfigured();
 }
 
 function getElById(id: string): HTMLElement | null {
@@ -165,10 +156,8 @@ function loadApiSettingsFields() {
     const f = getApiSecretsFields();
     const cx = getInputById('api-settings-google-cx');
     const sa = getTextAreaById('api-settings-google-sa');
-    const tavily = getInputById('api-settings-tavily-key');
     if (cx) cx.value = f.googleCx;
     if (sa) sa.value = f.googleServiceAccount;
-    if (tavily) tavily.value = f.tavilyApiKey;
 }
 
 function openApiSettingsDialog(contextMessage?: string) {
@@ -198,7 +187,7 @@ function maybeNotifyMissingCommercialKeys() {
     if (sessionStorage.getItem(SS_MISSING_COMMERCIAL) === '1') return;
     sessionStorage.setItem(SS_MISSING_COMMERCIAL, '1');
     openApiSettingsDialog(
-        'Add Google Custom Search credentials (cx + service account JSON) and a Tavily API key for commercial results. Brave, Marginalia, and Groq use Vercel environment variables (BRAVE_API_KEY, MARGINALIA_API_KEY, GROQ_API_KEY).'
+        'Add Google Custom Search credentials (cx + service account JSON) for commercial results. Brave, Tavily, Marginalia, and Groq use Vercel environment variables (BRAVE_API_KEY, TAVILY_API_KEY, MARGINALIA_API_KEY, GROQ_API_KEY).'
     );
 }
 
@@ -206,7 +195,6 @@ function setupApiSettingsPanel() {
     const dialog = getDialogById('api-settings-dialog');
     const cxField = getInputById('api-settings-google-cx');
     const saField = getTextAreaById('api-settings-google-sa');
-    const tavilyField = getInputById('api-settings-tavily-key');
     const errEl = getElById('api-settings-json-error');
     const closeBtn = getElById('api-settings-close');
     const saveBtn = getElById('api-settings-save');
@@ -219,11 +207,9 @@ function setupApiSettingsPanel() {
     saveBtn.addEventListener('click', () => {
         const beforeSa = getApiSecret('GOOGLE_SERVICE_ACCOUNT');
         const beforeCx = getApiSecret('GOOGLE_CX');
-        const beforeTavily = getApiSecret('TAVILY_API_KEY');
         const result = applyApiSecretsFromFields({
             googleCx: cxField.value,
             googleServiceAccount: saField.value,
-            tavilyApiKey: tavilyField?.value ?? '',
         });
         if (result.ok === false) {
             if (errEl) {
@@ -240,12 +226,6 @@ function setupApiSettingsPanel() {
             clearGoogleClientCaches();
         }
         void invalidateGoogleSearchCache();
-        if (getApiSecret('TAVILY_API_KEY') !== beforeTavily) {
-            void invalidateTavilySearchCache();
-        }
-        if (hasTavilySearchConfigured()) {
-            primeTavilyConnection();
-        }
         sessionStorage.removeItem(SS_MISSING_COMMERCIAL);
         dialog.close();
     });
