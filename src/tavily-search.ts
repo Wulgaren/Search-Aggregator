@@ -143,7 +143,12 @@ function displayUrlFromHref(href: string): string {
     try {
         return new URL(href).hostname;
     } catch {
-        return href;
+        // Relative redirect paths (e.g. /goto?url=…) — prefer host over raw string
+        try {
+            return new URL(href, 'https://tavily.com').hostname;
+        } catch {
+            return href;
+        }
     }
 }
 

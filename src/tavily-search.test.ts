@@ -129,6 +129,45 @@ describe('handleTavilySearchRequest', () => {
         });
     });
 
+    it('maps relative /goto redirect URLs to a short display host', async () => {
+        const gotoPath =
+            '/goto?url=CAESYwHuR6pNtK7WqswdPUAcrx0OW8W7O8NPi4sZnkk71kpQkZ3tPrY9FPkHkTsGjO0726iuzJAuO6nzr7AZXfgMMx43PI1v8x5StGDXPy-_r8S-hEJkx_iSADMbVBPsZVyDEMDKSQ%3D%3D';
+        fetchMock.mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    results: [
+                        {
+                            title: 'Redirected result',
+                            url: gotoPath,
+                            content: 'Snippet',
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+
+        const res = await handleTavilySearchRequest(
+            new Request('https://example.test/api/search?q=cats&source=tavily&page=1')
+        );
+        expect(await res.json()).toEqual({
+            page: 1,
+            tavily: {
+                results: [
+                    {
+                        title: 'Redirected result',
+                        url: gotoPath,
+                        displayUrl: 'tavily.com',
+                        snippet: 'Snippet',
+                        source: 'tavily',
+                    },
+                ],
+                hasMore: false,
+                totalResults: '1',
+            },
+        });
+    });
+
     it('page > 1 returns empty without calling Tavily', async () => {
         const res = await handleTavilySearchRequest(
             new Request('https://example.test/api/search?q=cats&source=tavily&page=2')
