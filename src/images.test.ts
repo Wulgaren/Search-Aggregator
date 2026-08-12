@@ -196,6 +196,34 @@ describe('createImagesComponent', () => {
         expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(0);
     });
 
+    it('aborts in-flight image fetch on reset()', async () => {
+        const signals: AbortSignal[] = [];
+        deps.apiFetch = vi.fn((_path: string, init?: RequestInit) => {
+            const signal = init?.signal;
+            if (signal) signals.push(signal);
+            return new Promise<Response>((_resolve, reject) => {
+                if (signal?.aborted) {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                    return;
+                }
+                signal?.addEventListener('abort', () => {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                });
+            });
+        });
+
+        const images = createImagesComponent(elements, deps);
+        const pending = images.fetchImages('cats');
+        await vi.waitFor(() => expect(signals.length).toBeGreaterThan(0));
+
+        images.reset();
+        await pending;
+
+        expect(signals[0]!.aborted).toBe(true);
+        expect(elements.imageSection.style.display).toBe('none');
+        expect(elements.sliderTrack.querySelector('.image-slider-status--error')).toBeNull();
+    });
+
     it('ignores stale delayed Brave when newer requestId wins', async () => {
         hasGoogle.mockReturnValue(true);
         deps.takeEarlyFetch = vi.fn(async () =>
@@ -306,7 +334,10 @@ describe('createImagesComponent', () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        expect(deps.apiFetch).toHaveBeenCalledWith(expect.stringContaining('imageSource=brave'));
+        expect(deps.apiFetch).toHaveBeenCalledWith(
+            expect.stringContaining('imageSource=brave'),
+            expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
         expect(elements.sliderTrack.querySelectorAll('.slider-image')).toHaveLength(2);
     });
 

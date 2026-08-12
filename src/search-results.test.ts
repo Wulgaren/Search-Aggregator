@@ -395,6 +395,32 @@ describe('createSearchResultsComponent', () => {
         });
     });
 
+    it('aborts in-flight page-1 fetches when a new search starts', async () => {
+        const abortErrors: AbortSignal[] = [];
+        deps.apiFetch = vi.fn((_path: string, init?: RequestInit) => {
+            const signal = init?.signal;
+            if (signal) abortErrors.push(signal);
+            return new Promise<Response>((_resolve, reject) => {
+                if (signal?.aborted) {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                    return;
+                }
+                signal?.addEventListener('abort', () => {
+                    reject(new DOMException('Aborted', 'AbortError'));
+                });
+            });
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+
+        component.startSearch('first');
+        component.startSearch('second');
+
+        await vi.waitFor(() => {
+            expect(abortErrors.some((signal) => signal.aborted)).toBe(true);
+        });
+    });
+
     it('reset clears query and restores placeholder empty-states', async () => {
         deps.hasGoogleSearchConfigured = vi.fn(() => false);
         deps.apiFetch = apiFetchBySource({

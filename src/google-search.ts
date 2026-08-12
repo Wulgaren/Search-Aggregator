@@ -79,14 +79,16 @@ export async function invalidateGoogleSearchCache(): Promise<void> {
 }
 
 /** Cache only Google-client /api/search GET routes in Cache Storage. */
-export function createCachedGoogleSearchGet(handler: SearchHandler): (path: string) => Promise<Response> {
-    return async function cachedGoogleSearchGet(path: string): Promise<Response> {
+export function createCachedGoogleSearchGet(
+    handler: SearchHandler
+): (path: string, init?: RequestInit) => Promise<Response> {
+    return async function cachedGoogleSearchGet(path: string, init?: RequestInit): Promise<Response> {
         const url = new URL(path, window.location.origin);
         if (!isGoogleClientSearchUrl(url)) {
-            return handler(new Request(url.toString()));
+            return handler(new Request(url.toString(), init));
         }
 
-        const request = new Request(url.toString(), { method: "GET" });
+        const request = new Request(url.toString(), { method: 'GET', signal: init?.signal });
         const cache = await openGoogleSearchCache();
         if (cache) {
             const cached = await readFromGoogleSearchCache(cache, request);
@@ -250,7 +252,12 @@ type GoogleSearchPayload = {
     htmlCorrectedQuery?: string;
 };
 
-async function fetchGoogle(query: string, page: number, resultsPerPage: number): Promise<GoogleSearchPayload> {
+async function fetchGoogle(
+    query: string,
+    page: number,
+    resultsPerPage: number,
+    signal?: AbortSignal
+): Promise<GoogleSearchPayload> {
     const cx = getApiSecret("GOOGLE_CX");
 
     if (!cx) {
@@ -281,6 +288,7 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number):
 
     const response = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal,
     });
 
     if (!response.ok) {
@@ -315,7 +323,7 @@ async function fetchGoogle(query: string, page: number, resultsPerPage: number):
     };
 }
 
-async function fetchGoogleImages(query: string, page = 1) {
+async function fetchGoogleImages(query: string, page = 1, signal?: AbortSignal) {
     const cx = getApiSecret("GOOGLE_CX");
 
     if (!cx || !getApiSecret("GOOGLE_SERVICE_ACCOUNT")) {
@@ -339,6 +347,7 @@ async function fetchGoogleImages(query: string, page = 1) {
 
         const response = await fetch(url.toString(), {
             headers: { Authorization: `Bearer ${accessToken}` },
+            signal,
         });
 
         if (!response.ok) {
@@ -361,7 +370,8 @@ async function fetchGoogleImages(query: string, page = 1) {
                 })
             )
             .filter((img: GoogleImageCandidate): img is ImageItem => Boolean(img.thumbnail && img.full));
-    } catch {
+    } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") throw e;
         return [];
     }
 }
@@ -392,14 +402,15 @@ async function fetchBraveWebViaEdge(
 async function fetchBraveImagesViaEdge(
     searchQuery: string,
     page: number,
-    origin: string
+    origin: string,
+    signal?: AbortSignal
 ): Promise<ImageItem[]> {
     const u = new URL("/api/search", origin);
     u.searchParams.set("q", searchQuery);
     u.searchParams.set("source", "images");
     u.searchParams.set("imageSource", "brave");
     u.searchParams.set("page", String(page));
-    const response = await fetch(u.toString());
+    const response = await fetch(u.toString(), { signal });
     if (!response.ok) return [];
     const data = await response.json();
     return data.images || [];
@@ -448,20 +459,21 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
     if (source === "images") {
         let images: Array<Record<string, unknown>> = [];
         let hasMore = true;
+        const signal = request.signal;
 
         if (imageSource === "google") {
-            const googleImages = await fetchGoogleImages(searchQuery, page);
+            const googleImages = await fetchGoogleImages(searchQuery, page, signal);
             images = googleImages;
             hasMore = page < 10;
             if (images.length === 0) {
-                const braveImages = await fetchBraveImagesViaEdge(searchQuery, page, origin);
+                const braveImages = await fetchBraveImagesViaEdge(searchQuery, page, origin, signal);
                 images = braveImages;
                 hasMore = page < 3;
             }
         } else {
             const [braveImages, googleImages] = await Promise.allSettled([
-                fetchBraveImagesViaEdge(searchQuery, page, origin),
-                fetchGoogleImages(searchQuery, page),
+                fetchBraveImagesViaEdge(searchQuery, page, origin, signal),
+                fetchGoogleImages(searchQuery, page, signal),
             ]);
 
             const allImages = [
@@ -492,7 +504,7 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
 
     if (source === "google") {
         try {
-            const google = await fetchGoogle(searchQuery, page, resultsPerPage);
+            const google = await fetchGoogle(searchQuery, page, resultsPerPage, request.signal);
             return new Response(JSON.stringify({ page, google }), {
                 headers: {
                     "Content-Type": "application/json",
@@ -500,6 +512,7 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
                 },
             });
         } catch (e) {
+            if (e instanceof Error && e.name === "AbortError") throw e;
             const msg = e instanceof Error ? e.message : String(e);
             let brave: BraveSourcePayload | undefined;
             try {

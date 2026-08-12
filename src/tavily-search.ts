@@ -95,14 +95,16 @@ export async function invalidateTavilySearchCache(): Promise<void> {
 }
 
 /** Cache only Tavily-client /api/search GET routes in Cache Storage. */
-export function createCachedTavilySearchGet(handler: SearchHandler): (path: string) => Promise<Response> {
-    return async function cachedTavilySearchGet(path: string): Promise<Response> {
+export function createCachedTavilySearchGet(
+    handler: SearchHandler
+): (path: string, init?: RequestInit) => Promise<Response> {
+    return async function cachedTavilySearchGet(path: string, init?: RequestInit): Promise<Response> {
         const url = new URL(path, window.location.origin);
         if (!isTavilyClientSearchUrl(url)) {
-            return handler(new Request(url.toString()));
+            return handler(new Request(url.toString(), init));
         }
 
-        const request = new Request(url.toString(), { method: 'GET' });
+        const request = new Request(url.toString(), { method: 'GET', signal: init?.signal });
         const cache = await openTavilySearchCache();
         if (cache) {
             const cached = await readFromTavilySearchCache(cache, request);
@@ -152,7 +154,12 @@ function displayUrlFromHref(href: string): string {
     }
 }
 
-async function fetchTavily(query: string, page: number, resultsPerPage: number): Promise<TavilySearchPayload> {
+async function fetchTavily(
+    query: string,
+    page: number,
+    resultsPerPage: number,
+    signal?: AbortSignal
+): Promise<TavilySearchPayload> {
     const apiKey = getApiSecret('TAVILY_API_KEY');
     if (!apiKey) {
         return { results: [], hasMore: false, totalResults: '0' };
@@ -175,6 +182,7 @@ async function fetchTavily(query: string, page: number, resultsPerPage: number):
             include_answer: false,
             max_results: Math.min(Math.max(1, resultsPerPage), TAVILY_MAX_RESULTS),
         }),
+        signal,
     });
 
     if (!response.ok) {
@@ -230,7 +238,7 @@ export async function handleTavilySearchRequest(request: Request): Promise<Respo
     }
 
     try {
-        const tavily = await fetchTavily(query.trim(), page, TAVILY_MAX_RESULTS);
+        const tavily = await fetchTavily(query.trim(), page, TAVILY_MAX_RESULTS, request.signal);
         return new Response(JSON.stringify({ page, tavily }), {
             headers: {
                 'Content-Type': 'application/json',
@@ -238,6 +246,7 @@ export async function handleTavilySearchRequest(request: Request): Promise<Respo
             },
         });
     } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') throw e;
         const msg = e instanceof Error ? e.message : String(e);
         return new Response(
             JSON.stringify({

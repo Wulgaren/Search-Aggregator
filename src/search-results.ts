@@ -10,9 +10,14 @@ import { redirectToGoogleSearch } from './query-bangs';
 
 type Page1Source = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby';
 
+function isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
+}
+
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
     let currentQuery = '';
     let searchSessionId = 0;
+    let sessionAbort: AbortController | null = null;
     let braveState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let googleState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
     let tavilyState: SourceState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -29,11 +34,25 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         page1Settled = createPage1Settled(deps);
     }
 
+    function abortActiveSession() {
+        if (sessionAbort) {
+            sessionAbort.abort();
+            sessionAbort = null;
+        }
+    }
+
+    function beginSession(): AbortSignal {
+        abortActiveSession();
+        sessionAbort = new AbortController();
+        return sessionAbort.signal;
+    }
+
     function restGateReady() {
         return page1Settled.brave && page1Settled.tavily && page1Settled.marginalia && page1Settled.wiby;
     }
 
     function reset() {
+        abortActiveSession();
         searchSessionId += 1;
         currentQuery = '';
         braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -97,18 +116,28 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         source: 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby',
         query: string,
         page: number,
-        sessionId: number
+        sessionId: number,
+        signal: AbortSignal
     ) {
         if (sessionId !== searchSessionId || query !== currentQuery) return;
         const state = getState(source);
         state.loading = true;
         try {
             let response: Response;
+            const fetchInit = { signal };
             if (page === 1) {
                 const early = await deps.takeEarlyFetch(source, query);
-                response = early ?? (await deps.apiFetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`));
+                response =
+                    early ??
+                    (await deps.apiFetch(
+                        `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`,
+                        fetchInit
+                    ));
             } else {
-                response = await deps.apiFetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`);
+                response = await deps.apiFetch(
+                    `/api/search?q=${encodeURIComponent(query)}&page=${page}&source=${source}`,
+                    fetchInit
+                );
             }
             if (!response.ok) throw new Error(`Search failed: ${response.status}`);
             const data = (await response.json()) as SearchApiResponse;
@@ -132,6 +161,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             }
             if (source === 'google') applyBraveFallback(data, page, sessionId, query);
         } catch (error) {
+            if (isAbortError(error)) return;
             const errMsg = error instanceof Error ? error.message : String(error);
             state.hasMore = false;
             state.error = errMsg;
@@ -168,6 +198,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         currentQuery = query;
         searchSessionId += 1;
         const sessionId = searchSessionId;
+        const signal = beginSession();
         braveState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         googleState = { page: 1, hasMore: true, loading: false, results: [], error: null };
         tavilyState = { page: 1, hasMore: true, loading: false, results: [], error: null };
@@ -184,9 +215,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         showLoading(elements.mergedResults);
         elements.commercialCount.textContent = '';
         elements.noncommercialCount.textContent = '';
-        void fetchSource('brave', query, 1, sessionId);
-        void fetchSource('marginalia', query, 1, sessionId);
-        void fetchSource('wiby', query, 1, sessionId);
+        void fetchSource('brave', query, 1, sessionId, signal);
+        void fetchSource('marginalia', query, 1, sessionId, signal);
+        void fetchSource('wiby', query, 1, sessionId, signal);
     }
 
     function updatePage1Views() {
@@ -286,11 +317,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function fetchGoogle(query: string) {
-        if (currentQuery === query) void fetchSource('google', query, 1, searchSessionId);
+        if (currentQuery === query && sessionAbort)
+            void fetchSource('google', query, 1, searchSessionId, sessionAbort.signal);
     }
 
     function fetchTavily(query: string) {
-        if (currentQuery === query) void fetchSource('tavily', query, 1, searchSessionId);
+        if (currentQuery === query && sessionAbort)
+            void fetchSource('tavily', query, 1, searchSessionId, sessionAbort.signal);
     }
 
     function forceRenderMergedIfNeeded() {
@@ -312,19 +345,21 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const googleNeedsMore = googleState.hasMore && !googleState.loading;
         const tavilyNeedsMore = tavilyState.hasMore && !tavilyState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore) return;
+        if (!sessionAbort) return;
+        const signal = sessionAbort.signal;
         showLoadingMore(elements.commercialResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
             braveState.page += 1;
-            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId));
+            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId, signal));
         }
         if (googleNeedsMore) {
             googleState.page += 1;
-            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId));
+            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId, signal));
         }
         if (tavilyNeedsMore) {
             tavilyState.page += 1;
-            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId));
+            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId, signal));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.commercialResults);
@@ -333,15 +368,17 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     async function loadMoreNoncommercial() {
         if (marginaliaState.loading || wibyState.loading) return;
         if (!marginaliaState.hasMore && !wibyState.hasMore) return;
+        if (!sessionAbort) return;
+        const signal = sessionAbort.signal;
         showLoadingMore(elements.noncommercialResults);
         const promises: Promise<void>[] = [];
         if (marginaliaState.hasMore && !marginaliaState.loading) {
             marginaliaState.page += 1;
-            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId));
+            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId, signal));
         }
         if (wibyState.hasMore && !wibyState.loading) {
             wibyState.page += 1;
-            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId));
+            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId, signal));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.noncommercialResults);
@@ -355,28 +392,30 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         const wibyNeedsMore = wibyState.hasMore && !wibyState.loading;
         if (!braveNeedsMore && !googleNeedsMore && !tavilyNeedsMore && !marginaliaNeedsMore && !wibyNeedsMore)
             return;
+        if (!sessionAbort) return;
+        const signal = sessionAbort.signal;
         mergedState.loading = true;
         showLoadingMore(elements.mergedResults);
         const promises: Promise<void>[] = [];
         if (braveNeedsMore) {
             braveState.page += 1;
-            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId));
+            promises.push(fetchSource('brave', currentQuery, braveState.page, searchSessionId, signal));
         }
         if (googleNeedsMore) {
             googleState.page += 1;
-            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId));
+            promises.push(fetchSource('google', currentQuery, googleState.page, searchSessionId, signal));
         }
         if (tavilyNeedsMore) {
             tavilyState.page += 1;
-            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId));
+            promises.push(fetchSource('tavily', currentQuery, tavilyState.page, searchSessionId, signal));
         }
         if (marginaliaNeedsMore) {
             marginaliaState.page += 1;
-            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId));
+            promises.push(fetchSource('marginalia', currentQuery, marginaliaState.page, searchSessionId, signal));
         }
         if (wibyNeedsMore) {
             wibyState.page += 1;
-            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId));
+            promises.push(fetchSource('wiby', currentQuery, wibyState.page, searchSessionId, signal));
         }
         await Promise.all(promises);
         removeLoadingMore(elements.mergedResults);

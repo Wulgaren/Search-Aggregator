@@ -90,6 +90,13 @@ describe('searchApiFetch', () => {
         expect(await res.text()).toBe('edge');
     });
 
+    it('passes abort signal to edge fetch for non-Google /api/search GET', async () => {
+        const controller = new AbortController();
+        await searchApiFetch('/api/search?q=cats&source=brave&page=1', { signal: controller.signal });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock.mock.calls[0]![1]).toMatchObject({ signal: controller.signal });
+    });
+
     it('non-cacheable: non-GET /api/search passes init to fetch', async () => {
         await searchApiFetch('/api/search?q=cats&source=google', { method: 'POST', body: '{}' });
         expect(fetchMock).toHaveBeenCalledTimes(1);
