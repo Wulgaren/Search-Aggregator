@@ -1,19 +1,131 @@
-// @ts-nocheck
-/* eslint-disable @typescript-eslint/no-explicit-any -- Wikidata/Brave JSON shapes */
 // Shared handler for Vercel Edge `/api/search` + `/api/ai`.
+
+import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
 
+type SearchResultItem = {
+    title: string;
+    url: string;
+    displayUrl: string;
+    snippet: string;
+    source: string;
+};
+
+type SearchSourcePayload = {
+    results: SearchResultItem[];
+    hasMore: boolean;
+    totalResults: string;
+};
+
+type SearchImageItem = {
+    thumbnail: string;
+    full: string;
+    title: string;
+    sourceUrl: string;
+    width?: number;
+    height?: number;
+    source: string;
+};
+
+type CastEntry = { id: string; role: string | null };
+
+type CastMember = {
+    name: string;
+    url: string;
+    role?: string;
+    image?: string;
+};
+
+type ExternalLinkConfig = {
+    name: string;
+    icon: string;
+    urlPrefix?: string;
+};
+
+type InfoboxResult = {
+    title: string | undefined;
+    description: string;
+    image: string | null;
+    imageWidth?: number;
+    imageHeight?: number;
+    url: string | undefined;
+    wikidataId: string | null;
+    links: { name: string; icon: string; url: string }[];
+    cast?: CastMember[];
+};
+
+type GroqSearchHit = {
+    title?: string;
+    url?: string;
+    content?: string;
+};
+
+type GroqSearchResults = {
+    results: GroqSearchHit[];
+};
+
+function settledErrorMessage(
+    result: PromiseSettledResult<unknown>,
+    fallback: string
+): string {
+    if (result.status !== "rejected") return fallback;
+    const reason: unknown = result.reason;
+    if (reason instanceof Error) return reason.message;
+    if (typeof reason === "string") return reason;
+    return fallback;
+}
+
+function firstPageRecord(
+    pages: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+    if (!pages) return undefined;
+    const values = Object.values(pages);
+    const first = values[0];
+    return asRecord(first);
+}
+
+function parsePagesMap(query: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+    const pages = query ? query["pages"] : undefined;
+    if (!isRecord(pages)) return undefined;
+    return pages;
+}
+
+function readDataValue(snak: Record<string, unknown> | undefined): unknown {
+    const datavalue = snak ? readRecord(snak, "datavalue") : undefined;
+    return datavalue ? datavalue["value"] : undefined;
+}
+
+function parseGroqSearchResults(value: unknown): GroqSearchResults | null {
+    const record = asRecord(value);
+    if (!record) return null;
+    const resultsRaw = readArray(record, "results");
+    if (!resultsRaw) return null;
+    const results: GroqSearchHit[] = resultsRaw.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const hit: GroqSearchHit = {};
+        const title = readString(item, "title");
+        const url = readString(item, "url");
+        const content = readString(item, "content");
+        if (title !== undefined) hit.title = title;
+        if (url !== undefined) hit.url = url;
+        if (content !== undefined) hit.content = content;
+        return [hit];
+    });
+    return { results };
+}
+
 export async function aggregateEdgeRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
+
     // Route to AI handler for /api/ai
     if (url.pathname === "/api/ai") {
         return handleAI(request);
     }
-    
+
     // Only allow GET requests for search
     if (request.method !== "GET") {
         return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -23,7 +135,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     }
 
     const query = url.searchParams.get("q");
-    const page = parseInt(url.searchParams.get("page")) || 1;
+    const page = parseInt(url.searchParams.get("page") ?? "1", 10) || 1;
     const source = url.searchParams.get("source");
     const imageSource = url.searchParams.get("imageSource");
 
@@ -126,9 +238,9 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
 
     const response: {
         page: number;
-        brave?: unknown;
-        marginalia?: unknown;
-        wiby?: unknown;
+        brave?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
+        marginalia?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
+        wiby?: SearchSourcePayload | { error: string; results: SearchResultItem[] };
     } = { page };
 
     if (!source || source === "brave") {
@@ -136,9 +248,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             braveResults.status === "fulfilled" && braveResults.value
                 ? braveResults.value
                 : {
-                    error:
-                        (braveResults.reason as Error)?.message ||
-                        "Failed to fetch Brave results",
+                    error: settledErrorMessage(braveResults, "Failed to fetch Brave results"),
                     results: [],
                 };
     }
@@ -148,9 +258,10 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             marginaliaResults.status === "fulfilled" && marginaliaResults.value
                 ? marginaliaResults.value
                 : {
-                    error:
-                        (marginaliaResults.reason as Error)?.message ||
-                        "Failed to fetch Marginalia results",
+                    error: settledErrorMessage(
+                        marginaliaResults,
+                        "Failed to fetch Marginalia results"
+                    ),
                     results: [],
                 };
     }
@@ -160,8 +271,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             wibyResults.status === "fulfilled" && wibyResults.value
                 ? wibyResults.value
                 : {
-                    error:
-                        (wibyResults.reason as Error)?.message || "Failed to fetch Wiby results",
+                    error: settledErrorMessage(wibyResults, "Failed to fetch Wiby results"),
                     results: [],
                 };
     }
@@ -174,8 +284,14 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     });
 }
 
-async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey: string) {
-    const apiKey = process.env.BRAVE_API_KEY;
+async function fetchBrave(
+    query: string,
+    page: number,
+    resultsPerPage: number,
+    reqId: string,
+    requestKey: string
+): Promise<SearchSourcePayload> {
+    const apiKey = process.env["BRAVE_API_KEY"];
 
     if (!apiKey) {
         console.error("[edge-search] Brave API key not configured");
@@ -190,8 +306,8 @@ async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey
 
     const url = new URL("https://api.search.brave.com/res/v1/web/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", resultsPerPage);
-    url.searchParams.set("offset", offset);
+    url.searchParams.set("count", String(resultsPerPage));
+    url.searchParams.set("offset", String(offset));
     url.searchParams.set("result_filter", "web,news");
 
     console.log("[edge-search] Brave API call", {
@@ -220,52 +336,78 @@ async function fetchBrave(query, page, resultsPerPage, reqId: string, requestKey
             });
             throw new Error("Rate limited - too many requests");
         }
-        const errorData = await response.json().catch(() => ({}));
+        const errorData: unknown = await response.json().catch(() => ({}));
+        const message = isRecord(errorData) ? readString(errorData, "message") : undefined;
         console.error("[edge-search] Brave request failed", {
             status: response.status,
-            message: errorData.message,
+            message,
             page,
             reqId,
             requestKey,
         });
-        throw new Error(errorData.message || `Brave API error: ${response.status}`);
+        throw new Error(message || `Brave API error: ${response.status}`);
     }
 
-    let data: any;
+    let data: unknown;
     try {
         data = await response.json();
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("[edge-search] Brave response JSON parse failed", {
             page,
             error: e instanceof Error ? e.message : String(e),
         });
         throw e;
     }
-    const webResults = data.web?.results || [];
+    const dataRecord = asRecord(data);
+    const web = dataRecord ? readRecord(dataRecord, "web") : undefined;
+    const webResults = web ? (readArray(web, "results") ?? []) : [];
 
-    const results = webResults.map((item) => ({
-        title: item.title,
-        url: item.url,
-        displayUrl: item.meta_url?.hostname || new URL(item.url).hostname,
-        snippet: item.description || "",
-        source: "brave",
-    }));
+    const results: SearchResultItem[] = webResults.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const itemUrl = readString(item, "url");
+        if (!itemUrl) return [];
+        let displayUrl: string;
+        try {
+            const metaUrl = readRecord(item, "meta_url");
+            displayUrl = (metaUrl ? readString(metaUrl, "hostname") : undefined) || new URL(itemUrl).hostname;
+        } catch {
+            return [];
+        }
+        return [
+            {
+                title: readString(item, "title") || itemUrl,
+                url: itemUrl,
+                displayUrl,
+                snippet: readString(item, "description") || "",
+                source: "brave",
+            },
+        ];
+    });
+
+    const total = web ? web["total"] : undefined;
+    const totalResults =
+        typeof total === "number" || typeof total === "string" ? String(total) : String(results.length);
 
     return {
         results,
         hasMore: webResults.length === resultsPerPage && offset < 9,
-        totalResults: String(data.web?.total || results.length),
+        totalResults,
     };
 }
 
-async function fetchMarginalia(query, page, resultsPerPage) {
+async function fetchMarginalia(
+    query: string,
+    page: number,
+    resultsPerPage: number
+): Promise<SearchSourcePayload> {
     const count = Math.min(100, Math.max(1, resultsPerPage));
     const url = new URL("https://api2.marginalia-search.com/search");
     url.searchParams.set("query", query);
     url.searchParams.set("count", String(count));
     url.searchParams.set("page", String(page));
 
-    const apiKey = process.env.MARGINALIA_API_KEY ?? "public";
+    const apiKey = process.env["MARGINALIA_API_KEY"] ?? "public";
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -283,37 +425,55 @@ async function fetchMarginalia(query, page, resultsPerPage) {
         throw new Error(`Marginalia API error: ${response.status}`);
     }
 
-    let data: any;
+    let data: unknown;
     try {
         data = await response.json();
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("[edge-search] Marginalia response JSON parse failed", {
             page,
             error: e instanceof Error ? e.message : String(e),
         });
         throw e;
     }
-    const results = (data.results || []).map((item) => ({
-        title: item.title || item.url,
-        url: item.url,
-        displayUrl: new URL(item.url).hostname,
-        snippet: item.description || "",
-        source: "marginalia",
-    }));
+    const dataRecord = asRecord(data);
+    const rawResults = dataRecord ? (readArray(dataRecord, "results") ?? []) : [];
+    const results: SearchResultItem[] = rawResults.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const itemUrl = readString(item, "url");
+        if (!itemUrl) return [];
+        let displayUrl: string;
+        try {
+            displayUrl = new URL(itemUrl).hostname;
+        } catch {
+            return [];
+        }
+        return [
+            {
+                title: readString(item, "title") || itemUrl,
+                url: itemUrl,
+                displayUrl,
+                snippet: readString(item, "description") || "",
+                source: "marginalia",
+            },
+        ];
+    });
 
+    const pageNum = dataRecord ? readNumber(dataRecord, "page") : undefined;
+    const pagesNum = dataRecord ? readNumber(dataRecord, "pages") : undefined;
     const hasMore =
-        typeof data.pages === "number" && typeof data.page === "number"
-            ? data.page < data.pages
+        typeof pagesNum === "number" && typeof pageNum === "number"
+            ? pageNum < pagesNum
             : results.length === count;
 
     return {
         results,
         hasMore,
-        totalResults: String(data.results?.length || 0),
+        totalResults: String(rawResults.length),
     };
 }
 
-async function fetchWiby(query, page) {
+async function fetchWiby(query: string, page: number): Promise<SearchSourcePayload> {
     const url = new URL("https://wiby.me/json/");
     url.searchParams.set("q", query);
     url.searchParams.set("p", String(Math.max(1, page)));
@@ -333,10 +493,10 @@ async function fetchWiby(query, page) {
         throw new Error(`Wiby API error: ${response.status}`);
     }
 
-    let data;
+    let data: unknown;
     try {
         data = await response.json();
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("[edge-search] Wiby response JSON parse failed", {
             page,
             error: e instanceof Error ? e.message : String(e),
@@ -344,25 +504,25 @@ async function fetchWiby(query, page) {
         throw e;
     }
 
-    if (!Array.isArray(data)) {
+    const list = asArray(data);
+    if (!list) {
         throw new Error("Wiby API returned unexpected JSON shape");
     }
 
-    const results = [];
-    for (const item of data) {
-        const href = item.URL || item.url;
-        if (!href || typeof href !== "string") continue;
+    const results: SearchResultItem[] = [];
+    for (const raw of list) {
+        const item = asRecord(raw);
+        if (!item) continue;
+        const href = readString(item, "URL") || readString(item, "url");
+        if (!href) continue;
         let displayUrl = href;
         try {
             displayUrl = new URL(href).hostname;
         } catch {
             continue;
         }
-        const title = item.Title || item.title || href;
-        const snippet =
-            (typeof item.Snippet === "string" && item.Snippet) ||
-            (typeof item.Description === "string" && item.Description) ||
-            "";
+        const title = readString(item, "Title") || readString(item, "title") || href;
+        const snippet = readString(item, "Snippet") || readString(item, "Description") || "";
         results.push({
             title,
             url: href,
@@ -380,12 +540,12 @@ async function fetchWiby(query, page) {
 }
 
 async function fetchBraveImages(
-    query,
+    query: string,
     page = 1,
     reqId?: string,
     requestKey?: string
-) {
-    const apiKey = process.env.BRAVE_API_KEY;
+): Promise<SearchImageItem[]> {
+    const apiKey = process.env["BRAVE_API_KEY"];
 
     if (!apiKey) {
         console.error("[edge-search] Brave API key not configured for images");
@@ -399,8 +559,8 @@ async function fetchBraveImages(
 
     const url = new URL("https://api.search.brave.com/res/v1/images/search");
     url.searchParams.set("q", query);
-    url.searchParams.set("count", 20);
-    url.searchParams.set("offset", offset);
+    url.searchParams.set("count", "20");
+    url.searchParams.set("offset", String(offset));
 
     console.log("[edge-search] Brave images API call", {
         reqId,
@@ -427,40 +587,59 @@ async function fetchBraveImages(
         return [];
     }
 
-    let data: any;
+    let data: unknown;
     try {
         data = await response.json();
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("[edge-search] Brave images response JSON parse failed", {
             page,
             error: e instanceof Error ? e.message : String(e),
         });
         return [];
     }
-    const results = data.results || [];
+    const dataRecord = asRecord(data);
+    const rawResults = dataRecord ? (readArray(dataRecord, "results") ?? []) : [];
 
-    return results
-        .map((item) => ({
-            thumbnail: item.thumbnail?.src || item.properties?.url,
-            full: item.properties?.url || item.thumbnail?.src,
-            title: item.title || "",
-            sourceUrl: item.url || "",
-            width: item.properties?.width,
-            height: item.properties?.height,
+    return rawResults.flatMap((raw): SearchImageItem[] => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const thumbnailObj = readRecord(item, "thumbnail");
+        const properties = readRecord(item, "properties");
+        const thumbnail =
+            (thumbnailObj ? readString(thumbnailObj, "src") : undefined) ||
+            (properties ? readString(properties, "url") : undefined);
+        const full =
+            (properties ? readString(properties, "url") : undefined) ||
+            (thumbnailObj ? readString(thumbnailObj, "src") : undefined);
+        if (!thumbnail || !full) return [];
+        const mapped: SearchImageItem = {
+            thumbnail,
+            full,
+            title: readString(item, "title") || "",
+            sourceUrl: readString(item, "url") || "",
             source: "brave",
-        }))
-        .filter((img) => img.thumbnail && img.full);
+        };
+        const width = properties ? readNumber(properties, "width") : undefined;
+        const height = properties ? readNumber(properties, "height") : undefined;
+        if (width !== undefined) mapped.width = width;
+        if (height !== undefined) mapped.height = height;
+        return [mapped];
+    });
 }
 
-async function fetchWikipediaInfobox(query) {
+async function fetchWikipediaInfobox(query: string): Promise<InfoboxResult | null> {
     try {
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&format=json&search=${encodeURIComponent(query)}&limit=5&origin=*`;
 
         const searchResponse = await fetch(searchUrl);
         if (!searchResponse.ok) return null;
 
-        const searchData = await searchResponse.json();
-        const pageTitles = searchData[1] || [];
+        const searchData: unknown = await searchResponse.json();
+        const searchList = asArray(searchData);
+        if (!searchList || searchList.length < 2) return null;
+        const titlesRaw = asArray(searchList[1]);
+        if (!titlesRaw) return null;
+        const pageTitles = titlesRaw.filter((t): t is string => typeof t === "string");
 
         if (pageTitles.length === 0) return null;
 
@@ -470,7 +649,7 @@ async function fetchWikipediaInfobox(query) {
         }
 
         return null;
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("[edge-search] Wikipedia infobox fetch failed", {
             error: e instanceof Error ? e.message : String(e),
         });
@@ -479,51 +658,70 @@ async function fetchWikipediaInfobox(query) {
 }
 
 /** Wikidata Commons image (P18) → thumbnail URL */
-function commonsThumbnailUrl(filename, width = 128) {
+function commonsThumbnailUrl(filename: string, width = 128): string | null {
     if (!filename || typeof filename !== "string") return null;
     const segment = filename.replace(/ /g, "_");
     return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(segment)}?width=${width}`;
 }
 
-function wikidataQualifierText(statement, propertyId) {
-    const quals = statement?.qualifiers?.[propertyId];
+function wikidataQualifierText(
+    statement: Record<string, unknown>,
+    propertyId: string
+): string | null {
+    const qualsRaw = readRecord(statement, "qualifiers");
+    const quals = qualsRaw ? readArray(qualsRaw, propertyId) : undefined;
     if (!quals?.length) return null;
-    const snak = quals[0];
-    if (snak?.snaktype !== "value" || !snak.datavalue?.value) return null;
-    const v = snak.datavalue.value;
+    const snak = asRecord(quals[0]);
+    if (!snak || readString(snak, "snaktype") !== "value") return null;
+    const v = readDataValue(snak);
     if (typeof v === "string") return v;
-    if (v && typeof v === "object" && typeof v.text === "string") return v.text;
+    if (isRecord(v)) {
+        const text = readString(v, "text");
+        if (text !== undefined) return text;
+    }
     return null;
 }
 
-function wikidataEntityLabel(entity) {
-    const labels = entity?.labels;
-    if (!labels || typeof labels !== "object") return null;
-    return labels.en?.value || labels[Object.keys(labels)[0]]?.value || null;
+function wikidataEntityLabel(entity: Record<string, unknown>): string | null {
+    const labels = readRecord(entity, "labels");
+    if (!labels) return null;
+    const en = readRecord(labels, "en");
+    const enValue = en ? readString(en, "value") : undefined;
+    if (enValue) return enValue;
+    const firstKey = Object.keys(labels)[0];
+    if (!firstKey) return null;
+    const first = readRecord(labels, firstKey);
+    return (first ? readString(first, "value") : undefined) || null;
 }
 
-function wikipediaTitleFromSitelink(entity) {
-    const enwiki = entity?.sitelinks?.enwiki;
-    if (enwiki?.title && typeof enwiki.title === "string") return enwiki.title;
-    return null;
+function wikipediaTitleFromSitelink(entity: Record<string, unknown>): string | null {
+    const sitelinks = readRecord(entity, "sitelinks");
+    const enwiki = sitelinks ? readRecord(sitelinks, "enwiki") : undefined;
+    const title = enwiki ? readString(enwiki, "title") : undefined;
+    return title || null;
 }
 
-function wikipediaArticleUrl(title) {
+function wikipediaArticleUrl(title: string | null): string | null {
     if (!title) return null;
     return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }
 
 /** Extract cast member Q-ids from film entity claims (P161), preserving order, deduped */
-function extractCastMemberIds(claims) {
-    const list = claims?.P161;
-    if (!Array.isArray(list)) return [];
-    const seen = new Set();
-    const out = [];
-    for (const st of list) {
-        const snak = st?.mainsnak;
-        if (snak?.snaktype !== "value" || snak.datavalue?.type !== "wikibase-entityid") continue;
-        const id = snak.datavalue.value?.id;
-        if (!id || typeof id !== "string" || seen.has(id)) continue;
+function extractCastMemberIds(claims: Record<string, unknown>): CastEntry[] {
+    const list = readArray(claims, "P161");
+    if (!list) return [];
+    const seen = new Set<string>();
+    const out: CastEntry[] = [];
+    for (const raw of list) {
+        const st = asRecord(raw);
+        if (!st) continue;
+        const snak = readRecord(st, "mainsnak");
+        if (!snak || readString(snak, "snaktype") !== "value") continue;
+        const datavalue = readRecord(snak, "datavalue");
+        if (!datavalue || readString(datavalue, "type") !== "wikibase-entityid") continue;
+        const value = datavalue["value"];
+        const id = isRecord(value) ? readString(value, "id") : undefined;
+        if (!id || seen.has(id)) continue;
         seen.add(id);
         out.push({ id, role: wikidataQualifierText(st, "P453") });
         if (out.length >= 36) break;
@@ -531,15 +729,15 @@ function extractCastMemberIds(claims) {
     return out;
 }
 
-async function fetchWikidataCastMembers(castEntries) {
+async function fetchWikidataCastMembers(castEntries: CastEntry[]): Promise<CastMember[]> {
     if (!castEntries.length) return [];
 
-    const batches = [];
+    const batches: CastEntry[][] = [];
     for (let i = 0; i < castEntries.length; i += 40) {
         batches.push(castEntries.slice(i, i + 40));
     }
 
-    const members = [];
+    const members: CastMember[] = [];
 
     for (const batch of batches) {
         const ids = batch.map((e) => e.id).join("|");
@@ -550,72 +748,84 @@ async function fetchWikidataCastMembers(castEntries) {
         const res = await fetch(url);
         if (!res.ok) continue;
 
-        let data;
+        let data: unknown;
         try {
             data = await res.json();
         } catch {
             continue;
         }
 
-        const entities = data.entities || {};
+        const dataRecord = asRecord(data);
+        const entities = dataRecord ? readRecord(dataRecord, "entities") : undefined;
+        if (!entities) continue;
 
         for (const { id, role } of batch) {
-            const entity = entities[id];
-            if (!entity || entity.missing === "") continue;
+            const entity = readRecord(entities, id);
+            if (!entity || entity["missing"] === "") continue;
 
             const name = wikidataEntityLabel(entity);
             if (!name) continue;
 
-            let image = null;
-            const p18 = entity.claims?.P18?.[0]?.mainsnak;
-            if (p18?.snaktype === "value" && typeof p18.datavalue?.value === "string") {
-                image = commonsThumbnailUrl(p18.datavalue.value, 128);
+            let image: string | null = null;
+            const claims = readRecord(entity, "claims");
+            const p18List = claims ? readArray(claims, "P18") : undefined;
+            const p18Statement = p18List ? asRecord(p18List[0]) : undefined;
+            const p18 = p18Statement ? readRecord(p18Statement, "mainsnak") : undefined;
+            if (p18 && readString(p18, "snaktype") === "value") {
+                const filename = readDataValue(p18);
+                if (typeof filename === "string") {
+                    image = commonsThumbnailUrl(filename, 128);
+                }
             }
 
             const wpTitle = wikipediaTitleFromSitelink(entity);
             const articleUrl = wikipediaArticleUrl(wpTitle) || `https://www.wikidata.org/wiki/${id}`;
 
-            members.push({
+            const member: CastMember = {
                 name,
-                role: role || undefined,
-                image: image || undefined,
                 url: articleUrl,
-            });
+            };
+            if (role) member.role = role;
+            if (image) member.image = image;
+            members.push(member);
         }
     }
 
     return members.slice(0, 24);
 }
 
-async function tryFetchPageInfobox(pageTitle) {
+async function tryFetchPageInfobox(pageTitle: string): Promise<InfoboxResult | null> {
     try {
         const pageUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=extracts|pageimages|info|extlinks|categories&exintro=true&explaintext=true&exsentences=4&piprop=thumbnail|original&pithumbsize=300&inprop=url&cllimit=10&origin=*`;
 
         const pageResponse = await fetch(pageUrl);
         if (!pageResponse.ok) return null;
 
-        const pageData = await pageResponse.json();
-        const pages = pageData.query?.pages || {};
-        const page = Object.values(pages)[0];
+        const pageData: unknown = await pageResponse.json();
+        const pageDataRecord = asRecord(pageData);
+        const query = pageDataRecord ? readRecord(pageDataRecord, "query") : undefined;
+        const page = firstPageRecord(parsePagesMap(query));
 
-        if (!page || page.missing) return null;
+        if (!page || page["missing"] !== undefined) return null;
 
-        const extract = page.extract || "";
+        const extract = readString(page, "extract") || "";
         if (extract.length < 50) return null;
 
-        let wikidataId = null;
-        const externalLinks = [];
-        let cast = [];
+        let wikidataId: string | null = null;
+        const externalLinks: { name: string; icon: string; url: string }[] = [];
+        let cast: CastMember[] = [];
 
         try {
             const wikidataUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&titles=${encodeURIComponent(pageTitle)}&prop=pageprops&ppprop=wikibase_item&origin=*`;
 
             const wikidataResponse = await fetch(wikidataUrl);
             if (wikidataResponse.ok) {
-                const wikidataData = await wikidataResponse.json();
-                const wikidataPages = wikidataData.query?.pages || {};
-                const wikidataPage = Object.values(wikidataPages)[0];
-                wikidataId = wikidataPage?.pageprops?.wikibase_item;
+                const wikidataData: unknown = await wikidataResponse.json();
+                const wikidataRecord = asRecord(wikidataData);
+                const wikidataQuery = wikidataRecord ? readRecord(wikidataRecord, "query") : undefined;
+                const wikidataPage = firstPageRecord(parsePagesMap(wikidataQuery));
+                const pageprops = wikidataPage ? readRecord(wikidataPage, "pageprops") : undefined;
+                wikidataId = (pageprops ? readString(pageprops, "wikibase_item") : undefined) ?? null;
             }
 
             if (wikidataId) {
@@ -623,11 +833,13 @@ async function tryFetchPageInfobox(pageTitle) {
 
                 const claimsResponse = await fetch(claimsUrl);
                 if (claimsResponse.ok) {
-                    const claimsData = await claimsResponse.json();
-                    const entity = claimsData.entities?.[wikidataId];
-                    const claims = entity?.claims || {};
+                    const claimsData: unknown = await claimsResponse.json();
+                    const claimsRecord = asRecord(claimsData);
+                    const entities = claimsRecord ? readRecord(claimsRecord, "entities") : undefined;
+                    const entity = entities ? readRecord(entities, wikidataId) : undefined;
+                    const claims = (entity ? readRecord(entity, "claims") : undefined) || {};
 
-                    const linkProperties = {
+                    const linkProperties: Record<string, ExternalLinkConfig> = {
                         P856: { name: "Official website", icon: "🌐" },
                         P2002: { name: "Twitter", icon: "𝕏", urlPrefix: "https://twitter.com/" },
                         P2003: { name: "Instagram", icon: "📷", urlPrefix: "https://instagram.com/" },
@@ -641,26 +853,23 @@ async function tryFetchPageInfobox(pageTitle) {
                     };
 
                     for (const [prop, config] of Object.entries(linkProperties)) {
-                        if (claims[prop] && claims[prop][0]?.mainsnak?.datavalue?.value) {
-                            const value = claims[prop][0].mainsnak.datavalue.value;
-                            let url;
+                        const claimList = readArray(claims, prop);
+                        const claim = claimList ? asRecord(claimList[0]) : undefined;
+                        const mainsnak = claim ? readRecord(claim, "mainsnak") : undefined;
+                        const value = readDataValue(mainsnak);
+                        if (typeof value !== "string") continue;
 
-                            if (typeof value === "string") {
-                                url = config.urlPrefix ? config.urlPrefix + value : value;
-                            } else {
-                                continue;
-                            }
+                        let linkUrl = config.urlPrefix ? config.urlPrefix + value : value;
 
-                            if (!url.startsWith("http")) {
-                                url = "https://" + url;
-                            }
-
-                            externalLinks.push({
-                                name: config.name,
-                                icon: config.icon,
-                                url: url,
-                            });
+                        if (!linkUrl.startsWith("http")) {
+                            linkUrl = "https://" + linkUrl;
                         }
+
+                        externalLinks.push({
+                            name: config.name,
+                            icon: config.icon,
+                            url: linkUrl,
+                        });
                     }
 
                     const castEntries = extractCastMemberIds(claims);
@@ -669,7 +878,7 @@ async function tryFetchPageInfobox(pageTitle) {
                     }
                 }
             }
-        } catch (e) {
+        } catch (e: unknown) {
             console.error("[edge-search] Wikidata enrichment failed", {
                 pageTitle,
                 error: e instanceof Error ? e.message : String(e),
@@ -677,18 +886,27 @@ async function tryFetchPageInfobox(pageTitle) {
             // Wikidata fetch failed, continue without external links
         }
 
-        return {
-            title: page.title,
+        const thumbnail = readRecord(page, "thumbnail");
+        const original = readRecord(page, "original");
+        const infobox: InfoboxResult = {
+            title: readString(page, "title"),
             description: extract,
-            image: page.thumbnail?.source || page.original?.source || null,
-            imageWidth: page.thumbnail?.width,
-            imageHeight: page.thumbnail?.height,
-            url: page.fullurl,
+            image: (thumbnail ? readString(thumbnail, "source") : undefined) ||
+                (original ? readString(original, "source") : undefined) ||
+                null,
+            url: readString(page, "fullurl"),
             wikidataId,
             links: externalLinks.slice(0, 6),
-            cast: cast.length > 0 ? cast : undefined,
         };
-    } catch (e) {
+        const thumbWidth = thumbnail ? readNumber(thumbnail, "width") : undefined;
+        const thumbHeight = thumbnail ? readNumber(thumbnail, "height") : undefined;
+        if (thumbWidth !== undefined) infobox.imageWidth = thumbWidth;
+        if (thumbHeight !== undefined) infobox.imageHeight = thumbHeight;
+        if (cast.length > 0) {
+            infobox.cast = cast;
+        }
+        return infobox;
+    } catch (e: unknown) {
         console.error("[edge-search] tryFetchPageInfobox failed", {
             pageTitle,
             error: e instanceof Error ? e.message : String(e),
@@ -698,7 +916,7 @@ async function tryFetchPageInfobox(pageTitle) {
 }
 
 // AI Answer Handler with Groq streaming
-async function handleAI(request) {
+async function handleAI(request: Request): Promise<Response> {
     // Only allow POST requests
     if (request.method !== "POST") {
         return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -707,7 +925,7 @@ async function handleAI(request) {
         });
     }
 
-    const groqApiKey = process.env.GROQ_API_KEY;
+    const groqApiKey = process.env["GROQ_API_KEY"];
     if (!groqApiKey) {
         console.error("[edge-search] Groq API key not configured");
         return new Response(JSON.stringify({ error: "Groq API key not configured" }), {
@@ -716,10 +934,10 @@ async function handleAI(request) {
         });
     }
 
-    let body;
+    let bodyRaw: unknown;
     try {
-        body = await request.json();
-    } catch (e) {
+        bodyRaw = await request.json();
+    } catch (e: unknown) {
         console.error("[edge-search] Invalid JSON body for AI request", {
             error: e instanceof Error ? e.message : String(e),
         });
@@ -729,7 +947,8 @@ async function handleAI(request) {
         });
     }
 
-    const { query } = body;
+    const body = asRecord(bodyRaw);
+    const query = body ? readString(body, "query") : undefined;
 
     if (!query || query.trim() === "") {
         return new Response(JSON.stringify({ error: "Query is required" }), {
@@ -771,25 +990,31 @@ Guidelines:
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+            const errorData: unknown = await response.json().catch(() => ({}));
+            const errObj = isRecord(errorData) ? readRecord(errorData, "error") : undefined;
+            const message = errObj ? readString(errObj, "message") : undefined;
             console.error("[edge-search] Groq request failed", {
                 status: response.status,
-                message: errorData.error?.message,
+                message,
             });
-            throw new Error(errorData.error?.message || `Groq API error: ${response.status}`);
+            throw new Error(message || `Groq API error: ${response.status}`);
         }
 
         // Stream the response back to the client
         const { readable, writable } = new TransformStream();
         const writer = writable.getWriter();
         const encoder = new TextEncoder();
+        const bodyStream = response.body;
+        if (!bodyStream) {
+            throw new Error("Groq API returned empty body");
+        }
 
         // Process the stream in the background
-        (async () => {
-            const reader = response.body.getReader();
+        void (async () => {
+            const reader = bodyStream.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
-            let searchResults = null;
+            let searchResults: GroqSearchResults | null = null;
 
             try {
                 while (true) {
@@ -806,38 +1031,37 @@ Guidelines:
                         if (!trimmed.startsWith("data: ")) continue;
 
                         try {
-                            const json = JSON.parse(trimmed.slice(6));
-                            
-                            // Extract content for streaming
-                            const content = json.choices?.[0]?.delta?.content;
+                            const parsed: unknown = JSON.parse(trimmed.slice(6));
+                            const json = asRecord(parsed);
+                            if (!json) continue;
+
+                            const choices = readArray(json, "choices");
+                            const choice = choices ? asRecord(choices[0]) : undefined;
+                            const delta = choice ? readRecord(choice, "delta") : undefined;
+                            const message = (choice ? readRecord(choice, "message") : undefined) || delta;
+
+                            const content = delta ? readString(delta, "content") : undefined;
                             if (content) {
                                 await writer.write(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
                             }
-                            
-                            // Extract search results from message (could be in delta or message)
-                            const choice = json.choices?.[0];
-                            const message = choice?.message || choice?.delta;
-                            
-                            if (message?.executed_tools) {
-                                for (const tool of message.executed_tools) {
-                                    if (tool.search_results) {
-                                        searchResults = tool.search_results;
-                                    }
+
+                            const executedTools = message ? readArray(message, "executed_tools") : undefined;
+                            if (executedTools) {
+                                for (const toolRaw of executedTools) {
+                                    const tool = asRecord(toolRaw);
+                                    if (!tool) continue;
+                                    const sr = parseGroqSearchResults(tool["search_results"]);
+                                    if (sr) searchResults = sr;
                                 }
                             }
-                            
-                            // Also check for tool_calls in delta
-                            if (choice?.delta?.tool_calls) {
-                                // Tool calls might be in progress, wait for final message
-                            }
-                        } catch (e) {
+                        } catch {
                             // Skip malformed JSON
                         }
                     }
                 }
 
                 // Send search results if we found any
-                if (searchResults?.results && searchResults.results.length > 0) {
+                if (searchResults && searchResults.results.length > 0) {
                     const sources = searchResults.results.map((result, index) => ({
                         title: result.title,
                         url: result.url,
@@ -849,7 +1073,7 @@ Guidelines:
 
                 // Send done signal
                 await writer.write(encoder.encode("data: [DONE]\n\n"));
-            } catch (e) {
+            } catch (e: unknown) {
                 const msg = e instanceof Error ? e.message : String(e);
                 console.error("[edge-search] Groq streaming handler failed", {
                     error: msg,
@@ -867,7 +1091,7 @@ Guidelines:
                 "Connection": "keep-alive",
             },
         });
-    } catch (error) {
+    } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[edge-search] handleAI failed", { error: msg });
         return new Response(JSON.stringify({ error: msg }), {
@@ -876,4 +1100,3 @@ Guidelines:
         });
     }
 }
-

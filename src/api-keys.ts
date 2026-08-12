@@ -2,6 +2,7 @@
 import { clearGoogleClientCaches, invalidateGoogleSearchCache } from './google-search';
 import { invalidateTavilySearchCache, primeTavilyConnection } from './tavily-search';
 import type { ApiSecretsFields, ApplyApiSecretsResult, StoredGoogleToken } from './types';
+import { asRecord, isRecord, readNumber, readString } from './unknown';
 
 export const LS_KEYS = {
     GOOGLE_SERVICE_ACCOUNT: 'searchApiGoogleServiceAccount',
@@ -14,6 +15,8 @@ const GOOGLE_TOKEN_BUFFER_MS = 60_000;
 
 export type ApiSecretId = Exclude<keyof typeof LS_KEYS, 'GOOGLE_OAUTH_TOKEN'>;
 
+const API_SECRET_IDS: ApiSecretId[] = ['GOOGLE_SERVICE_ACCOUNT', 'GOOGLE_CX', 'TAVILY_API_KEY'];
+
 export function getApiSecret(id: ApiSecretId): string {
     try {
         return localStorage.getItem(LS_KEYS[id])?.trim() ?? '';
@@ -22,8 +25,9 @@ export function getApiSecret(id: ApiSecretId): string {
     }
 }
 
-export function setApiSecrets(values: Partial<Record<ApiSecretId, string>>): void {
-    for (const id of Object.keys(values) as ApiSecretId[]) {
+export function setApiSecrets(values: { [K in ApiSecretId]?: string | undefined }): void {
+    for (const id of API_SECRET_IDS) {
+        if (!Object.prototype.hasOwnProperty.call(values, id)) continue;
         const v = values[id];
         if (v === undefined) continue;
         const trimmed = v.trim();
@@ -35,18 +39,25 @@ export function setApiSecrets(values: Partial<Record<ApiSecretId, string>>): voi
     }
 }
 
+function parseStoredGoogleToken(value: unknown): StoredGoogleToken | null {
+    if (!isRecord(value)) return null;
+    const accessToken = readString(value, 'accessToken');
+    const expiresAtMs = readNumber(value, 'expiresAtMs');
+    if (!accessToken || expiresAtMs === undefined) return null;
+    return { accessToken, expiresAtMs };
+}
+
 export function getStoredGoogleTokenState(): StoredGoogleToken | null {
     try {
         const raw = localStorage.getItem(LS_KEYS.GOOGLE_OAUTH_TOKEN);
         if (!raw) return null;
-        const parsed = JSON.parse(raw) as StoredGoogleToken;
-        if (!parsed?.accessToken || typeof parsed.expiresAtMs !== 'number') {
+        const parsed: unknown = JSON.parse(raw);
+        const token = parseStoredGoogleToken(parsed);
+        if (!token) return null;
+        if (Date.now() >= token.expiresAtMs - GOOGLE_TOKEN_BUFFER_MS) {
             return null;
         }
-        if (Date.now() >= parsed.expiresAtMs - GOOGLE_TOKEN_BUFFER_MS) {
-            return null;
-        }
-        return parsed;
+        return token;
     } catch {
         return null;
     }
@@ -81,7 +92,8 @@ export function getApiSecretsFields(): ApiSecretsFields {
     let googleServiceAccount = '';
     if (saRaw) {
         try {
-            googleServiceAccount = JSON.stringify(JSON.parse(saRaw) as Record<string, unknown>, null, 2);
+            const parsed: unknown = JSON.parse(saRaw);
+            googleServiceAccount = JSON.stringify(asRecord(parsed) ?? parsed, null, 2);
         } catch {
             googleServiceAccount = saRaw;
         }
@@ -129,20 +141,40 @@ function hasCommercialApiKeys(): boolean {
     return hasGoogleSearchConfigured() && hasTavilySearchConfigured();
 }
 
+function getElById(id: string): HTMLElement | null {
+    const el = document.getElementById(id);
+    return el instanceof HTMLElement ? el : null;
+}
+
+function getInputById(id: string): HTMLInputElement | null {
+    const el = document.getElementById(id);
+    return el instanceof HTMLInputElement ? el : null;
+}
+
+function getTextAreaById(id: string): HTMLTextAreaElement | null {
+    const el = document.getElementById(id);
+    return el instanceof HTMLTextAreaElement ? el : null;
+}
+
+function getDialogById(id: string): HTMLDialogElement | null {
+    const el = document.getElementById(id);
+    return el instanceof HTMLDialogElement ? el : null;
+}
+
 function loadApiSettingsFields() {
     const f = getApiSecretsFields();
-    const cx = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
-    const sa = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    const tavily = document.getElementById('api-settings-tavily-key') as HTMLInputElement | null;
+    const cx = getInputById('api-settings-google-cx');
+    const sa = getTextAreaById('api-settings-google-sa');
+    const tavily = getInputById('api-settings-tavily-key');
     if (cx) cx.value = f.googleCx;
     if (sa) sa.value = f.googleServiceAccount;
     if (tavily) tavily.value = f.tavilyApiKey;
 }
 
 function openApiSettingsDialog(contextMessage?: string) {
-    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const contextEl = document.getElementById('api-settings-context');
-    const errEl = document.getElementById('api-settings-json-error');
+    const dialog = getDialogById('api-settings-dialog');
+    const contextEl = getElById('api-settings-context');
+    const errEl = getElById('api-settings-json-error');
     if (!dialog || dialog.open) return;
     if (errEl) {
         errEl.textContent = '';
@@ -171,14 +203,14 @@ function maybeNotifyMissingCommercialKeys() {
 }
 
 function setupApiSettingsPanel() {
-    const dialog = document.getElementById('api-settings-dialog') as HTMLDialogElement | null;
-    const cxField = document.getElementById('api-settings-google-cx') as HTMLInputElement | null;
-    const saField = document.getElementById('api-settings-google-sa') as HTMLTextAreaElement | null;
-    const tavilyField = document.getElementById('api-settings-tavily-key') as HTMLInputElement | null;
-    const errEl = document.getElementById('api-settings-json-error');
-    const closeBtn = document.getElementById('api-settings-close');
-    const saveBtn = document.getElementById('api-settings-save');
-    const clearGoogleBtn = document.getElementById('api-settings-clear-google-token');
+    const dialog = getDialogById('api-settings-dialog');
+    const cxField = getInputById('api-settings-google-cx');
+    const saField = getTextAreaById('api-settings-google-sa');
+    const tavilyField = getInputById('api-settings-tavily-key');
+    const errEl = getElById('api-settings-json-error');
+    const closeBtn = getElById('api-settings-close');
+    const saveBtn = getElById('api-settings-save');
+    const clearGoogleBtn = getElById('api-settings-clear-google-token');
     if (!dialog || !cxField || !saField || !closeBtn || !saveBtn) return;
     closeBtn.addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {

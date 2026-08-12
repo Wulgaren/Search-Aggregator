@@ -4,14 +4,16 @@ import type {
     SearchDeps,
     SearchResult,
     SearchResultsElements,
+    SourcePayload,
     SourceState,
 } from './types';
 import { redirectToGoogleSearch } from './query-bangs';
+import { asRecord, isRecord, readArray, readBoolean, readString } from './unknown';
 
 type Page1Source = 'brave' | 'google' | 'tavily' | 'marginalia' | 'wiby';
 
 function isAbortError(error: unknown): boolean {
-    return error instanceof Error && error.name === 'AbortError';
+    return isRecord(error) && readString(error, 'name') === 'AbortError';
 }
 
 export function createSearchResultsComponent(elements: SearchResultsElements, deps: SearchDeps) {
@@ -140,7 +142,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
                 );
             }
             if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-            const data = (await response.json()) as SearchApiResponse;
+            const raw: unknown = await response.json();
+            const data = parseSearchApiResponse(raw);
             if (sessionId !== searchSessionId || query !== currentQuery) return;
             const sourceData = data[source];
             if (sourceData?.error) {
@@ -307,8 +310,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             return false;
 
         const googleConfigured = deps.hasGoogleSearchConfigured();
-        const braveFailed = Boolean(braveState.error);
-        const googleFailed = googleConfigured ? Boolean(googleState.error) : true;
+        const braveFailed = Boolean(braveState['error']);
+        const googleFailed = googleConfigured ? Boolean(googleState['error']) : true;
         if (!braveFailed || !googleFailed) return false;
 
         googleFallbackRedirected = true;
@@ -621,7 +624,8 @@ function interleaveArrays(...arrays: SearchResult[][]): SearchResult[] {
     const maxLen = Math.max(0, ...arrays.map((arr) => arr.length));
     for (let i = 0; i < maxLen; i++) {
         for (const arr of arrays) {
-            if (i < arr.length) result.push(arr[i]);
+            const item = arr[i];
+            if (item !== undefined) result.push(item);
         }
     }
     return result;
@@ -681,8 +685,8 @@ function sanitizeSnippet(html: string) {
     const allowedTags = ['b', 'strong', 'i', 'em', 'br', 'span', 'mark'];
     function sanitizeNode(node: Node): void {
         for (const child of Array.from(node.childNodes)) {
-            if (child.nodeType === Node.ELEMENT_NODE) {
-                const el = child as Element;
+            if (child instanceof Element) {
+                const el = child;
                 const tagName = el.tagName.toLowerCase();
                 if (!allowedTags.includes(tagName)) {
                     const text = document.createTextNode(el.textContent || '');
@@ -752,7 +756,8 @@ function prefetchLink(url: string) {
 
 function attachPrefetchListeners(container: HTMLElement) {
     container.querySelectorAll('.result-title a').forEach((link) => {
-        const a = link as HTMLAnchorElement;
+        if (!(link instanceof HTMLAnchorElement)) return;
+        const a = link;
         const url = a.href;
         a.addEventListener('mousedown', () => prefetchLink(url), { once: true });
         a.addEventListener('touchstart', () => setTimeout(() => prefetchLink(url), 0), { once: true, passive: true });
@@ -761,8 +766,9 @@ function attachPrefetchListeners(container: HTMLElement) {
 
 function applyNoAnimateToRenderedItems(container: HTMLElement, renderedUrls: Set<string>) {
     container.querySelectorAll('.result-item').forEach((item) => {
-        const el = item as HTMLElement;
-        const urlKey = el.dataset.urlKey;
+        if (!(item instanceof HTMLElement)) return;
+        const el = item;
+        const urlKey = el.dataset['urlKey'];
         if (!urlKey) return;
         if (renderedUrls.has(urlKey)) el.classList.add('no-animate');
         else renderedUrls.add(urlKey);
@@ -774,14 +780,16 @@ function attachSentinel(container: HTMLElement, source: 'commercial' | 'noncomme
         source === 'commercial' ? 'commercialSentinel' : source === 'noncommercial' ? 'noncommercialSentinel' : 'mergedSentinel';
     const observerKey =
         source === 'commercial' ? 'commercialObserver' : source === 'noncommercial' ? 'noncommercialObserver' : 'mergedObserver';
-    const sentinel = window.sentinels![sentinelKey];
-    const observer = window.scrollObservers![observerKey];
+    const sentinel = window.sentinels?.[sentinelKey];
+    const observer = window.scrollObservers?.[observerKey];
+    if (!sentinel || !observer) return;
     const existingSentinel = container.querySelector('.scroll-sentinel');
     if (existingSentinel) {
         observer.unobserve(existingSentinel);
         existingSentinel.remove();
     }
-    const newSentinel = sentinel.cloneNode(false) as HTMLElement;
+    const newSentinel = sentinel.cloneNode(false);
+    if (!(newSentinel instanceof HTMLElement)) return;
     container.appendChild(newSentinel);
     observer.observe(newSentinel);
 }
@@ -830,4 +838,53 @@ function createPage1Settled(deps: SearchDeps): Record<Page1Source, boolean> {
         marginalia: false,
         wiby: false,
     };
+}
+
+function parseSearchResult(value: unknown): SearchResult | null {
+    const record = asRecord(value);
+    if (!record) return null;
+    const title = readString(record, 'title');
+    const url = readString(record, 'url');
+    if (!title || !url) return null;
+    const result: SearchResult = { title, url };
+    const displayUrl = readString(record, 'displayUrl');
+    if (displayUrl !== undefined) result.displayUrl = displayUrl;
+    const snippet = readString(record, 'snippet');
+    if (snippet !== undefined) result.snippet = snippet;
+    const source = readString(record, 'source');
+    if (source !== undefined) result.source = source;
+    return result;
+}
+
+function parseSourcePayload(value: unknown): SourcePayload | undefined {
+    if (!isRecord(value)) return undefined;
+    const resultsRaw = readArray(value, 'results');
+    if (!resultsRaw) return undefined;
+    const results = resultsRaw.flatMap((r) => {
+        const result = parseSearchResult(r);
+        return result ? [result] : [];
+    });
+    const payload: SourcePayload = {
+        hasMore: readBoolean(value, 'hasMore') ?? false,
+        results,
+    };
+    const error = readString(value, 'error');
+    if (error !== undefined) payload.error = error;
+    const correctedQuery = readString(value, 'correctedQuery');
+    if (correctedQuery !== undefined) payload.correctedQuery = correctedQuery;
+    const htmlCorrectedQuery = readString(value, 'htmlCorrectedQuery');
+    if (htmlCorrectedQuery !== undefined) payload.htmlCorrectedQuery = htmlCorrectedQuery;
+    return payload;
+}
+
+const SEARCH_API_KEYS: Array<keyof SearchApiResponse> = ['brave', 'google', 'tavily', 'marginalia', 'wiby'];
+
+function parseSearchApiResponse(value: unknown): SearchApiResponse {
+    if (!isRecord(value)) return {};
+    const out: SearchApiResponse = {};
+    for (const key of SEARCH_API_KEYS) {
+        const payload = parseSourcePayload(value[key]);
+        if (payload) out[key] = payload;
+    }
+    return out;
 }

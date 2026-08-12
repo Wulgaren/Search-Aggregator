@@ -1,5 +1,6 @@
 import type { InfoboxCastMember, InfoboxData, InfoboxDeps, InfoboxElements, InfoboxLink, InfoboxState } from './types';
 import { createHeightTransition } from './height-transition';
+import { asRecord, isRecord, readArray, readString } from './unknown';
 
 export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxDeps) {
     const state: InfoboxState = { data: null, loading: false };
@@ -52,10 +53,11 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
             if (earlyInfobox) response = earlyInfobox;
             else response = await deps.apiFetch(`/api/search?q=${encodeURIComponent(query)}&source=infobox`);
             if (!response.ok) throw new Error(`Infobox fetch failed: ${response.status}`);
-            const data = await response.json();
+            const data: unknown = await response.json();
             if (requestId !== activeRequestId || query !== activeQuery) return;
-            state.data = data.infobox;
-            if (data.infobox) renderInfobox(data.infobox);
+            const infoboxData = parseInfoboxData(isRecord(data) ? data['infobox'] : undefined);
+            state.data = infoboxData;
+            if (infoboxData) renderInfobox(infoboxData);
             else hide();
         } catch (error) {
             console.error('Error fetching infobox:', error);
@@ -100,14 +102,16 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
 
             elements.infobox.classList.remove('no-image-fallback');
             if (data.image) {
-                elements.infoboxImage.src = data.image;
+                const image = data.image;
+                const imageFull = data.imageFull || image;
+                elements.infoboxImage.src = image;
                 elements.infoboxImage.alt = data.title;
                 elements.infoboxImage.classList.remove('no-image');
                 elements.infoboxImage.style.cursor = 'pointer';
                 elements.infoboxImage.onclick = () =>
                     deps.openImagePreview({
-                        thumbnail: data.image,
-                        full: data.imageFull || data.image,
+                        thumbnail: image,
+                        full: imageFull,
                         title: data.title,
                         sourceUrl: data.url,
                         sourceLinkText: 'View on Wikipedia',
@@ -156,8 +160,9 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
         photo.className = 'infobox-cast-photo';
 
         if (member.image) {
+            const imageUrl = member.image;
             const img = document.createElement('img');
-            img.src = member.image;
+            img.src = imageUrl;
             img.alt = '';
             img.loading = 'lazy';
             img.className = 'infobox-cast-photo-img';
@@ -165,8 +170,8 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
                 e.preventDefault();
                 e.stopPropagation();
                 deps.openImagePreview({
-                    thumbnail: member.image!,
-                    full: member.image!,
+                    thumbnail: imageUrl,
+                    full: imageUrl,
                     title: member.name,
                     sourceUrl: member.url,
                     sourceLinkText: 'View article',
@@ -201,4 +206,59 @@ export function createInfoboxComponent(elements: InfoboxElements, deps: InfoboxD
     }
 
     return { reset, fetchInfobox };
+}
+
+function parseInfoboxLink(value: unknown): InfoboxLink | null {
+    const record = asRecord(value);
+    if (!record) return null;
+    const url = readString(record, 'url');
+    if (!url) return null;
+    const link: InfoboxLink = { url };
+    const icon = readString(record, 'icon');
+    if (icon !== undefined) link.icon = icon;
+    const name = readString(record, 'name');
+    if (name !== undefined) link.name = name;
+    return link;
+}
+
+function parseInfoboxCastMember(value: unknown): InfoboxCastMember | null {
+    const record = asRecord(value);
+    if (!record) return null;
+    const name = readString(record, 'name');
+    const url = readString(record, 'url');
+    if (!name || !url) return null;
+    const member: InfoboxCastMember = { name, url };
+    const role = readString(record, 'role');
+    if (role !== undefined) member.role = role;
+    const image = readString(record, 'image');
+    if (image !== undefined) member.image = image;
+    return member;
+}
+
+function parseInfoboxData(value: unknown): InfoboxData | null {
+    if (!isRecord(value)) return null;
+    const title = readString(value, 'title');
+    const description = readString(value, 'description');
+    const url = readString(value, 'url');
+    if (!title || description === undefined || !url) return null;
+    const data: InfoboxData = { title, description, url };
+    const image = readString(value, 'image');
+    if (image !== undefined) data.image = image;
+    const imageFull = readString(value, 'imageFull');
+    if (imageFull !== undefined) data.imageFull = imageFull;
+    const linksRaw = readArray(value, 'links');
+    if (linksRaw) {
+        data.links = linksRaw.flatMap((l) => {
+            const link = parseInfoboxLink(l);
+            return link ? [link] : [];
+        });
+    }
+    const castRaw = readArray(value, 'cast');
+    if (castRaw) {
+        data.cast = castRaw.flatMap((c) => {
+            const member = parseInfoboxCastMember(c);
+            return member ? [member] : [];
+        });
+    }
+    return data;
 }

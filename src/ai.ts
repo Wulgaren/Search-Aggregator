@@ -1,4 +1,5 @@
 import type { AIDeps, AIElements, AISource, AIState, AIStreamChunk } from './types';
+import { asRecord, isRecord, readArray, readString } from './unknown';
 
 export function createAIComponent(elements: AIElements, deps: AIDeps) {
     const state: AIState = { loading: false, abortController: null };
@@ -44,12 +45,16 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const errMsg = errorData.error || `Request failed: ${response.status}`;
+                const errorData: unknown = await response.json().catch(() => ({}));
+                const errMsg =
+                    (isRecord(errorData) ? readString(errorData, 'error') : undefined) ||
+                    `Request failed: ${response.status}`;
                 throw new Error(errMsg);
             }
 
-            const reader = response.body!.getReader();
+            const body = response.body;
+            if (!body) throw new Error('No response body');
+            const reader = body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
             let fullContent = '';
@@ -68,7 +73,10 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
                     if (!trimmed || trimmed === 'data: [DONE]' || !trimmed.startsWith('data: ')) continue;
                     let json: AIStreamChunk;
                     try {
-                        json = JSON.parse(trimmed.slice(6));
+                        const parsed: unknown = JSON.parse(trimmed.slice(6));
+                        const chunk = parseAIStreamChunk(parsed);
+                        if (!chunk) continue;
+                        json = chunk;
                     } catch (e: unknown) {
                         if (!(e instanceof Error) || e.message !== 'Unexpected end of JSON input') console.error('Parse error:', e);
                         continue;
@@ -147,12 +155,12 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
         elements.aiAnswer.addEventListener('click', (e) => {
             const t = e.target;
             if (t instanceof HTMLElement && t.classList.contains('source-ref')) {
-                const sourceNum = parseInt(t.dataset.source ?? '', 10);
+                const sourceNum = parseInt(t.dataset['source'] ?? '', 10);
                 const sourceItem = elements.aiSources.querySelector(`.ai-source-item:nth-child(${sourceNum})`);
                 if (sourceItem instanceof HTMLElement) {
                     sourceItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     sourceItem.style.animation = 'none';
-                    sourceItem.offsetHeight;
+                    void sourceItem.offsetHeight;
                     sourceItem.style.animation = 'highlightSource 1s ease';
                 }
             }
@@ -164,6 +172,32 @@ export function createAIComponent(elements: AIElements, deps: AIDeps) {
     }
 
     return { setupEvents, fetchAIAnswer, closeAIPanel, reset };
+}
+
+function parseAISource(value: unknown): AISource | null {
+    const record = asRecord(value);
+    if (!record) return null;
+    const url = readString(record, 'url');
+    const title = readString(record, 'title');
+    if (!url || title === undefined) return null;
+    return { url, title };
+}
+
+function parseAIStreamChunk(value: unknown): AIStreamChunk | null {
+    if (!isRecord(value)) return null;
+    const chunk: AIStreamChunk = {};
+    const content = readString(value, 'content');
+    if (content !== undefined) chunk.content = content;
+    const error = readString(value, 'error');
+    if (error !== undefined) chunk.error = error;
+    const sourcesRaw = readArray(value, 'sources');
+    if (sourcesRaw) {
+        chunk.sources = sourcesRaw.flatMap((s) => {
+            const source = parseAISource(s);
+            return source ? [source] : [];
+        });
+    }
+    return chunk;
 }
 
 function renderMarkdown(text: string): string {
@@ -192,7 +226,7 @@ function renderMarkdown(text: string): string {
         .replace(/<blockquote>(.+?)<\/blockquote>/gi, '> $1');
 
     html = escapeHtml(html);
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => `<pre><code>${code.trim()}</code></pre>`);
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match: string, _lang: string, code: string) => `<pre><code>${code.trim()}</code></pre>`);
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     html = html.replace(/^(\s*)######\s+(.+?)\s*$/gm, '$1<h6>$2</h6>');
     html = html.replace(/^(\s*)#####\s+(.+?)\s*$/gm, '$1<h5>$2</h5>');
@@ -206,7 +240,7 @@ function renderMarkdown(text: string): string {
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     html = html.replace(/\[(\d+)\]/g, '<span class="source-ref" data-source="$1">$1</span>');
     html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
     html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
     html = html.replace(/\n\n+/g, '</p><p>');

@@ -1,8 +1,42 @@
 import { hasGoogleSearchConfigured } from './api-keys';
 import type { ImageDeps, ImageElements, ImageItem, ImageState } from './types';
+import { asArray, asRecord, isRecord, readBoolean, readNumber, readString } from './unknown';
 
 function isAbortError(error: unknown): boolean {
-    return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError');
+    if (!isRecord(error)) return false;
+    return readString(error, 'name') === 'AbortError';
+}
+
+function parseImageItems(value: unknown): ImageItem[] {
+    const items = asArray(value);
+    if (!items) return [];
+    return items.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const thumbnail = readString(item, 'thumbnail');
+        const full = readString(item, 'full');
+        if (!thumbnail || !full) return [];
+        const out: ImageItem = { thumbnail, full, title: readString(item, 'title') || '' };
+        const sourceUrl = readString(item, 'sourceUrl');
+        if (sourceUrl !== undefined) out.sourceUrl = sourceUrl;
+        const sourceLinkText = readString(item, 'sourceLinkText');
+        if (sourceLinkText !== undefined) out.sourceLinkText = sourceLinkText;
+        const width = readNumber(item, 'width');
+        if (width !== undefined) out.width = width;
+        const height = readNumber(item, 'height');
+        if (height !== undefined) out.height = height;
+        const source = readString(item, 'source');
+        if (source !== undefined) out.source = source;
+        return [out];
+    });
+}
+
+function parseImagesPayload(data: unknown): { images: ImageItem[]; hasMore: boolean } {
+    if (!isRecord(data)) return { images: [], hasMore: false };
+    return {
+        images: parseImageItems(data['images']),
+        hasMore: readBoolean(data, 'hasMore') ?? false,
+    };
 }
 
 export function createImagesComponent(elements: ImageElements, deps: ImageDeps) {
@@ -113,16 +147,20 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         elements.imagePreview.addEventListener(
             'touchstart',
             (e) => {
-                touchStartX = e.changedTouches[0].screenX;
-                touchStartY = e.changedTouches[0].screenY;
+                const touch = e.changedTouches[0];
+                if (!touch) return;
+                touchStartX = touch.screenX;
+                touchStartY = touch.screenY;
             },
             { passive: true }
         );
         elements.imagePreview.addEventListener(
             'touchend',
             (e) => {
-                const touchEndX = e.changedTouches[0].screenX;
-                const touchEndY = e.changedTouches[0].screenY;
+                const touch = e.changedTouches[0];
+                if (!touch) return;
+                const touchEndX = touch.screenX;
+                const touchEndY = touch.screenY;
                 handleSwipe(touchStartX, touchEndX, touchStartY, touchEndY, getCurrentQuery);
             },
             { passive: true }
@@ -157,9 +195,9 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                     if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
                     if (googleResponse.ok) {
                         sourceSucceeded = true;
-                        const googleData = await googleResponse.json();
+                        const googleData: unknown = await googleResponse.json();
                         if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                        state.images = uniqueImages((googleData.images || []) as ImageItem[]);
+                        state.images = uniqueImages(parseImageItems(isRecord(googleData) ? googleData['images'] : undefined));
                         googleOk = state.images.length > 0;
                         if (googleOk) {
                             renderImageSlider();
@@ -184,10 +222,11 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                     { signal }
                 );
                 if (!response.ok) throw new Error(`Image search failed: ${response.status}`);
-                const data = await response.json();
+                const data: unknown = await response.json();
                 if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return;
-                const newImages = (data.images || []) as ImageItem[];
-                state.hasMore = data.hasMore ?? false;
+                const payload = parseImagesPayload(data);
+                const newImages = payload.images;
+                state.hasMore = payload.hasMore;
                 state.page = page;
                 const uniqueNewImages = uniqueImages(newImages, state.images);
                 state.images = [...state.images, ...uniqueNewImages];
@@ -221,9 +260,9 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
                 { signal }
             );
             if (!braveResponse.ok) return false;
-            const braveData = await braveResponse.json();
+            const braveData: unknown = await braveResponse.json();
             if (signal.aborted || requestId !== activeRequestId || query !== activeQuery) return true;
-            const braveImages = (braveData.images || []) as ImageItem[];
+            const braveImages = parseImageItems(isRecord(braveData) ? braveData['images'] : undefined);
             const uniqueBraveImages = uniqueImages(braveImages, state.images);
             if (uniqueBraveImages.length === 0) return true;
             const hadImages = state.images.length > 0;
@@ -302,10 +341,11 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
     function bindSliderImageEvents() {
         const newImgElements = elements.sliderTrack.querySelectorAll('.slider-image:not([data-bound])');
         newImgElements.forEach((node) => {
-            const img = node as HTMLImageElement;
+            if (!(node instanceof HTMLImageElement)) return;
+            const img = node;
             img.setAttribute('data-bound', 'true');
             img.addEventListener('click', () => {
-                const index = parseInt(img.dataset.index ?? '', 10);
+                const index = parseInt(img.dataset['index'] ?? '', 10);
                 openImagePreview(index);
             });
             img.addEventListener('error', () => {
@@ -332,7 +372,7 @@ export function createImagesComponent(elements: ImageElements, deps: ImageDeps) 
         elements.imagePreview.classList.add('active', 'loading');
         elements.previewImage.style.opacity = '0';
         elements.previewImage.alt = img.title;
-        elements.previewImage.dataset.thumbnail = img.thumbnail;
+        elements.previewImage.dataset['thumbnail'] = img.thumbnail;
         elements.previewImage.onload = () => {
             elements.imagePreview.classList.remove('loading');
             elements.previewImage.style.opacity = '1';

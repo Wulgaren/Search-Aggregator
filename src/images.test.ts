@@ -23,8 +23,8 @@ function img(overrides: Partial<ImageItem> & Pick<ImageItem, 'full'>): ImageItem
         thumbnail: overrides.thumbnail ?? `${overrides.full}/thumb`,
         title: overrides.title ?? 'title',
         full: overrides.full,
-        sourceUrl: overrides.sourceUrl,
-        sourceLinkText: overrides.sourceLinkText,
+        ...(overrides.sourceUrl !== undefined ? { sourceUrl: overrides.sourceUrl } : {}),
+        ...(overrides.sourceLinkText !== undefined ? { sourceLinkText: overrides.sourceLinkText } : {}),
     };
 }
 

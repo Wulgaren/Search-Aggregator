@@ -137,11 +137,11 @@ describe('createInfoboxComponent', () => {
 
         const links = elements.infoboxLinks.querySelectorAll('a.infobox-link');
         expect(links).toHaveLength(2);
-        expect(links[0].getAttribute('href')).toBe('https://imdb.com/title/tt0083658');
-        expect(links[0].getAttribute('target')).toBe('_blank');
-        expect(links[0].getAttribute('rel')).toBe('noopener noreferrer');
-        expect(links[0].textContent).toBe('🎬IMDb');
-        expect(links[1].textContent).toBe('Trailer');
+        expect(links[0]?.getAttribute('href')).toBe('https://imdb.com/title/tt0083658');
+        expect(links[0]?.getAttribute('target')).toBe('_blank');
+        expect(links[0]?.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(links[0]?.textContent).toBe('🎬IMDb');
+        expect(links[1]?.textContent).toBe('Trailer');
     });
 
     it('renders cast members when present', async () => {
@@ -154,18 +154,18 @@ describe('createInfoboxComponent', () => {
         expect(elements.infoboxCast.querySelector('.infobox-cast-heading')?.textContent).toBe('Cast');
         const cards = elements.infoboxCast.querySelectorAll('a.infobox-cast-card');
         expect(cards).toHaveLength(2);
-        expect(cards[0].getAttribute('href')).toBe('https://en.wikipedia.org/wiki/Harrison_Ford');
-        expect(cards[0].querySelector('.infobox-cast-name')?.textContent).toBe('Harrison Ford');
-        expect(cards[0].querySelector('.infobox-cast-role')?.textContent).toBe('Deckard');
-        expect(cards[0].querySelector('img.infobox-cast-photo-img')).not.toBeNull();
-        expect(cards[1].querySelector('.infobox-cast-photo')?.classList.contains('infobox-cast-photo--empty')).toBe(
+        expect(cards[0]?.getAttribute('href')).toBe('https://en.wikipedia.org/wiki/Harrison_Ford');
+        expect(cards[0]?.querySelector('.infobox-cast-name')?.textContent).toBe('Harrison Ford');
+        expect(cards[0]?.querySelector('.infobox-cast-role')?.textContent).toBe('Deckard');
+        expect(cards[0]?.querySelector('img.infobox-cast-photo-img')).not.toBeNull();
+        expect(cards[1]?.querySelector('.infobox-cast-photo')?.classList.contains('infobox-cast-photo--empty')).toBe(
             true
         );
-        expect(cards[1].querySelector('.infobox-cast-photo')?.textContent).toBe('R');
+        expect(cards[1]?.querySelector('.infobox-cast-photo')?.textContent).toBe('R');
     });
 
     it('hides cast when absent', async () => {
-        const noCast: InfoboxData = { ...sampleInfobox, cast: undefined };
+        const { cast: _cast, ...noCast } = sampleInfobox;
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: noCast }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
@@ -176,7 +176,7 @@ describe('createInfoboxComponent', () => {
     });
 
     it('adds no-image classes when image is missing', async () => {
-        const noImage: InfoboxData = { ...sampleInfobox, image: undefined, imageFull: undefined };
+        const { image: _image, imageFull: _imageFull, ...noImage } = sampleInfobox;
         vi.mocked(deps.apiFetch).mockResolvedValue(jsonResponse({ infobox: noImage }));
         const { fetchInfobox } = createInfoboxComponent(elements, deps);
 
@@ -201,7 +201,7 @@ describe('createInfoboxComponent', () => {
         expect(elements.infobox.classList.contains('no-image-fallback')).toBe(false);
         expect(elements.infoboxImage.style.cursor).toBe('pointer');
 
-        elements.infoboxImage.onclick?.(new MouseEvent('click'));
+        elements.infoboxImage.onclick?.(new PointerEvent('click'));
         expect(deps.openImagePreview).toHaveBeenCalledWith({
             thumbnail: 'https://example.com/blade.jpg',
             full: 'https://example.com/blade-full.jpg',

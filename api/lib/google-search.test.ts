@@ -8,6 +8,21 @@ import {
 
 const originalEnv = { ...process.env };
 
+function urlOf(input: RequestInfo | URL): string {
+    if (typeof input === 'string') return input;
+    if (input instanceof URL) return input.href;
+    return input.url;
+}
+
+function callUrl(call: unknown): string | undefined {
+    if (!Array.isArray(call)) return undefined;
+    const first = call[0];
+    if (typeof first === 'string') return first;
+    if (first instanceof URL) return first.href;
+    if (first instanceof Request) return first.url;
+    return undefined;
+}
+
 async function generateServiceAccountJson(): Promise<string> {
     const keyPair = await crypto.subtle.generateKey(
         {
@@ -33,8 +48,8 @@ describe('google-search lib', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         process.env = { ...originalEnv };
-        delete process.env.GOOGLE_CX;
-        delete process.env.GOOGLE_SERVICE_ACCOUNT;
+        delete process.env["GOOGLE_CX"];
+        delete process.env["GOOGLE_SERVICE_ACCOUNT"];
     });
 
     afterEach(() => {
@@ -44,15 +59,15 @@ describe('google-search lib', () => {
 
     it('isGoogleConfigured is false when CX or SA unset', () => {
         expect(isGoogleConfigured()).toBe(false);
-        process.env.GOOGLE_CX = 'cx';
+        process.env["GOOGLE_CX"] = 'cx';
         expect(isGoogleConfigured()).toBe(false);
-        delete process.env.GOOGLE_CX;
-        process.env.GOOGLE_SERVICE_ACCOUNT = '{"client_email":"a","private_key":"b"}';
+        delete process.env["GOOGLE_CX"];
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = '{"client_email":"a","private_key":"b"}';
         expect(isGoogleConfigured()).toBe(false);
     });
 
     it('fetchGoogle returns empty when GOOGLE_CX unset', async () => {
-        process.env.GOOGLE_SERVICE_ACCOUNT = await generateServiceAccountJson();
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await generateServiceAccountJson();
         const fetchMock = vi.fn();
         vi.stubGlobal('fetch', fetchMock);
 
@@ -74,16 +89,16 @@ describe('google-search lib', () => {
 
     it('fetchGoogleImages returns [] when unset / not configured', async () => {
         await expect(fetchGoogleImages('cats')).resolves.toEqual([]);
-        process.env.GOOGLE_CX = 'cx-only';
+        process.env["GOOGLE_CX"] = 'cx-only';
         await expect(fetchGoogleImages('cats')).resolves.toEqual([]);
     });
 
     it('token exchange + CSE via mocked fetch when configured', async () => {
-        process.env.GOOGLE_CX = 'test-cx';
-        process.env.GOOGLE_SERVICE_ACCOUNT = await generateServiceAccountJson();
+        process.env["GOOGLE_CX"] = 'test-cx';
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await generateServiceAccountJson();
 
         const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-            const url = String(input);
+            const url = urlOf(input);
             if (url.includes('oauth2.googleapis.com/token')) {
                 return new Response(
                     JSON.stringify({ access_token: 'ya29.test-token', expires_in: 3600 }),
@@ -91,8 +106,6 @@ describe('google-search lib', () => {
                 );
             }
             if (url.includes('googleapis.com/customsearch/v1')) {
-                expect(url).toContain('cx=test-cx');
-                expect(url).toContain('q=cats');
                 return new Response(
                     JSON.stringify({
                         items: [
@@ -125,27 +138,27 @@ describe('google-search lib', () => {
         expect(result.totalResults).toBe('1');
         expect(fetchMock).toHaveBeenCalled();
 
-        const tokenCall = fetchMock.mock.calls.find((c) =>
-            String(c[0]).includes('oauth2.googleapis.com/token')
-        );
-        expect(tokenCall).toBeTruthy();
+        const tokenUrl = fetchMock.mock.calls.map(callUrl).find((u) => u?.includes('oauth2.googleapis.com/token'));
+        expect(tokenUrl).toBeTruthy();
 
-        const cseCall = fetchMock.mock.calls.find((c) =>
-            String(c[0]).includes('customsearch/v1')
-        );
-        expect(cseCall).toBeTruthy();
-        expect(cseCall![1]).toMatchObject({
+        const cseUrl = fetchMock.mock.calls.map(callUrl).find((u) => u?.includes('customsearch/v1'));
+        expect(cseUrl).toBeTruthy();
+        expect(cseUrl).toContain('cx=test-cx');
+        expect(cseUrl).toContain('q=cats');
+
+        const cseCall = fetchMock.mock.calls.find((c) => callUrl(c)?.includes('customsearch/v1'));
+        expect(cseCall?.[1]).toMatchObject({
             headers: { Authorization: 'Bearer ya29.test-token' },
         });
     });
 
     it('fetchGoogleImages uses token + image searchType when configured', async () => {
-        process.env.GOOGLE_CX = 'test-cx';
+        process.env["GOOGLE_CX"] = 'test-cx';
         // Unique SA so module token cache resets
-        process.env.GOOGLE_SERVICE_ACCOUNT = await generateServiceAccountJson();
+        process.env["GOOGLE_SERVICE_ACCOUNT"] = await generateServiceAccountJson();
 
         const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = String(input);
+            const url = urlOf(input);
             if (url.includes('oauth2.googleapis.com/token')) {
                 return new Response(
                     JSON.stringify({ access_token: 'ya29.img-token', expires_in: 3600 }),

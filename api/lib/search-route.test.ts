@@ -17,9 +17,9 @@ describe('aggregateEdgeRequest', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         process.env = { ...originalEnv };
-        delete process.env.BRAVE_API_KEY;
-        delete process.env.GROQ_API_KEY;
-        delete process.env.MARGINALIA_API_KEY;
+        delete process.env["BRAVE_API_KEY"];
+        delete process.env["GROQ_API_KEY"];
+        delete process.env["MARGINALIA_API_KEY"];
     });
 
     afterEach(() => {
@@ -79,7 +79,7 @@ describe('aggregateEdgeRequest', () => {
     });
 
     it('routes /api/ai: invalid JSON body → 400', async () => {
-        process.env.GROQ_API_KEY = 'test-key';
+        process.env["GROQ_API_KEY"] = 'test-key';
         const res = await aggregateEdgeRequest(
             jsonRequest('https://example.com/api/ai', {
                 method: 'POST',
@@ -92,7 +92,7 @@ describe('aggregateEdgeRequest', () => {
     });
 
     it('routes /api/ai: empty query → 400', async () => {
-        process.env.GROQ_API_KEY = 'test-key';
+        process.env["GROQ_API_KEY"] = 'test-key';
         const res = await aggregateEdgeRequest(
             jsonRequest('https://example.com/api/ai', {
                 method: 'POST',
@@ -105,7 +105,7 @@ describe('aggregateEdgeRequest', () => {
     });
 
     it('routes /api/ai: streams when Groq fetch succeeds', async () => {
-        process.env.GROQ_API_KEY = 'test-key';
+        process.env["GROQ_API_KEY"] = 'test-key';
         const sse = [
             'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
             'data: [DONE]\n\n',
@@ -159,7 +159,7 @@ describe('aggregateEdgeRequest', () => {
         const extract =
             'A domestic animal kept as a companion. Cats have been valued by humans for millennia.';
         const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = String(input);
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
             if (url.includes('action=opensearch')) {
                 return new Response(JSON.stringify(['cats', ['Cat'], [''], ['']]), {
                     status: 200,
@@ -221,7 +221,7 @@ describe('aggregateEdgeRequest', () => {
     });
 
     it('source=images&imageSource=brave returns images with mocked Brave', async () => {
-        process.env.BRAVE_API_KEY = 'brave-test';
+        process.env["BRAVE_API_KEY"] = 'brave-test';
         const fetchMock = vi.fn().mockResolvedValue(
             new Response(
                 JSON.stringify({

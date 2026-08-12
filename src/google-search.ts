@@ -10,16 +10,11 @@ import {
     setStoredGoogleAccessToken,
 } from "./api-keys";
 import type {
-    GoogleApiErrorData,
-    GoogleImageCandidate,
-    GoogleImageItem,
-    GoogleWebItem,
     ImageItem,
-    OAuthTokenErrorData,
-    PartialServiceAccountConfig,
     SearchHandler,
     ServiceAccountConfig,
 } from "./types";
+import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown";
 
 let googleServiceAccountConfig: ServiceAccountConfig | null = null;
 let googlePrivateCryptoKey: CryptoKey | null = null;
@@ -88,7 +83,10 @@ export function createCachedGoogleSearchGet(
             return handler(new Request(url.toString(), init));
         }
 
-        const request = new Request(url.toString(), { method: 'GET', signal: init?.signal });
+        const request = new Request(url.toString(), {
+            method: 'GET',
+            ...(init?.signal != null ? { signal: init.signal } : {}),
+        });
         const cache = await openGoogleSearchCache();
         if (cache) {
             const cached = await readFromGoogleSearchCache(cache, request);
@@ -169,14 +167,16 @@ async function getGoogleAccessToken(): Promise<string> {
             throw new Error("Google service account not configured");
         }
 
-        let serviceAccount: PartialServiceAccountConfig;
+        let parsed: unknown;
         try {
-            serviceAccount = JSON.parse(serviceAccountJson);
+            parsed = JSON.parse(serviceAccountJson);
         } catch {
             throw new Error("Invalid Google service account JSON");
         }
 
-        const { client_email, private_key } = serviceAccount;
+        const record = asRecord(parsed);
+        const client_email = record ? readString(record, 'client_email') : undefined;
+        const private_key = record ? readString(record, 'private_key') : undefined;
         if (!client_email || !private_key) {
             throw new Error("Service account missing client_email or private_key");
         }
@@ -223,16 +223,18 @@ async function getGoogleAccessToken(): Promise<string> {
     });
 
     if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        throw new Error(
-            (errorData as OAuthTokenErrorData).error_description ||
-                `Token exchange failed: ${tokenResponse.status}`
-        );
+        const errorData: unknown = await tokenResponse.json().catch(() => ({}));
+        const desc = isRecord(errorData) ? readString(errorData, 'error_description') : undefined;
+        throw new Error(desc || `Token exchange failed: ${tokenResponse.status}`);
     }
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token as string;
-    const expiresIn = Number(tokenData.expires_in) || 3600;
+    const tokenData: unknown = await tokenResponse.json();
+    const tokenRecord = asRecord(tokenData);
+    const accessToken = tokenRecord ? readString(tokenRecord, 'access_token') : undefined;
+    if (!accessToken) {
+        throw new Error("Token exchange returned no access_token");
+    }
+    const expiresIn = (tokenRecord ? readNumber(tokenRecord, 'expires_in') : undefined) || 3600;
     setStoredGoogleAccessToken(accessToken, expiresIn);
 
     return accessToken;
@@ -288,39 +290,53 @@ async function fetchGoogle(
 
     const response = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
-        signal,
+        ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-            (errorData as GoogleApiErrorData).error?.message ||
-                `Google API error: ${response.status}`
-        );
+        const errorData: unknown = await response.json().catch(() => ({}));
+        const errObj = isRecord(errorData) ? readRecord(errorData, 'error') : undefined;
+        const message = errObj ? readString(errObj, 'message') : undefined;
+        throw new Error(message || `Google API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    const items = data.items || [];
+    const data: unknown = await response.json();
+    const dataRecord = asRecord(data);
+    const items = dataRecord ? (readArray(dataRecord, 'items') ?? []) : [];
 
-    const results = items.map((item: GoogleWebItem) => ({
-        title: item.title,
-        url: item.link,
-        displayUrl: item.displayLink,
-        snippet: item.snippet || "",
-        source: "google",
-    }));
+    const results = items.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const title = readString(item, 'title');
+        const link = readString(item, 'link');
+        const displayLink = readString(item, 'displayLink');
+        if (!title || !link || !displayLink) return [];
+        return [
+            {
+                title,
+                url: link,
+                displayUrl: displayLink,
+                snippet: readString(item, 'snippet') || "",
+                source: "google",
+            },
+        ];
+    });
 
-    const totalResults = parseInt(data.searchInformation?.totalResults) || 0;
+    const searchInfo = dataRecord ? readRecord(dataRecord, 'searchInformation') : undefined;
+    const totalResults = parseInt((searchInfo ? readString(searchInfo, 'totalResults') : undefined) ?? "", 10) || 0;
     const hasMore = startIndex + results.length - 1 < totalResults && startIndex < 91;
+    const spelling = dataRecord ? readRecord(dataRecord, 'spelling') : undefined;
+    const correctedQuery = spelling ? readString(spelling, 'correctedQuery') : undefined;
+    const htmlCorrectedQuery = spelling ? readString(spelling, 'htmlCorrectedQuery') : undefined;
 
-    return {
+    const payload: GoogleSearchPayload = {
         results,
         hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
         totalResults: String(totalResults),
-        correctedQuery: typeof data.spelling?.correctedQuery === "string" ? data.spelling.correctedQuery : undefined,
-        htmlCorrectedQuery:
-            typeof data.spelling?.htmlCorrectedQuery === "string" ? data.spelling.htmlCorrectedQuery : undefined,
     };
+    if (correctedQuery !== undefined) payload.correctedQuery = correctedQuery;
+    if (htmlCorrectedQuery !== undefined) payload.htmlCorrectedQuery = htmlCorrectedQuery;
+    return payload;
 }
 
 async function fetchGoogleImages(query: string, page = 1, signal?: AbortSignal) {
@@ -347,29 +363,37 @@ async function fetchGoogleImages(query: string, page = 1, signal?: AbortSignal) 
 
         const response = await fetch(url.toString(), {
             headers: { Authorization: `Bearer ${accessToken}` },
-            signal,
+            ...(signal ? { signal } : {}),
         });
 
         if (!response.ok) {
             return [];
         }
 
-        const data = await response.json();
-        const items = data.items || [];
+        const data: unknown = await response.json();
+        const dataRecord = asRecord(data);
+        const items = dataRecord ? (readArray(dataRecord, 'items') ?? []) : [];
 
-        return items
-            .map(
-                (item: GoogleImageItem) => ({
-                    thumbnail: item.image?.thumbnailLink || item.link,
-                    full: item.link,
-                    title: item.title || "",
-                    sourceUrl: item.image?.contextLink || "",
-                    width: item.image?.width,
-                    height: item.image?.height,
-                    source: "google",
-                })
-            )
-            .filter((img: GoogleImageCandidate): img is ImageItem => Boolean(img.thumbnail && img.full));
+        return items.flatMap((raw): ImageItem[] => {
+            const item = asRecord(raw);
+            const image = item ? readRecord(item, 'image') : undefined;
+            const link = item ? readString(item, 'link') : undefined;
+            const thumbnail = (image ? readString(image, 'thumbnailLink') : undefined) || link;
+            const full = link;
+            if (!thumbnail || !full) return [];
+            const out: ImageItem = {
+                thumbnail,
+                full,
+                title: (item ? readString(item, 'title') : undefined) || '',
+                sourceUrl: (image ? readString(image, 'contextLink') : undefined) || '',
+                source: 'google',
+            };
+            const width = image ? readNumber(image, 'width') : undefined;
+            if (width !== undefined) out.width = width;
+            const height = image ? readNumber(image, 'height') : undefined;
+            if (height !== undefined) out.height = height;
+            return [out];
+        });
     } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
         return [];
@@ -393,10 +417,24 @@ async function fetchBraveWebViaEdge(
     u.searchParams.set("page", String(page));
     const response = await fetch(u.toString());
     if (!response.ok) return null;
-    const data = await response.json();
-    const brave = data.brave as BraveSourcePayload | undefined;
-    if (!brave || brave.error || !brave.results?.length) return null;
+    const data: unknown = await response.json();
+    const braveRaw = isRecord(data) ? data['brave'] : undefined;
+    const brave = parseBraveSourcePayload(braveRaw);
+    if (!brave || brave.error || !brave.results.length) return null;
     return brave;
+}
+
+function parseBraveSourcePayload(value: unknown): BraveSourcePayload | null {
+    if (!isRecord(value)) return null;
+    const resultsRaw = readArray(value, 'results');
+    if (!resultsRaw) return null;
+    const payload: BraveSourcePayload = {
+        results: resultsRaw.filter(isRecord),
+        hasMore: Boolean(value['hasMore']),
+    };
+    const error = readString(value, 'error');
+    if (error !== undefined) payload.error = error;
+    return payload;
 }
 
 async function fetchBraveImagesViaEdge(
@@ -410,10 +448,36 @@ async function fetchBraveImagesViaEdge(
     u.searchParams.set("source", "images");
     u.searchParams.set("imageSource", "brave");
     u.searchParams.set("page", String(page));
-    const response = await fetch(u.toString(), { signal });
+    const response = await fetch(u.toString(), {
+        ...(signal ? { signal } : {}),
+    });
     if (!response.ok) return [];
-    const data = await response.json();
-    return data.images || [];
+    const data: unknown = await response.json();
+    return parseImageItems(isRecord(data) ? data['images'] : undefined);
+}
+
+function parseImageItems(value: unknown): ImageItem[] {
+    const items = asArray(value);
+    if (!items) return [];
+    return items.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const thumbnail = readString(item, 'thumbnail');
+        const full = readString(item, 'full');
+        if (!thumbnail || !full) return [];
+        const out: ImageItem = { thumbnail, full, title: readString(item, 'title') || '' };
+        const sourceUrl = readString(item, 'sourceUrl');
+        if (sourceUrl !== undefined) out.sourceUrl = sourceUrl;
+        const sourceLinkText = readString(item, 'sourceLinkText');
+        if (sourceLinkText !== undefined) out.sourceLinkText = sourceLinkText;
+        const width = readNumber(item, 'width');
+        if (width !== undefined) out.width = width;
+        const height = readNumber(item, 'height');
+        if (height !== undefined) out.height = height;
+        const source = readString(item, 'source');
+        if (source !== undefined) out.source = source;
+        return [out];
+    });
 }
 
 /** GET /api/search requests that need Google in the browser (edge handles the rest). */
@@ -457,7 +521,7 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
     const imageSource = url.searchParams.get("imageSource");
 
     if (source === "images") {
-        let images: Array<Record<string, unknown>> = [];
+        let images: ImageItem[] = [];
         let hasMore = true;
         const signal = request.signal;
 
@@ -483,7 +547,7 @@ export async function handleGoogleSearchRequest(request: Request): Promise<Respo
 
             const seenUrls = new Set<string>();
             images = allImages.filter((img) => {
-                const full = String(img.full || "");
+                const full = img.full || "";
                 const normalizedUrl = full.replace(/^https?:\/\//, "").replace(/\/$/, "");
                 if (seenUrls.has(normalizedUrl)) {
                     return false;

@@ -7,10 +7,16 @@ import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
 
-function byId<T extends HTMLElement = HTMLElement>(id: string): T {
+function byId(id: string): HTMLElement {
     const el = document.getElementById(id);
-    if (!el) throw new Error(`Missing #${id}`);
-    return el as T;
+    if (!(el instanceof HTMLElement)) throw new Error(`Missing #${id}`);
+    return el;
+}
+
+function byIdOf<T extends HTMLElement>(id: string, ctor: abstract new (...args: never[]) => T): T {
+    const el = document.getElementById(id);
+    if (!(el instanceof ctor)) throw new Error(`Missing #${id} (${ctor.name})`);
+    return el;
 }
 
 function shouldAutoOpenAIForQuery(query: string): boolean {
@@ -30,7 +36,7 @@ function maybeClearEarlyFetch(): void {
         early.infobox
     )
         return;
-    window.__earlyFetch = undefined;
+    delete window.__earlyFetch;
 }
 
 function takeEarlyFetchPromise(key: EarlyFetchKey, query: string): Promise<Response> | null {
@@ -48,8 +54,8 @@ async function takeEarlyFetch(key: EarlyFetchKey, query: string): Promise<Respon
     return promise ? await promise : null;
 }
 
-const searchForm = byId<HTMLFormElement>('search-form');
-const searchInput = byId<HTMLInputElement>('search-input');
+const searchForm = byIdOf('search-form', HTMLFormElement);
+const searchInput = byIdOf('search-input', HTMLInputElement);
 const spellBanner = byId('spell-banner');
 let bypassGoogleCorrectionForQuery: string | null = null;
 
@@ -88,12 +94,12 @@ const images = createImagesComponent(
         imageSection: byId('image-section'),
         sliderTrack: byId('slider-track'),
         imagePreview: byId('image-preview'),
-        previewImage: byId<HTMLImageElement>('preview-image'),
+        previewImage: byIdOf('preview-image', HTMLImageElement),
         previewInfo: byId('preview-info'),
-        previewClose: byId<HTMLButtonElement>('preview-close'),
+        previewClose: byIdOf('preview-close', HTMLButtonElement),
         previewOverlay: byId('preview-overlay'),
-        previewPrev: byId<HTMLButtonElement>('preview-prev'),
-        previewNext: byId<HTMLButtonElement>('preview-next'),
+        previewPrev: byIdOf('preview-prev', HTMLButtonElement),
+        previewNext: byIdOf('preview-next', HTMLButtonElement),
         previewCounter: byId('preview-counter'),
     },
     { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q), escapeHtml }
@@ -102,12 +108,12 @@ const images = createImagesComponent(
 const infobox = createInfoboxComponent(
     {
         infobox: byId('infobox'),
-        infoboxImage: byId<HTMLImageElement>('infobox-image'),
+        infoboxImage: byIdOf('infobox-image', HTMLImageElement),
         infoboxTitle: byId('infobox-title'),
         infoboxDescription: byId('infobox-description'),
         infoboxCast: byId('infobox-cast'),
         infoboxLinks: byId('infobox-links'),
-        infoboxSource: byId<HTMLAnchorElement>('infobox-source'),
+        infoboxSource: byIdOf('infobox-source', HTMLAnchorElement),
     },
     {
         apiFetch,
@@ -118,9 +124,9 @@ const infobox = createInfoboxComponent(
 
 const ai = createAIComponent(
     {
-        aiBtn: byId<HTMLButtonElement>('ai-btn'),
+        aiBtn: byIdOf('ai-btn', HTMLButtonElement),
         aiPanel: byId('ai-panel'),
-        aiPanelClose: byId<HTMLButtonElement>('ai-panel-close'),
+        aiPanelClose: byIdOf('ai-panel-close', HTMLButtonElement),
         aiLoading: byId('ai-loading'),
         aiAnswer: byId('ai-answer'),
         aiPanelFooter: byId('ai-panel-footer'),
@@ -165,7 +171,7 @@ function renderSpellBanner(original: string, corrected: string | null) {
     const originalLink = document.createElement('a');
     originalLink.href = '#';
     originalLink.className = 'spell-banner-revert';
-    originalLink.dataset.searchInstead = original;
+    originalLink.dataset['searchInstead'] = original;
     originalLink.textContent = original;
     instead.appendChild(originalLink);
 
@@ -265,12 +271,13 @@ document.addEventListener('keydown', (e) => {
 });
 
 spellBanner.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const link = target?.closest('[data-search-instead]') as HTMLAnchorElement | null;
-    if (!link) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    const link = target.closest('[data-search-instead]');
+    if (!(link instanceof HTMLAnchorElement)) return;
 
     e.preventDefault();
-    const query = link.dataset.searchInstead;
+    const query = link.dataset['searchInstead'];
     if (!query) return;
 
     bypassGoogleCorrectionForQuery = query;

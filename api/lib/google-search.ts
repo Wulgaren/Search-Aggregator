@@ -1,24 +1,8 @@
 // Google Custom Search on Vercel Edge — OAuth via service account (env vars).
 
+import { asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
+
 type ServiceAccountConfig = { client_email: string; private_key: string };
-
-type GoogleWebItem = {
-    title: string;
-    link: string;
-    displayLink: string;
-    snippet?: string;
-};
-
-type GoogleImageItem = {
-    title?: string;
-    link: string;
-    image?: {
-        thumbnailLink?: string;
-        contextLink?: string;
-        width?: number;
-        height?: number;
-    };
-};
 
 let serviceAccountConfig: ServiceAccountConfig | null = null;
 let privateCryptoKey: CryptoKey | null = null;
@@ -28,8 +12,8 @@ let cachedToken: { accessToken: string; expiresAtMs: number } | null = null;
 const TOKEN_BUFFER_MS = 60_000;
 
 export function isGoogleConfigured(): boolean {
-    const cx = process.env.GOOGLE_CX?.trim();
-    const sa = process.env.GOOGLE_SERVICE_ACCOUNT?.trim();
+    const cx = process.env["GOOGLE_CX"]?.trim();
+    const sa = process.env["GOOGLE_SERVICE_ACCOUNT"]?.trim();
     return Boolean(cx && sa);
 }
 
@@ -73,7 +57,7 @@ async function getGoogleAccessToken(): Promise<string> {
         return cachedToken.accessToken;
     }
 
-    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT?.trim();
+    const serviceAccountJson = process.env["GOOGLE_SERVICE_ACCOUNT"]?.trim();
     if (!serviceAccountJson) {
         throw new Error("Google service account not configured");
     }
@@ -86,14 +70,16 @@ async function getGoogleAccessToken(): Promise<string> {
     }
 
     if (!serviceAccountConfig) {
-        let parsed: Partial<ServiceAccountConfig>;
+        let parsed: unknown;
         try {
             parsed = JSON.parse(serviceAccountJson);
         } catch {
             throw new Error("Invalid Google service account JSON");
         }
 
-        const { client_email, private_key } = parsed;
+        const record = asRecord(parsed);
+        const client_email = record ? readString(record, "client_email") : undefined;
+        const private_key = record ? readString(record, "private_key") : undefined;
         if (!client_email || !private_key) {
             throw new Error("Service account missing client_email or private_key");
         }
@@ -133,17 +119,18 @@ async function getGoogleAccessToken(): Promise<string> {
     });
 
     if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        const description =
-            typeof errorData.error_description === "string"
-                ? errorData.error_description
-                : `Token exchange failed: ${tokenResponse.status}`;
-        throw new Error(description);
+        const errorData: unknown = await tokenResponse.json().catch(() => ({}));
+        const description = isRecord(errorData) ? readString(errorData, "error_description") : undefined;
+        throw new Error(description || `Token exchange failed: ${tokenResponse.status}`);
     }
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token as string;
-    const expiresIn = Number(tokenData.expires_in) || 3600;
+    const tokenData: unknown = await tokenResponse.json();
+    const tokenRecord = asRecord(tokenData);
+    const accessToken = tokenRecord ? readString(tokenRecord, "access_token") : undefined;
+    if (!accessToken) {
+        throw new Error("Token exchange returned no access_token");
+    }
+    const expiresIn = (tokenRecord ? readNumber(tokenRecord, "expires_in") : undefined) || 3600;
     cachedToken = { accessToken, expiresAtMs: Date.now() + expiresIn * 1000 };
 
     return accessToken;
@@ -157,9 +144,27 @@ type GoogleSearchResult = {
     source: string;
 };
 
-export async function fetchGoogle(query: string, page: number, resultsPerPage: number) {
-    const empty = { results: [] as GoogleSearchResult[], hasMore: false, totalResults: "0" };
-    const cx = process.env.GOOGLE_CX?.trim();
+type GoogleImageResult = {
+    thumbnail: string;
+    full: string;
+    title: string;
+    sourceUrl: string;
+    width?: number;
+    height?: number;
+    source: string;
+};
+
+type GoogleSearchPayload = {
+    results: GoogleSearchResult[];
+    hasMore: boolean;
+    totalResults: string;
+    correctedQuery?: string;
+    htmlCorrectedQuery?: string;
+};
+
+export async function fetchGoogle(query: string, page: number, resultsPerPage: number): Promise<GoogleSearchPayload> {
+    const empty: GoogleSearchPayload = { results: [], hasMore: false, totalResults: "0" };
+    const cx = process.env["GOOGLE_CX"]?.trim();
     if (!cx || !isGoogleConfigured()) {
         return empty;
     }
@@ -185,42 +190,53 @@ export async function fetchGoogle(query: string, page: number, resultsPerPage: n
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const message =
-            typeof errorData?.error?.message === "string"
-                ? errorData.error.message
-                : `Google API error: ${response.status}`;
-        throw new Error(message);
+        const errorData: unknown = await response.json().catch(() => ({}));
+        const errObj = isRecord(errorData) ? readRecord(errorData, "error") : undefined;
+        const message = errObj ? readString(errObj, "message") : undefined;
+        throw new Error(message || `Google API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    const items = data.items || [];
-    const results = items.map((item: GoogleWebItem) => ({
-        title: item.title,
-        url: item.link,
-        displayUrl: item.displayLink,
-        snippet: item.snippet || "",
-        source: "google",
-    }));
+    const data: unknown = await response.json();
+    const dataRecord = asRecord(data);
+    const items = dataRecord ? (readArray(dataRecord, "items") ?? []) : [];
 
-    const totalResults = parseInt(data.searchInformation?.totalResults) || 0;
+    const results = items.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const title = readString(item, "title");
+        const link = readString(item, "link");
+        const displayLink = readString(item, "displayLink");
+        if (!title || !link || !displayLink) return [];
+        return [
+            {
+                title,
+                url: link,
+                displayUrl: displayLink,
+                snippet: readString(item, "snippet") || "",
+                source: "google",
+            },
+        ];
+    });
+
+    const searchInfo = dataRecord ? readRecord(dataRecord, "searchInformation") : undefined;
+    const totalResults = parseInt((searchInfo ? readString(searchInfo, "totalResults") : undefined) ?? "", 10) || 0;
     const hasMore = startIndex + results.length - 1 < totalResults && startIndex < 91;
+    const spelling = dataRecord ? readRecord(dataRecord, "spelling") : undefined;
+    const correctedQuery = spelling ? readString(spelling, "correctedQuery") : undefined;
+    const htmlCorrectedQuery = spelling ? readString(spelling, "htmlCorrectedQuery") : undefined;
 
-    return {
+    const out: GoogleSearchPayload = {
         results,
         hasMore: hasMore && results.length === Math.min(resultsPerPage, 10),
         totalResults: String(totalResults),
-        correctedQuery:
-            typeof data.spelling?.correctedQuery === "string" ? data.spelling.correctedQuery : undefined,
-        htmlCorrectedQuery:
-            typeof data.spelling?.htmlCorrectedQuery === "string"
-                ? data.spelling.htmlCorrectedQuery
-                : undefined,
     };
+    if (correctedQuery !== undefined) out.correctedQuery = correctedQuery;
+    if (htmlCorrectedQuery !== undefined) out.htmlCorrectedQuery = htmlCorrectedQuery;
+    return out;
 }
 
-export async function fetchGoogleImages(query: string, page = 1) {
-    const cx = process.env.GOOGLE_CX?.trim();
+export async function fetchGoogleImages(query: string, page = 1): Promise<GoogleImageResult[]> {
+    const cx = process.env["GOOGLE_CX"]?.trim();
     if (!cx || !isGoogleConfigured()) {
         return [];
     }
@@ -247,20 +263,31 @@ export async function fetchGoogleImages(query: string, page = 1) {
             return [];
         }
 
-        const data = await response.json();
-        const items = data.items || [];
+        const data: unknown = await response.json();
+        const dataRecord = asRecord(data);
+        const items = dataRecord ? (readArray(dataRecord, "items") ?? []) : [];
 
-        return items
-            .map((item: GoogleImageItem) => ({
-                thumbnail: item.image?.thumbnailLink || item.link,
-                full: item.link,
-                title: item.title || "",
-                sourceUrl: item.image?.contextLink || "",
-                width: item.image?.width,
-                height: item.image?.height,
+        return items.flatMap((raw): GoogleImageResult[] => {
+            const item = asRecord(raw);
+            if (!item) return [];
+            const image = readRecord(item, "image");
+            const link = readString(item, "link");
+            const thumbnail = (image ? readString(image, "thumbnailLink") : undefined) || link;
+            const full = link;
+            if (!thumbnail || !full) return [];
+            const mapped: GoogleImageResult = {
+                thumbnail,
+                full,
+                title: readString(item, "title") || "",
+                sourceUrl: (image ? readString(image, "contextLink") : undefined) || "",
                 source: "google",
-            }))
-            .filter((img: { thumbnail?: string; full?: string }) => Boolean(img.thumbnail && img.full));
+            };
+            const width = image ? readNumber(image, "width") : undefined;
+            const height = image ? readNumber(image, "height") : undefined;
+            if (width !== undefined) mapped.width = width;
+            if (height !== undefined) mapped.height = height;
+            return [mapped];
+        });
     } catch {
         return [];
     }
@@ -269,7 +296,7 @@ export async function fetchGoogleImages(query: string, page = 1) {
 export function dedupeImages<T extends { full?: string }>(images: T[]): T[] {
     const seenUrls = new Set<string>();
     return images.filter((img) => {
-        const full = String(img.full || "");
+        const full = typeof img.full === "string" ? img.full : "";
         const normalizedUrl = full.replace(/^https?:\/\//, "").replace(/\/$/, "");
         if (seenUrls.has(normalizedUrl)) {
             return false;

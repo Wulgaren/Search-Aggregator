@@ -22,7 +22,7 @@ function streamResponse(chunks: AIStreamChunk[], ok = true, status = 200): Respo
     } as Response;
 }
 
-function hangingResponse(signal?: AbortSignal): Promise<Response> {
+function hangingResponse(signal?: AbortSignal | null): Promise<Response> {
     return new Promise((_resolve, reject) => {
         if (signal?.aborted) {
             const err = new Error('Aborted');
@@ -38,7 +38,7 @@ function hangingResponse(signal?: AbortSignal): Promise<Response> {
     });
 }
 
-function createElements(): AIElements {
+function createElements(): { elements: AIElements; scrollIntoView: ReturnType<typeof vi.fn> } {
     document.body.innerHTML = `
         <button id="aiBtn"></button>
         <div id="aiPanel" style="display:none">
@@ -51,26 +51,31 @@ function createElements(): AIElements {
         </div>
     `;
     const aiPanel = document.getElementById('aiPanel') as HTMLElement;
-    aiPanel.scrollIntoView = vi.fn();
+    const scrollIntoView = vi.fn();
+    aiPanel.scrollIntoView = scrollIntoView;
     return {
-        aiBtn: document.getElementById('aiBtn') as HTMLButtonElement,
-        aiPanel,
-        aiPanelClose: document.getElementById('aiPanelClose') as HTMLButtonElement,
-        aiLoading: document.getElementById('aiLoading') as HTMLElement,
-        aiAnswer: document.getElementById('aiAnswer') as HTMLElement,
-        aiPanelFooter: document.getElementById('aiPanelFooter') as HTMLElement,
-        aiSources: document.getElementById('aiSources') as HTMLElement,
+        elements: {
+            aiBtn: document.getElementById('aiBtn') as HTMLButtonElement,
+            aiPanel,
+            aiPanelClose: document.getElementById('aiPanelClose') as HTMLButtonElement,
+            aiLoading: document.getElementById('aiLoading') as HTMLElement,
+            aiAnswer: document.getElementById('aiAnswer') as HTMLElement,
+            aiPanelFooter: document.getElementById('aiPanelFooter') as HTMLElement,
+            aiSources: document.getElementById('aiSources') as HTMLElement,
+        },
+        scrollIntoView,
     };
 }
 
 describe('createAIComponent', () => {
     let elements: AIElements;
+    let scrollIntoView: ReturnType<typeof vi.fn>;
     let apiFetch: ReturnType<typeof vi.fn<(path: string, init?: RequestInit) => Promise<Response>>>;
     let escapeHtml: ReturnType<typeof vi.fn<(text: string) => string>>;
     let deps: AIDeps;
 
     beforeEach(() => {
-        elements = createElements();
+        ({ elements, scrollIntoView } = createElements());
         apiFetch = vi.fn();
         escapeHtml = vi.fn((text: string) =>
             text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -96,7 +101,7 @@ describe('createAIComponent', () => {
         expect(elements.aiAnswer.style.display).toBe('none');
         expect(elements.aiAnswer.innerHTML).toBe('');
         expect(elements.aiPanelFooter.style.display).toBe('none');
-        expect(elements.aiPanel.scrollIntoView).toHaveBeenCalledWith({
+        expect(scrollIntoView).toHaveBeenCalledWith({
             behavior: 'smooth',
             block: 'start',
         });
@@ -201,8 +206,8 @@ describe('createAIComponent', () => {
         expect(elements.aiPanelFooter.style.display).toBe('block');
         const links = elements.aiSources.querySelectorAll('.ai-source-item');
         expect(links).toHaveLength(2);
-        expect(links[0].getAttribute('href')).toBe('https://example.com/a');
-        expect(links[0].querySelector('.ai-source-title')?.textContent).toBe('Source A');
+        expect(links[0]?.getAttribute('href')).toBe('https://example.com/a');
+        expect(links[0]?.querySelector('.ai-source-title')?.textContent).toBe('Source A');
         expect(elements.aiAnswer.querySelector('.source-ref')?.getAttribute('data-source')).toBe('1');
     });
 
@@ -235,9 +240,9 @@ describe('createAIComponent', () => {
         const second = fetchAIAnswer('two', { toggleWhenLoading: false });
         await Promise.all([first, second]);
 
-        expect(signals[0].aborted).toBe(true);
+        expect(signals[0]?.aborted).toBe(true);
         expect(apiFetch).toHaveBeenCalledTimes(2);
-        expect(apiFetch.mock.calls[1][1]).toEqual(
+        expect(apiFetch.mock.calls[1]?.[1]).toEqual(
             expect.objectContaining({ body: JSON.stringify({ query: 'two' }) })
         );
         expect(elements.aiPanel.style.display).toBe('block');

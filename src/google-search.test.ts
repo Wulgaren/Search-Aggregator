@@ -242,7 +242,7 @@ describe('handleGoogleSearchRequest', () => {
             )
         );
         const body = await res.json();
-        expect(body.images).toEqual([{ thumbnail: 't', full: 'https://b.example/i' }]);
+        expect(body.images).toEqual([{ thumbnail: 't', full: 'https://b.example/i', title: '' }]);
     });
 });
 

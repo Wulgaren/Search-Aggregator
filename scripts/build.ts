@@ -12,7 +12,7 @@ const publicDir = join(root, 'public');
 const CACHE_BUST_ASSETS = ['style.css', 'early-fetch-entry.js', 'script.js'] as const;
 
 function disableGoogleBangFromEnv(): boolean {
-    const v = process.env.DISABLE_GOOGLE_BANG ?? process.env.disable_google_bang;
+    const v = process.env['DISABLE_GOOGLE_BANG'] ?? process.env['disable_google_bang'];
     return v === 'true' || v === '1' || v === 'yes';
 }
 

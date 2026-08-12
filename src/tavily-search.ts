@@ -5,6 +5,7 @@
 
 import { getApiSecret } from './api-keys';
 import type { SearchHandler, SearchResult } from './types';
+import { asRecord, isRecord, readArray, readString } from './unknown';
 
 const SEARCH_JSON_CACHE =
     'public, max-age=300, s-maxage=300, stale-while-revalidate=86400';
@@ -37,23 +38,44 @@ export function primeTavilyConnection(): void {
     document.head.append(dns, pre);
 }
 
-type TavilyResultItem = {
-    title?: string;
-    url?: string;
-    content?: string;
-};
-
-type TavilySearchResponse = {
-    results?: TavilyResultItem[];
-    detail?: { error?: string } | string;
-    error?: string;
-};
-
 type TavilySearchPayload = {
     results: SearchResult[];
     hasMore: boolean;
     totalResults: string;
 };
+
+function parseTavilyErrorMessage(data: unknown, status: number): string {
+    if (!isRecord(data)) return `Tavily API error: ${status}`;
+    const detail = data['detail'];
+    let detailMsg: string | undefined;
+    if (typeof detail === 'string') {
+        detailMsg = detail;
+    } else if (isRecord(detail)) {
+        detailMsg = readString(detail, 'error');
+    }
+    return detailMsg || readString(data, 'error') || `Tavily API error: ${status}`;
+}
+
+function parseTavilyResults(data: unknown): SearchResult[] {
+    if (!isRecord(data)) return [];
+    const items = readArray(data, 'results') ?? [];
+    return items.flatMap((raw) => {
+        const item = asRecord(raw);
+        if (!item) return [];
+        const url = readString(item, 'url');
+        const title = readString(item, 'title');
+        if (!url || !title) return [];
+        return [
+            {
+                title,
+                url,
+                displayUrl: displayUrlFromHref(url),
+                snippet: readString(item, 'content') || '',
+                source: 'tavily',
+            },
+        ];
+    });
+}
 
 async function openTavilySearchCache(): Promise<Cache | null> {
     if (typeof caches === 'undefined') return null;
@@ -104,7 +126,10 @@ export function createCachedTavilySearchGet(
             return handler(new Request(url.toString(), init));
         }
 
-        const request = new Request(url.toString(), { method: 'GET', signal: init?.signal });
+        const request = new Request(url.toString(), {
+            method: 'GET',
+            ...(init?.signal != null ? { signal: init.signal } : {}),
+        });
         const cache = await openTavilySearchCache();
         if (cache) {
             const cached = await readFromTavilySearchCache(cache, request);
@@ -182,33 +207,16 @@ async function fetchTavily(
             include_answer: false,
             max_results: Math.min(Math.max(1, resultsPerPage), TAVILY_MAX_RESULTS),
         }),
-        signal,
+        ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
-        const errorData = (await response.json().catch(() => ({}))) as TavilySearchResponse;
-        const detail = errorData.detail;
-        const detailMsg =
-            typeof detail === 'string'
-                ? detail
-                : detail && typeof detail === 'object'
-                  ? detail.error
-                  : undefined;
-        throw new Error(detailMsg || errorData.error || `Tavily API error: ${response.status}`);
+        const errorData: unknown = await response.json().catch(() => ({}));
+        throw new Error(parseTavilyErrorMessage(errorData, response.status));
     }
 
-    const data = (await response.json()) as TavilySearchResponse;
-    const results = (data.results || [])
-        .filter((item): item is TavilyResultItem & { url: string; title: string } =>
-            Boolean(item.url && item.title)
-        )
-        .map((item) => ({
-            title: item.title,
-            url: item.url,
-            displayUrl: displayUrlFromHref(item.url),
-            snippet: item.content || '',
-            source: 'tavily',
-        }));
+    const data: unknown = await response.json();
+    const results = parseTavilyResults(data);
 
     return {
         results,

@@ -51,7 +51,7 @@ function takeEarlyFetchPromise(key: EarlyKey, query: string): Promise<Response> 
         !early.images &&
         !early.infobox
     ) {
-        window.__earlyFetch = undefined;
+        delete window.__earlyFetch;
     }
     return promise;
 }
@@ -68,12 +68,12 @@ describe('bootstrapEarlyFetch', () => {
         hasTavily.mockReturnValue(false);
         redirect.mockReset();
         primeTavily.mockReset();
-        window.__earlyFetch = undefined;
+        delete window.__earlyFetch;
         window.history.replaceState({}, '', '/');
     });
 
     afterEach(() => {
-        window.__earlyFetch = undefined;
+        delete window.__earlyFetch;
         window.history.replaceState({}, '', '/');
     });
 
@@ -165,7 +165,7 @@ describe('bootstrapEarlyFetch', () => {
 
         // drain remaining keys
         for (const key of ['marginalia', 'wiby', 'infobox'] as const) {
-            takeEarlyFetchPromise(key, 'cats');
+            void takeEarlyFetchPromise(key, 'cats');
         }
         expect(window.__earlyFetch).toBeUndefined();
     });

@@ -2,7 +2,7 @@ import process from 'node:process';
 import { defineConfig } from 'vitest/config';
 
 function disableGoogleBangFromEnv(): boolean {
-    const v = process.env.DISABLE_GOOGLE_BANG ?? process.env.disable_google_bang;
+    const v = process.env['DISABLE_GOOGLE_BANG'] ?? process.env['disable_google_bang'];
     return v === 'true' || v === '1' || v === 'yes';
 }
 
