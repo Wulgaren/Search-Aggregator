@@ -5,6 +5,8 @@ import { createAIComponent } from './ai';
 import { createImagesComponent } from './images';
 import { createInfoboxComponent } from './infobox';
 import { createSearchResultsComponent } from './search-results';
+import { detectUtilityIntent } from './utility-intent';
+import { createUtilityAnswer } from './utility-answer';
 
 function byId(id: string): HTMLElement {
     const el = document.getElementById(id);
@@ -25,7 +27,7 @@ function shouldAutoOpenAIForQuery(query: string): boolean {
 function maybeClearEarlyFetch(): void {
     const early = window.__earlyFetch;
     if (!early) return;
-    if (early.aggregate || early.google || early.images || early.infobox) return;
+    if (early.aggregate || early.google || early.images || early.infobox || early.utility) return;
     delete window.__earlyFetch;
 }
 
@@ -122,14 +124,28 @@ const ai = createAIComponent(
     { apiFetch, escapeHtml }
 );
 
+const utility = createUtilityAnswer(
+    {
+        root: byId('utility-answer'),
+        title: byId('utility-answer-title'),
+        content: byId('utility-answer-content'),
+    },
+    { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q) }
+);
+
 function performSearch(query: string) {
     searchResults.startSearch(query);
     images.reset();
     infobox.reset();
+    utility.reset();
     ai.reset();
     searchResults.fetchGoogle(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
+    const utilityIntent = detectUtilityIntent(query);
+    if (utilityIntent) {
+        void utility.fetchFromIntent(utilityIntent, query);
+    }
     if (shouldAutoOpenAIForQuery(query)) {
         void ai.fetchAIAnswer(query, { toggleWhenLoading: false });
     }
@@ -211,6 +227,7 @@ function restoreSearchState(options?: { scrollToTop?: boolean }) {
             searchResults.reset();
             images.reset();
             infobox.reset();
+            utility.reset();
             ai.reset();
             return;
         }
@@ -228,6 +245,7 @@ function restoreSearchState(options?: { scrollToTop?: boolean }) {
         searchResults.reset();
         images.reset();
         infobox.reset();
+        utility.reset();
         ai.reset();
     }
 }

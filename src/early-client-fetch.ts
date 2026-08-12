@@ -1,9 +1,13 @@
 import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch } from './search-fetch';
+import type { EarlyFetchState } from './types';
+import { detectUtilityIntent } from './utility-intent';
+import { buildUtilityEarlyFetchPath } from './utility-early-path';
 
 /**
  * Starts `?q=` search fetches ASAP (wired from HTML before deferred `script.js`).
  * Always fires aggregate + google + combined images + infobox (edge no-ops Google if unset).
+ * Utility early fetch only when intent ≠ null and the intent needs a network call.
  */
 export function bootstrapEarlyFetch(): void {
     const q = new URLSearchParams(window.location.search).get('q');
@@ -16,11 +20,19 @@ export function bootstrapEarlyFetch(): void {
     const searchQ = resolved.q;
     if (!searchQ.trim()) return;
     const enc = encodeURIComponent(searchQ);
-    window.__earlyFetch = {
+    const early: EarlyFetchState = {
         query: searchQ,
         aggregate: searchApiFetch(`/api/search?q=${enc}&page=1`),
         google: searchApiFetch(`/api/search?q=${enc}&page=1&source=google`),
         images: searchApiFetch(`/api/search?q=${enc}&source=images&page=1`),
         infobox: searchApiFetch(`/api/search?q=${enc}&source=infobox`),
     };
+    const intent = detectUtilityIntent(searchQ);
+    if (intent) {
+        const utilityPath = buildUtilityEarlyFetchPath(intent);
+        if (utilityPath) {
+            early.utility = searchApiFetch(utilityPath);
+        }
+    }
+    window.__earlyFetch = early;
 }

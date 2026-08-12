@@ -7,6 +7,9 @@ import {
     interleaveImages,
 } from "./google-search.ts";
 import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
+import { handleUtilityCurrency } from "./utility-currency.ts";
+import { handleUtilityTimezone } from "./utility-timezone.ts";
+import { handleUtilityTranslate } from "./utility-translate.ts";
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -262,6 +265,71 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                 },
             });
         }
+    }
+
+    // Utility answers: kind branches (timezone = Issue 4; translate = Issue 5; currency = Issue 3)
+    if (source === "utility") {
+        const kindParam = url.searchParams.get("kind");
+
+        if (kindParam === "timezone") {
+            const body = handleUtilityTimezone(url.searchParams.get("country"));
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        if (kindParam === "translate") {
+            const body = await handleUtilityTranslate(url.searchParams, {
+                fetch: globalThis.fetch.bind(globalThis),
+                signal: upstreamSignal(request.signal),
+            });
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        // --- Issue 3: currency via Frankfurter ---
+        if (kindParam === "currency") {
+            const body = await handleUtilityCurrency(url.searchParams, {
+                fetch: globalThis.fetch.bind(globalThis),
+                signal: upstreamSignal(request.signal),
+            });
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        // Unknown / missing kind — stable stub for other agents / clients
+        const examples = ["100 usd to eur", "translate hello to french", "time in japan"];
+        const body: {
+            ok: false;
+            error: "not_implemented";
+            examples: string[];
+            kind?: string | null;
+        } = {
+            ok: false,
+            error: "not_implemented",
+            examples: examples.slice(0, 2),
+        };
+        logSearchResponse(body);
+        return new Response(JSON.stringify(body), {
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": SEARCH_JSON_CACHE,
+            },
+        });
     }
 
     // Handle infobox request

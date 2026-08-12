@@ -1,4 +1,4 @@
-export type EarlyFetchKey = 'aggregate' | 'google' | 'images' | 'infobox';
+export type EarlyFetchKey = 'aggregate' | 'google' | 'images' | 'infobox' | 'utility';
 
 export type EarlyFetchState = {
     query: string;
@@ -6,6 +6,7 @@ export type EarlyFetchState = {
     google?: Promise<Response>;
     images?: Promise<Response>;
     infobox?: Promise<Response>;
+    utility?: Promise<Response>;
 };
 
 export type AIElements = {
@@ -179,6 +180,62 @@ export type SearchDeps = {
     takeEarlyFetch: (key: 'aggregate' | 'google', query: string) => Promise<Response | null>;
     isMergedView: () => boolean;
     onGoogleCorrection?: (query: string, correctedQuery: string) => void;
+};
+
+/** Utility card kinds (Issues 3–5). */
+export type UtilityKind = 'currency' | 'translate' | 'timezone';
+
+export type UtilityAnswerElements = {
+    root: HTMLElement;
+    title: HTMLElement;
+    content: HTMLElement;
+};
+
+export type UtilityAnswerDeps = {
+    apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
+    takeEarlyFetch: (key: 'utility', query: string) => Promise<Response | null>;
+};
+
+/** Stable edge error / stub shape. */
+export type UtilityStubPayload = {
+    ok: false;
+    error: string;
+    examples: string[];
+    kind?: UtilityKind | null;
+};
+
+export type UtilityErrorView = {
+    message: string;
+    examples: string[];
+};
+
+export type UtilityTranslateSuccessView = {
+    text: string;
+    from: string;
+    to: string;
+    translatedText: string;
+};
+
+/** Issue 3: currency success view (no as-of date / attribution). */
+export type UtilityCurrencySuccessView = {
+    amount: number;
+    from: string;
+    to: string;
+    converted: number;
+    rate: number;
+};
+
+export type UtilityTimezoneZoneView = {
+    id: string;
+    label: string;
+    localTime: string;
+    offset: string;
+};
+
+export type UtilityTimezoneSuccessView = {
+    country: string;
+    countryLabel: string;
+    zones: UtilityTimezoneZoneView[];
 };
 
 declare global {
