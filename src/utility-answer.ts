@@ -327,6 +327,9 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             void fetchTranslate(next);
         });
 
+        const textField = document.createElement('div');
+        textField.className = 'utility-translate-field';
+
         const textLabel = document.createElement('label');
         textLabel.className = 'utility-translate-label';
         textLabel.htmlFor = 'utility-translate-text';
@@ -336,9 +339,10 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         textArea.id = 'utility-translate-text';
         textArea.className = 'utility-translate-text';
         textArea.name = 'text';
-        textArea.rows = 3;
+        textArea.rows = 2;
         textArea.value = state.text;
         textArea.placeholder = 'Text to translate';
+        textField.append(textLabel, textArea);
 
         const langs = document.createElement('div');
         langs.className = 'utility-translate-langs';
@@ -355,7 +359,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         submit.textContent = 'Translate';
         actions.appendChild(submit);
 
-        form.append(textLabel, textArea, langs, actions);
+        form.append(textField, langs, actions);
         elements.content.appendChild(form);
 
         if (error) {
