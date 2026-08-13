@@ -1,8 +1,8 @@
-/** Edge proxy for Frankfurter FX (free, no API key). Browser never calls Frankfurter. */
+/** Edge proxy for Frankfurter FX v2 (free, no API key). Browser never calls Frankfurter. */
 
-import { asNumber, isRecord, readNumber, readRecord, readString } from "./unknown.ts";
+import { isRecord, readNumber, readString } from "./unknown.ts";
 
-const FRANKFURTER_URL = "https://api.frankfurter.dev/v1/latest";
+const FRANKFURTER_RATE_URL = "https://api.frankfurter.dev/v2/rate";
 const CURRENCY_EXAMPLES = ["100 usd to eur", "5 eur to usd"] as const;
 
 export type UtilityCurrencySuccess = {
@@ -52,8 +52,12 @@ function parseAmount(raw: string | null): number | null {
     return n;
 }
 
+function roundFx(value: number): number {
+    return Number(value.toPrecision(12));
+}
+
 /**
- * Proxy Frankfurter for `kind=currency`.
+ * Proxy Frankfurter v2 for `kind=currency`.
  * Query params: `amount`, `from`, `to` (plus required search `q` from the router).
  * Success includes converted amount + unit rate; no as-of date, no attribution.
  */
@@ -72,7 +76,7 @@ export async function handleUtilityCurrency(
         return errorResult("Choose both source and target currencies.");
     }
 
-    // Frankfurter rejects same-currency pairs (422); treat as identity.
+    // Same-currency pair is identity (v2 would return rate 1).
     if (from === to) {
         return {
             ok: true,
@@ -85,13 +89,10 @@ export async function handleUtilityCurrency(
         };
     }
 
-    const upstream = new URL(FRANKFURTER_URL);
-    upstream.searchParams.set("amount", String(amount));
-    upstream.searchParams.set("from", from);
-    upstream.searchParams.set("to", to);
+    const upstream = `${FRANKFURTER_RATE_URL}/${from}/${to}`;
 
     try {
-        const response = await deps.fetch(upstream.toString(), {
+        const response = await deps.fetch(upstream, {
             method: "GET",
             headers: { Accept: "application/json" },
             ...(deps.signal ? { signal: deps.signal } : {}),
@@ -102,7 +103,7 @@ export async function handleUtilityCurrency(
         }
 
         const data: unknown = await response.json();
-        return parseFrankfurterResponse(data, amount, from, to);
+        return parseFrankfurterV2Response(data, amount, from, to);
     } catch (e: unknown) {
         if (e instanceof Error && e.name === "AbortError") {
             return errorResult("Currency conversion timed out.");
@@ -112,7 +113,17 @@ export async function handleUtilityCurrency(
     }
 }
 
-function parseFrankfurterResponse(
+function parseRate(data: Record<string, unknown>): number | null {
+    const numeric = readNumber(data, "rate");
+    if (numeric !== undefined && numeric > 0) return numeric;
+    const asText = readString(data, "rate");
+    if (asText === undefined) return null;
+    const parsed = Number(asText);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+}
+
+function parseFrankfurterV2Response(
     data: unknown,
     amount: number,
     from: string,
@@ -122,26 +133,22 @@ function parseFrankfurterResponse(
         return errorResult("Invalid currency response.");
     }
 
-    const rates = readRecord(data, "rates");
-    if (!rates) {
-        return errorResult("Invalid currency response.");
-    }
-
-    const convertedRaw = rates[to];
-    const converted =
-        asNumber(convertedRaw) ??
-        (typeof convertedRaw === "string" ? Number(convertedRaw) : undefined);
-    if (converted === undefined || !Number.isFinite(converted)) {
+    const rateNum = parseRate(data);
+    if (rateNum === null) {
         const message =
             readString(data, "message") ??
             `No rate available for ${from} → ${to}.`;
         return errorResult(message);
     }
 
-    const baseAmount = readNumber(data, "amount") ?? amount;
-    const rateRaw = baseAmount !== 0 ? converted / baseAmount : converted;
-    // Avoid binary float noise (e.g. 86.62/100 → 0.8662000000000001)
-    const rate = Number(rateRaw.toPrecision(12));
+    const base = readString(data, "base");
+    const quote = readString(data, "quote");
+    if (
+        (base !== undefined && base.toUpperCase() !== from) ||
+        (quote !== undefined && quote.toUpperCase() !== to)
+    ) {
+        return errorResult(`No rate available for ${from} → ${to}.`);
+    }
 
     return {
         ok: true,
@@ -149,7 +156,7 @@ function parseFrankfurterResponse(
         amount,
         from,
         to,
-        converted,
-        rate,
+        converted: roundFx(amount * rateNum),
+        rate: roundFx(rateNum),
     };
 }

@@ -1,3 +1,10 @@
+import {
+    FRANKFURTER_CURRENCY_SET,
+    REGION_TO_CURRENCY,
+} from './frankfurter-currencies';
+
+export { FRANKFURTER_CURRENCY_CODES } from './frankfurter-currencies';
+
 /** Keyword that opens an empty utility tool (exact match after trim). */
 export type UtilityEmptyTool = 'language' | 'currency' | 'timezone';
 
@@ -80,9 +87,6 @@ const CURRENCY_ALIASES: Readonly<Record<string, string>> = {
 };
 
 const CURRENCY_ALIAS_KEYS = Object.keys(CURRENCY_ALIASES).sort((a, b) => b.length - a.length);
-
-/** ISO codes we accept even when the query uses the bare code form. */
-const KNOWN_CURRENCY_CODES = new Set<string>(Object.values(CURRENCY_ALIASES));
 
 /** Alias (lowercase) → BCP-47-ish language code. */
 const LANGUAGE_ALIASES: Readonly<Record<string, string>> = {
@@ -190,86 +194,6 @@ export function languageDefaultsFromLocale(
     const to = from === 'en' ? 'es' : 'en';
     return { from, to };
 }
-
-/** Fiat codes supported by Frankfurter (ECB) — picker list for currency utility. */
-export const FRANKFURTER_CURRENCY_CODES = [
-    'AUD',
-    'BRL',
-    'CAD',
-    'CHF',
-    'CNY',
-    'CZK',
-    'DKK',
-    'EUR',
-    'GBP',
-    'HKD',
-    'HUF',
-    'IDR',
-    'ILS',
-    'INR',
-    'ISK',
-    'JPY',
-    'KRW',
-    'MXN',
-    'MYR',
-    'NOK',
-    'NZD',
-    'PHP',
-    'PLN',
-    'RON',
-    'SEK',
-    'SGD',
-    'THB',
-    'TRY',
-    'USD',
-    'ZAR',
-] as const;
-
-const FRANKFURTER_CURRENCY_SET = new Set<string>(FRANKFURTER_CURRENCY_CODES);
-
-/** ISO 3166-1 alpha-2 region → Frankfurter currency (locale defaults). */
-const REGION_TO_CURRENCY: Readonly<Record<string, string>> = {
-    US: 'USD',
-    GB: 'GBP',
-    JP: 'JPY',
-    AU: 'AUD',
-    CA: 'CAD',
-    CH: 'CHF',
-    CN: 'CNY',
-    CZ: 'CZK',
-    DK: 'DKK',
-    DE: 'EUR',
-    FR: 'EUR',
-    IT: 'EUR',
-    ES: 'EUR',
-    NL: 'EUR',
-    BE: 'EUR',
-    AT: 'EUR',
-    IE: 'EUR',
-    PT: 'EUR',
-    FI: 'EUR',
-    GR: 'EUR',
-    HK: 'HKD',
-    HU: 'HUF',
-    ID: 'IDR',
-    IL: 'ILS',
-    IN: 'INR',
-    IS: 'ISK',
-    KR: 'KRW',
-    MX: 'MXN',
-    MY: 'MYR',
-    NO: 'NOK',
-    NZ: 'NZD',
-    PH: 'PHP',
-    PL: 'PLN',
-    RO: 'RON',
-    SE: 'SEK',
-    SG: 'SGD',
-    TH: 'THB',
-    TR: 'TRY',
-    ZA: 'ZAR',
-    BR: 'BRL',
-};
 
 /**
  * Locale-derived defaults for empty currency tool.
@@ -437,7 +361,7 @@ export function normalizeCurrencyCode(raw: string): string | null {
     if (mapped !== undefined) return mapped;
     if (/^[a-z]{3}$/i.test(key)) {
         const upper = key.toUpperCase();
-        if (KNOWN_CURRENCY_CODES.has(upper)) return upper;
+        if (FRANKFURTER_CURRENCY_SET.has(upper)) return upper;
     }
     return null;
 }

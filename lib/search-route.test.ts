@@ -158,13 +158,13 @@ describe('aggregateEdgeRequest', () => {
     it('source=utility&kind=currency proxies Frankfurter (mocked)', async () => {
         const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
             const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-            expect(url).toContain('api.frankfurter.dev/v1/latest');
+            expect(url).toBe('https://api.frankfurter.dev/v2/rate/USD/EUR');
             return new Response(
                 JSON.stringify({
-                    amount: 100,
-                    base: 'USD',
                     date: '2026-08-12',
-                    rates: { EUR: 86.62 },
+                    base: 'USD',
+                    quote: 'EUR',
+                    rate: 0.8662,
                 }),
                 { status: 200, headers: { 'Content-Type': 'application/json' } }
             );

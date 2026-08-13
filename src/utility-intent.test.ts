@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    currencyDefaultsFromLocale,
     detectUtilityIntent,
     normalizeCountryId,
     normalizeCurrencyCode,
@@ -56,9 +57,19 @@ describe('detectUtilityIntent — currency', () => {
         });
     });
 
+    it('parses v2 fiat codes: 1000 pkr to pln', () => {
+        expect(detectUtilityIntent('1000 pkr to pln')).toEqual({
+            kind: 'currency',
+            amount: 1000,
+            from: 'PKR',
+            to: 'PLN',
+        });
+    });
+
     it('rejects non-currency lookalikes', () => {
         expect(detectUtilityIntent('100 cat to dog')).toBeNull();
         expect(detectUtilityIntent('usd to eur')).toBeNull();
+        expect(detectUtilityIntent('100 xau to usd')).toBeNull();
     });
 });
 
@@ -187,7 +198,22 @@ describe('normalize helpers', () => {
     it('normalizeCurrencyCode maps names and codes', () => {
         expect(normalizeCurrencyCode('euros')).toBe('EUR');
         expect(normalizeCurrencyCode('USD')).toBe('USD');
+        expect(normalizeCurrencyCode('pkr')).toBe('PKR');
         expect(normalizeCurrencyCode('dog')).toBeNull();
+        expect(normalizeCurrencyCode('rupees')).toBe('INR');
+    });
+
+    it('currencyDefaultsFromLocale uses region currency when v2 supports it', () => {
+        expect(currencyDefaultsFromLocale('en-PK')).toEqual({
+            amount: 100,
+            from: 'PKR',
+            to: 'USD',
+        });
+        expect(currencyDefaultsFromLocale('en-US')).toEqual({
+            amount: 100,
+            from: 'USD',
+            to: 'EUR',
+        });
     });
 
     it('normalizeLanguageCode maps names', () => {
