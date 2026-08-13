@@ -106,6 +106,20 @@ async function withUpstreamTimeout<T>(
     }
 }
 
+type EngineTiming = { ms: number; status: "fulfilled" | "rejected" | "skipped" };
+
+/** Time a promise without changing settle semantics (for parallel upstreams). */
+function withEngineMs<T>(promise: Promise<T>): Promise<{ ms: number; settled: PromiseSettledResult<T> }> {
+    const t0 = Date.now();
+    return promise.then(
+        (value) => ({ ms: Date.now() - t0, settled: { status: "fulfilled" as const, value } }),
+        (reason: unknown) => ({
+            ms: Date.now() - t0,
+            settled: { status: "rejected" as const, reason },
+        })
+    );
+}
+
 function displayUrlFromHref(href: string): string {
     try {
         return new URL(href).hostname;
@@ -268,11 +282,12 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     const requestKey = `q=${searchQuery}&page=${page}&source=${source ?? ""}&imageSource=${imageSource ?? ""}`;
     const startedAt = Date.now();
 
-    const logSearchResponse = (body: unknown) => {
+    const logSearchResponse = (body: unknown, engines?: Record<string, EngineTiming>) => {
         console.log("[edge-search] api/search response", {
             reqId,
             requestKey,
             ms: Date.now() - startedAt,
+            ...(engines ? { engines } : {}),
             body,
         });
     };
@@ -293,12 +308,14 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     });
 
     if (source === "google") {
+        const googleStarted = Date.now();
         try {
             const nodeRes = await fetch(
                 googleNodeUrl(url.origin, searchQuery, page, "web", resultsPerPage)
             );
             const body: unknown = await nodeRes.json().catch(() => null);
             const bodyRecord = asRecord(body);
+            const googleMs = Date.now() - googleStarted;
             if (!nodeRes.ok || !bodyRecord) {
                 const msg =
                     (bodyRecord ? readString(bodyRecord, "error") : undefined) ||
@@ -308,12 +325,13 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                     requestKey,
                     status: nodeRes.status,
                     error: msg,
+                    ms: googleMs,
                 });
                 const errBody = {
                     page,
                     google: { error: msg, results: [], hasMore: false },
                 };
-                logSearchResponse(errBody);
+                logSearchResponse(errBody, { google: { ms: googleMs, status: "rejected" } });
                 return new Response(JSON.stringify(errBody), {
                     headers: {
                         "Content-Type": "application/json",
@@ -321,7 +339,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                     },
                 });
             }
-            logSearchResponse(body);
+            logSearchResponse(body, { google: { ms: googleMs, status: "fulfilled" } });
             return new Response(JSON.stringify(body), {
                 headers: {
                     "Content-Type": "application/json",
@@ -330,16 +348,18 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             });
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
+            const googleMs = Date.now() - googleStarted;
             console.error("[edge-search] Google node proxy failed", {
                 reqId,
                 requestKey,
                 error: msg,
+                ms: googleMs,
             });
             const errBody = {
                 page,
                 google: { error: msg, results: [], hasMore: false },
             };
-            logSearchResponse(errBody);
+            logSearchResponse(errBody, { google: { ms: googleMs, status: "rejected" } });
             return new Response(JSON.stringify(errBody), {
                 headers: {
                     "Content-Type": "application/json",
@@ -366,6 +386,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     if (source === "images") {
         // Brave-only when explicitly requested; otherwise Google + Brave interleaved.
         if (imageSource === "brave") {
+            const braveStarted = Date.now();
             const braveImages = await fetchBraveImages(
                 searchQuery,
                 page,
@@ -373,7 +394,9 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                 requestKey
             );
             const body = { images: braveImages, hasMore: page < 3 };
-            logSearchResponse(body);
+            logSearchResponse(body, {
+                braveImages: { ms: Date.now() - braveStarted, status: "fulfilled" },
+            });
             return new Response(JSON.stringify(body), {
                 headers: {
                     "Content-Type": "application/json",
@@ -382,17 +405,20 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             });
         }
 
-        const [braveSettled, googleSettled] = await Promise.allSettled([
-            fetchBraveImages(searchQuery, page, reqId, requestKey),
-            fetchGoogleImagesViaNode(url.origin, searchQuery, page),
+        const [braveTimed, googleTimed] = await Promise.all([
+            withEngineMs(fetchBraveImages(searchQuery, page, reqId, requestKey)),
+            withEngineMs(fetchGoogleImagesViaNode(url.origin, searchQuery, page)),
         ]);
         const braveImages =
-            braveSettled.status === "fulfilled" ? braveSettled.value : [];
+            braveTimed.settled.status === "fulfilled" ? braveTimed.settled.value : [];
         const googleImages =
-            googleSettled.status === "fulfilled" ? googleSettled.value : [];
+            googleTimed.settled.status === "fulfilled" ? googleTimed.settled.value : [];
         const images = dedupeImages(interleaveImages(googleImages, braveImages));
         const body = { images, hasMore: page < 3 };
-        logSearchResponse(body);
+        logSearchResponse(body, {
+            braveImages: { ms: braveTimed.ms, status: braveTimed.settled.status },
+            googleImages: { ms: googleTimed.ms, status: googleTimed.settled.status },
+        });
         return new Response(JSON.stringify(body), {
             headers: {
                 "Content-Type": "application/json",
@@ -437,12 +463,37 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
           )
         : Promise.resolve(null);
 
-    const [braveResults, marginaliaResults, wibyResults, tavilyResults] = await Promise.allSettled([
-        fetchBravePromise,
-        fetchMarginaliaPromise,
-        fetchWibyPromise,
-        fetchTavilyPromise,
+    const [braveTimed, marginaliaTimed, wibyTimed, tavilyTimed] = await Promise.all([
+        wantBrave
+            ? withEngineMs(fetchBravePromise)
+            : Promise.resolve({
+                  ms: 0,
+                  settled: { status: "fulfilled" as const, value: null },
+              }),
+        wantMarginalia
+            ? withEngineMs(fetchMarginaliaPromise)
+            : Promise.resolve({
+                  ms: 0,
+                  settled: { status: "fulfilled" as const, value: null },
+              }),
+        wantWiby
+            ? withEngineMs(fetchWibyPromise)
+            : Promise.resolve({
+                  ms: 0,
+                  settled: { status: "fulfilled" as const, value: null },
+              }),
+        wantTavily
+            ? withEngineMs(fetchTavilyPromise)
+            : Promise.resolve({
+                  ms: 0,
+                  settled: { status: "fulfilled" as const, value: null },
+              }),
     ]);
+
+    const braveResults = braveTimed.settled;
+    const marginaliaResults = marginaliaTimed.settled;
+    const wibyResults = wibyTimed.settled;
+    const tavilyResults = tavilyTimed.settled;
 
     const response: {
         page: number;
@@ -482,7 +533,14 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                 : emptySourceError(settledErrorMessage(tavilyResults, "Failed to fetch Tavily results"));
     }
 
-    logSearchResponse(response);
+    const engines: Record<string, EngineTiming> = {};
+    if (wantBrave) engines["brave"] = { ms: braveTimed.ms, status: braveResults.status };
+    if (wantMarginalia)
+        engines["marginalia"] = { ms: marginaliaTimed.ms, status: marginaliaResults.status };
+    if (wantWiby) engines["wiby"] = { ms: wibyTimed.ms, status: wibyResults.status };
+    if (wantTavily) engines["tavily"] = { ms: tavilyTimed.ms, status: tavilyResults.status };
+
+    logSearchResponse(response, engines);
     return new Response(JSON.stringify(response), {
         headers: {
             "Content-Type": "application/json",
