@@ -24,7 +24,7 @@ import {
 import {
     isTimezoneCountry,
     listTimezoneCountryCodes,
-} from '../api/lib/country-timezones.ts';
+} from '../lib/country-timezones.ts';
 import { asArray, isRecord, readNumber, readString } from './unknown';
 
 export { defaultCountryFromLocale } from './utility-early-path';

@@ -27,6 +27,7 @@
     "src/**/*.ts",
     "scripts/**/*.ts",
     "api/**/*.ts",
+    "lib/**/*.ts",
     "vite.config.ts",
     "vitest.setup.ts"
   ],

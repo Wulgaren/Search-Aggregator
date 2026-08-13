@@ -1,4 +1,4 @@
-import { isTimezoneCountry } from '../api/lib/country-timezones.ts';
+import { isTimezoneCountry } from '../lib/country-timezones.ts';
 import { languageDefaultsFromLocale, type UtilityIntent } from './utility-intent';
 
 /** Locale → ISO alpha-2 country for empty timezone tool / early fetch. */

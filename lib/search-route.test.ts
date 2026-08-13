@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aggregateEdgeRequest } from './search-route';
-import searchHandler, { runtime as searchRuntime } from '../search';
-import aiHandler, { runtime as aiRuntime } from '../ai';
+import searchHandler, { runtime as searchRuntime } from '../api/search';
+import aiHandler, { runtime as aiRuntime } from '../api/ai';
 
 const originalEnv = { ...process.env };
 
