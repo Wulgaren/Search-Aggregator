@@ -1665,18 +1665,11 @@ a:hover {
   gap: 1.1rem;
 }
 
-.utility-currency-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-
 .utility-currency-field {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  min-width: min(100%, 8rem);
+  min-width: 0;
 }
 
 .utility-currency-field-label {
@@ -1696,17 +1689,25 @@ a:hover {
   border-radius: 8px;
   padding: 0.65rem 0.8rem;
   min-height: 2.6rem;
-  min-width: 6.5rem;
+  width: 100%;
   box-sizing: border-box;
 }
 
-.utility-currency-amount {
-  width: 8rem;
+.utility-currency-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+@media (max-width: 420px) {
+  .utility-currency-pair {
+    grid-template-columns: 1fr;
+  }
 }
 
 .utility-currency-actions {
   display: flex;
-  align-items: flex-end;
+  justify-content: stretch;
 }
 
 .utility-currency-submit {
@@ -1717,8 +1718,9 @@ a:hover {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0.65rem 1.1rem;
+  padding: 0.7rem 1.15rem;
   min-height: 2.6rem;
+  width: 100%;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -1732,7 +1734,8 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  padding-top: 0.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .utility-currency-converted {
@@ -1741,6 +1744,7 @@ a:hover {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+  line-height: 1.25;
 }
 
 .utility-currency-rate {

@@ -151,7 +151,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         });
 
         const amountField = document.createElement('label');
-        amountField.className = 'utility-currency-field';
+        amountField.className = 'utility-currency-field utility-currency-field--amount';
         const amountLabel = document.createElement('span');
         amountLabel.className = 'utility-currency-field-label';
         amountLabel.textContent = 'Amount';
@@ -169,6 +169,10 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         const fromSelect = buildCurrencySelect('from', 'From', state.from);
         const toSelect = buildCurrencySelect('to', 'To', state.to);
 
+        const currencies = document.createElement('div');
+        currencies.className = 'utility-currency-pair';
+        currencies.append(fromSelect.wrap, toSelect.wrap);
+
         const actions = document.createElement('div');
         actions.className = 'utility-currency-actions';
         const submit = document.createElement('button');
@@ -177,10 +181,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         submit.textContent = 'Convert';
         actions.appendChild(submit);
 
-        const row = document.createElement('div');
-        row.className = 'utility-currency-controls';
-        row.append(amountField, fromSelect.wrap, toSelect.wrap, actions);
-        form.appendChild(row);
+        form.append(amountField, currencies, actions);
         elements.content.appendChild(form);
 
         if (error) {
