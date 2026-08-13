@@ -48,6 +48,7 @@ describe('bootstrapEarlyFetch', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         delete window.__earlyFetch;
         window.history.replaceState({}, '', '/');
     });
@@ -58,7 +59,8 @@ describe('bootstrapEarlyFetch', () => {
         expect(searchApiFetch).not.toHaveBeenCalled();
     });
 
-    it('always registers aggregate + google + combined images + infobox', () => {
+    it('always registers aggregate + google + combined images + infobox', async () => {
+        vi.useFakeTimers();
         window.history.replaceState({}, '', '/?q=hello+world');
         expect(() => bootstrapEarlyFetch()).not.toThrow();
 
@@ -70,18 +72,23 @@ describe('bootstrapEarlyFetch', () => {
         expect(early!.infobox).toBeInstanceOf(Promise);
         expect(early!.images).toBeInstanceOf(Promise);
 
-        const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
+        let paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths).toEqual(
             expect.arrayContaining([
                 '/api/search?q=hello%20world&page=1',
                 '/api/search?q=hello%20world&page=1&source=google',
                 expect.stringContaining('source=infobox'),
-                '/api/search?q=hello%20world&source=images&page=1',
             ])
         );
+        expect(paths.some((p) => p.includes('source=images'))).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(500);
+        paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
+        expect(paths).toContain('/api/search?q=hello%20world&source=images&page=1');
         expect(paths.some((p) => p.includes('imageSource='))).toBe(false);
         expect(paths.some((p) => p.includes('source=brave'))).toBe(false);
         expect(paths.some((p) => p === '/api/search?q=hello%20world&page=1')).toBe(true);
+        vi.useRealTimers();
     });
 
     it('bang redirect does not register __earlyFetch', () => {
@@ -93,6 +100,7 @@ describe('bootstrapEarlyFetch', () => {
     });
 
     it('takeEarlyFetch-style consumption returns aggregate promise once then clears', async () => {
+        vi.useFakeTimers();
         window.history.replaceState({}, '', '/?q=cats');
         bootstrapEarlyFetch();
 
@@ -105,8 +113,28 @@ describe('bootstrapEarlyFetch', () => {
         expect(takeEarlyFetchPromise('aggregate', 'other')).toBeNull();
 
         void takeEarlyFetchPromise('google', 'cats');
-        void takeEarlyFetchPromise('images', 'cats');
+        const imagesPromise = takeEarlyFetchPromise('images', 'cats');
         void takeEarlyFetchPromise('infobox', 'cats');
         expect(window.__earlyFetch).toBeUndefined();
+
+        await vi.advanceTimersByTimeAsync(500);
+        expect(imagesPromise).toBeInstanceOf(Promise);
+        await imagesPromise;
+        vi.useRealTimers();
+    });
+
+    it('delays images early fetch by 500ms', async () => {
+        vi.useFakeTimers();
+        window.history.replaceState({}, '', '/?q=delay');
+        bootstrapEarlyFetch();
+
+        expect(searchApiFetch.mock.calls.some((c) => String(c[0]).includes('source=images'))).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(499);
+        expect(searchApiFetch.mock.calls.some((c) => String(c[0]).includes('source=images'))).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(searchApiFetch.mock.calls.some((c) => String(c[0]).includes('source=images'))).toBe(true);
+        vi.useRealTimers();
     });
 });
