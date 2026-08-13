@@ -52,6 +52,7 @@ type TranslateFormState = {
     from: string;
     to: string;
     translatedText: string | null;
+    loading: boolean;
 };
 
 type CurrencyFormState = {
@@ -59,6 +60,7 @@ type CurrencyFormState = {
     from: string;
     to: string;
     result: UtilityCurrencySuccessView | null;
+    loading: boolean;
 };
 
 export function createUtilityAnswer(elements: UtilityAnswerElements, deps: UtilityAnswerDeps) {
@@ -68,6 +70,11 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
     let translateState: TranslateFormState | null = null;
     let currencyState: CurrencyFormState | null = null;
 
+    function setPanelBusy(busy: boolean) {
+        if (busy) elements.root.setAttribute('aria-busy', 'true');
+        else elements.root.removeAttribute('aria-busy');
+    }
+
     function reset() {
         activeRequestId += 1;
         visibleKind = null;
@@ -76,6 +83,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         currencyState = null;
         elements.title.textContent = '';
         elements.content.replaceChildren();
+        elements.root.removeAttribute('aria-busy');
         elements.root.style.display = 'none';
     }
 
@@ -93,6 +101,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
                 from: defaults.from,
                 to: defaults.to,
                 translatedText: null,
+                loading: false,
             });
             return;
         }
@@ -103,6 +112,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
                 from: defaults.from,
                 to: defaults.to,
                 result: null,
+                loading: false,
             });
             return;
         }
@@ -111,6 +121,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         hint.className = 'utility-answer-empty-hint';
         hint.textContent = EMPTY_HINTS[kind];
         elements.content.appendChild(hint);
+        setPanelBusy(false);
         elements.root.style.display = 'block';
     }
 
@@ -122,16 +133,17 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             return;
         }
         if (visibleKind === 'translate' && translateState) {
-            renderTranslateForm({ ...translateState, translatedText: null }, view);
+            renderTranslateForm({ ...translateState, translatedText: null, loading: false }, view);
             return;
         }
         if (visibleKind === 'currency' && currencyState) {
-            renderCurrencyForm({ ...currencyState, result: null }, view);
+            renderCurrencyForm({ ...currencyState, result: null, loading: false }, view);
             return;
         }
 
         elements.content.replaceChildren();
         elements.content.appendChild(buildErrorBlock(view));
+        setPanelBusy(false);
         elements.root.style.display = 'block';
     }
 
@@ -188,6 +200,8 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             elements.content.appendChild(buildErrorBlock(error));
         } else if (state.result) {
             elements.content.appendChild(buildCurrencyResult(state.result));
+        } else if (state.loading) {
+            elements.content.appendChild(buildUtilityResultSkeleton('currency'));
         } else {
             const hint = document.createElement('p');
             hint.className = 'utility-answer-empty-hint';
@@ -195,6 +209,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             elements.content.appendChild(hint);
         }
 
+        setPanelBusy(state.loading);
         elements.root.style.display = 'block';
     }
 
@@ -272,6 +287,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             from: input.from,
             to: input.to,
             result: null,
+            loading: true,
         };
         renderCurrencyForm(currencyState);
 
@@ -302,6 +318,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
                 from: parsed.value.from,
                 to: parsed.value.to,
                 result: parsed.value,
+                loading: false,
             });
         } catch (error) {
             console.error('Error fetching currency utility:', error);
@@ -376,6 +393,8 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             resultText.textContent = state.translatedText;
             result.append(resultLabel, resultText);
             elements.content.appendChild(result);
+        } else if (state.loading) {
+            elements.content.appendChild(buildUtilityResultSkeleton('translate'));
         } else if (!state.text.trim()) {
             const hint = document.createElement('p');
             hint.className = 'utility-answer-empty-hint';
@@ -383,6 +402,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             elements.content.appendChild(hint);
         }
 
+        setPanelBusy(state.loading);
         elements.root.style.display = 'block';
     }
 
@@ -431,6 +451,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             from: fromRaw,
             to: toRaw,
             translatedText: translateState?.translatedText ?? null,
+            loading: translateState?.loading ?? false,
         };
     }
 
@@ -445,6 +466,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             from: input.from,
             to: input.to,
             translatedText: null,
+            loading: false,
         };
 
         const trimmed = input.text.trim();
@@ -469,6 +491,9 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             });
             return;
         }
+
+        translateState = { ...translateState, loading: true };
+        renderTranslateForm(translateState);
 
         try {
             const path = buildTranslateUtilityPath({
@@ -501,6 +526,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
                 from: parsed.value.from,
                 to: parsed.value.to,
                 translatedText: parsed.value.translatedText,
+                loading: false,
             });
         } catch (error) {
             console.error('Error fetching translation:', error);
@@ -515,7 +541,8 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
     function renderTimezoneTool(
         country: string,
         answer: UtilityTimezoneSuccessView | null,
-        error?: UtilityErrorView
+        error?: UtilityErrorView,
+        loading = false
     ) {
         visibleKind = 'timezone';
         selectedCountry = country;
@@ -551,6 +578,8 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             root.appendChild(buildErrorBlock(error));
         } else if (answer) {
             root.appendChild(buildZonesList(answer));
+        } else if (loading) {
+            root.appendChild(buildTimezoneSkeleton());
         } else {
             const hint = document.createElement('p');
             hint.className = 'utility-answer-empty-hint';
@@ -567,6 +596,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         refresh.addEventListener('click', run);
 
         elements.content.appendChild(root);
+        setPanelBusy(loading);
         elements.root.style.display = 'block';
     }
 
@@ -638,7 +668,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         const requestId = ++activeRequestId;
         visibleKind = 'timezone';
         selectedCountry = country;
-        renderTimezoneTool(country, null);
+        renderTimezoneTool(country, null, undefined, true);
 
         try {
             const path = buildTimezoneUtilityPath(country);
@@ -696,7 +726,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
                 const defaults = languageDefaultsFromLocale();
                 const from = intent.from ?? defaults.from;
                 const to = intent.to ?? (intent.from === defaults.to ? defaults.from : defaults.to);
-                renderTranslateForm({ text: '', from, to, translatedText: null });
+                renderTranslateForm({ text: '', from, to, translatedText: null, loading: false });
                 return;
             }
             const { from, to } = resolveTranslateLanguages(text, intent.from, intent.to);
@@ -768,6 +798,42 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         fetchTimezone,
         fetchCurrency,
     };
+}
+
+function buildSkeletonBar(className: string): HTMLElement {
+    const bar = document.createElement('div');
+    bar.className = className;
+    return bar;
+}
+
+function buildUtilityResultSkeleton(kind: 'translate' | 'currency'): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = `utility-answer-skeleton utility-answer-skeleton--${kind}`;
+    wrap.setAttribute('aria-hidden', 'true');
+    if (kind === 'translate') {
+        wrap.append(
+            buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--label'),
+            buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--line-lg'),
+            buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--line-md')
+        );
+    } else {
+        wrap.append(
+            buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--amount'),
+            buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--rate')
+        );
+    }
+    return wrap;
+}
+
+function buildTimezoneSkeleton(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'utility-answer-skeleton utility-answer-skeleton--timezone';
+    wrap.setAttribute('aria-hidden', 'true');
+    wrap.append(
+        buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--zone'),
+        buildSkeletonBar('utility-skeleton-bar utility-skeleton-bar--zone')
+    );
+    return wrap;
 }
 
 function fillCountrySelect(select: HTMLSelectElement, selected: string): void {

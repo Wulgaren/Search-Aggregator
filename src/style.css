@@ -1753,6 +1753,56 @@ a:hover {
   color: var(--text-secondary);
 }
 
+.utility-answer-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.utility-answer-skeleton--timezone {
+  padding-top: 0;
+  border-top: none;
+}
+
+.utility-skeleton-bar {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+.utility-skeleton-bar--label {
+  width: 5.5rem;
+  height: 0.7rem;
+}
+
+.utility-skeleton-bar--line-lg {
+  width: 78%;
+  height: 1.15rem;
+}
+
+.utility-skeleton-bar--line-md {
+  width: 54%;
+  height: 1.15rem;
+}
+
+.utility-skeleton-bar--amount {
+  width: 9.5rem;
+  height: 1.5rem;
+}
+
+.utility-skeleton-bar--rate {
+  width: 12rem;
+  height: 0.85rem;
+}
+
+.utility-skeleton-bar--zone {
+  height: 3.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
 .infobox {
   display: flex;
   flex-direction: row;

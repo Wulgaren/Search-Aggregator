@@ -27,6 +27,14 @@ function createDeps(overrides: Partial<UtilityAnswerDeps> = {}): UtilityAnswerDe
     };
 }
 
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+        resolve = res;
+    });
+    return { promise, resolve };
+}
+
 describe('createUtilityAnswer', () => {
     let elements: UtilityAnswerElements;
     let deps: UtilityAnswerDeps;
@@ -138,6 +146,122 @@ describe('createUtilityAnswer', () => {
         );
         expect(elements.content.querySelector('.utility-translate-text')).not.toBeNull();
         expect(elements.content.querySelectorAll('.utility-translate-lang-select').length).toBe(2);
+        expect(elements.content.querySelector('.utility-answer-skeleton')).toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('fetchFromIntent translate shows form and result skeleton while pending', async () => {
+        const pending = deferred<Response>();
+        vi.mocked(deps.apiFetch).mockReturnValue(pending.promise);
+        const utility = createUtilityAnswer(elements, deps);
+
+        const fetchPromise = utility.fetchFromIntent({
+            kind: 'translate',
+            text: 'hello',
+            from: 'en',
+            to: 'fr',
+        });
+
+        expect(elements.root.style.display).toBe('block');
+        expect(elements.title.textContent).toBe('Translate');
+        expect(elements.content.querySelector('.utility-translate-form')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-answer-skeleton--translate')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-translate-result-text')).toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBe('true');
+
+        pending.resolve(
+            jsonResponse({
+                ok: true,
+                kind: 'translate',
+                text: 'hello',
+                from: 'en',
+                to: 'fr',
+                translatedText: 'bonjour',
+            })
+        );
+        await fetchPromise;
+
+        expect(elements.content.querySelector('.utility-answer-skeleton')).toBeNull();
+        expect(elements.content.querySelector('.utility-translate-result-text')?.textContent).toBe(
+            'bonjour'
+        );
+        expect(elements.root.getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('fetchFromIntent currency shows form and result skeleton while pending', async () => {
+        const pending = deferred<Response>();
+        vi.mocked(deps.apiFetch).mockReturnValue(pending.promise);
+        const utility = createUtilityAnswer(elements, deps);
+
+        const fetchPromise = utility.fetchFromIntent({
+            kind: 'currency',
+            amount: 100,
+            from: 'USD',
+            to: 'EUR',
+        });
+
+        expect(elements.root.style.display).toBe('block');
+        expect(elements.title.textContent).toBe('Currency');
+        expect(elements.content.querySelector('.utility-currency-form')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-answer-skeleton--currency')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-currency-converted')).toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBe('true');
+
+        pending.resolve(
+            jsonResponse({
+                ok: true,
+                kind: 'currency',
+                amount: 100,
+                from: 'USD',
+                to: 'EUR',
+                converted: 92,
+                rate: 0.92,
+            })
+        );
+        await fetchPromise;
+
+        expect(elements.content.querySelector('.utility-answer-skeleton')).toBeNull();
+        expect(elements.content.querySelector('.utility-currency-converted')?.textContent).toMatch(
+            /92/
+        );
+        expect(elements.root.getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('fetchFromIntent timezone shows country picker and zone skeleton while pending', async () => {
+        const pending = deferred<Response>();
+        vi.mocked(deps.apiFetch).mockReturnValue(pending.promise);
+        const utility = createUtilityAnswer(elements, deps);
+
+        const fetchPromise = utility.fetchFromIntent({ kind: 'timezone', country: 'jp' });
+
+        expect(elements.root.style.display).toBe('block');
+        expect(elements.title.textContent).toBe('Timezone');
+        expect(elements.content.querySelector('.utility-timezone-country')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-answer-skeleton--timezone')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-timezone-zone')).toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBe('true');
+
+        pending.resolve(
+            jsonResponse({
+                ok: true,
+                kind: 'timezone',
+                country: 'jp',
+                countryLabel: 'Japan',
+                zones: [
+                    {
+                        id: 'Asia/Tokyo',
+                        label: 'Japan',
+                        localTime: '01:00',
+                        offset: 'GMT+9',
+                    },
+                ],
+            })
+        );
+        await fetchPromise;
+
+        expect(elements.content.querySelector('.utility-answer-skeleton')).toBeNull();
+        expect(elements.content.querySelector('.utility-timezone-zone--solo')).not.toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBeNull();
     });
 
     it('fetchFromIntent consumes takeEarlyFetch utility when present', async () => {
@@ -196,6 +320,8 @@ describe('createUtilityAnswer', () => {
         );
         expect(elements.content.querySelectorAll('.utility-answer-example').length).toBe(2);
         expect(elements.content.querySelector('.utility-translate-form')).not.toBeNull();
+        expect(elements.content.querySelector('.utility-answer-skeleton')).toBeNull();
+        expect(elements.root.getAttribute('aria-busy')).toBeNull();
     });
 
     it('ignores stale fetchUtility responses after reset', async () => {
