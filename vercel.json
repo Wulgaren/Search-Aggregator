@@ -10,6 +10,9 @@
     },
     "api/ai.ts": {
       "includeFiles": "api/lib/**"
+    },
+    "api/google.ts": {
+      "includeFiles": "api/lib/**"
     }
   },
   "headers": [

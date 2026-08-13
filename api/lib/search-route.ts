@@ -1,16 +1,76 @@
 // Shared handler for Vercel Edge `/api/search` + `/api/ai`.
 
-import {
-    dedupeImages,
-    fetchGoogle,
-    fetchGoogleImages,
-    interleaveImages,
-} from "./google-search.ts";
+import { dedupeImages, interleaveImages } from "./image-merge.ts";
 import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
     "public, max-age=300, s-maxage=300, stale-while-revalidate=86400";
+
+/** Same-deploy Node Google CSE (`preferredRegion: iad1`). */
+function googleNodeUrl(
+    origin: string,
+    searchQuery: string,
+    page: number,
+    kind: "web" | "images",
+    resultsPerPage?: number
+): string {
+    const u = new URL("/api/google", origin);
+    u.searchParams.set("q", searchQuery);
+    u.searchParams.set("page", String(page));
+    u.searchParams.set("kind", kind);
+    if (kind === "web" && resultsPerPage !== undefined) {
+        u.searchParams.set("num", String(resultsPerPage));
+    }
+    return u.toString();
+}
+
+type GoogleImageResult = {
+    thumbnail: string;
+    full: string;
+    title: string;
+    sourceUrl: string;
+    width?: number;
+    height?: number;
+    source: string;
+};
+
+/** Fetch Google CSE images via Node; quiet empty on failure (matches prior Edge behavior). */
+async function fetchGoogleImagesViaNode(
+    origin: string,
+    searchQuery: string,
+    page: number
+): Promise<GoogleImageResult[]> {
+    try {
+        const response = await fetch(googleNodeUrl(origin, searchQuery, page, "images"));
+        if (!response.ok) return [];
+        const data: unknown = await response.json();
+        const record = asRecord(data);
+        const raw = record ? readArray(record, "images") : undefined;
+        if (!raw) return [];
+        return raw.flatMap((item): GoogleImageResult[] => {
+            const img = asRecord(item);
+            if (!img) return [];
+            const thumbnail = readString(img, "thumbnail");
+            const full = readString(img, "full");
+            if (!thumbnail || !full) return [];
+            const mapped: GoogleImageResult = {
+                thumbnail,
+                full,
+                title: readString(img, "title") || "",
+                sourceUrl: readString(img, "sourceUrl") || "",
+                source: readString(img, "source") || "google",
+            };
+            const width = readNumber(img, "width");
+            const height = readNumber(img, "height");
+            if (width !== undefined) mapped.width = width;
+            if (height !== undefined) mapped.height = height;
+            return [mapped];
+        });
+    } catch {
+        return [];
+    }
+}
 
 /** Soft cap per upstream inside aggregate / single-source edge fetches (not Google/infobox). */
 const UPSTREAM_TIMEOUT_MS = 5000;
@@ -234,8 +294,33 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
 
     if (source === "google") {
         try {
-            const google = await fetchGoogle(searchQuery, page, resultsPerPage);
-            const body = { page, google };
+            const nodeRes = await fetch(
+                googleNodeUrl(url.origin, searchQuery, page, "web", resultsPerPage)
+            );
+            const body: unknown = await nodeRes.json().catch(() => null);
+            const bodyRecord = asRecord(body);
+            if (!nodeRes.ok || !bodyRecord) {
+                const msg =
+                    (bodyRecord ? readString(bodyRecord, "error") : undefined) ||
+                    `Google node error: ${nodeRes.status}`;
+                console.error("[edge-search] Google node proxy failed", {
+                    reqId,
+                    requestKey,
+                    status: nodeRes.status,
+                    error: msg,
+                });
+                const errBody = {
+                    page,
+                    google: { error: msg, results: [], hasMore: false },
+                };
+                logSearchResponse(errBody);
+                return new Response(JSON.stringify(errBody), {
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Cache-Control": SEARCH_JSON_CACHE,
+                    },
+                });
+            }
             logSearchResponse(body);
             return new Response(JSON.stringify(body), {
                 headers: {
@@ -245,17 +330,17 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             });
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
-            console.error("[edge-search] Google web search failed", {
+            console.error("[edge-search] Google node proxy failed", {
                 reqId,
                 requestKey,
                 error: msg,
             });
-            const body = {
+            const errBody = {
                 page,
                 google: { error: msg, results: [], hasMore: false },
             };
-            logSearchResponse(body);
-            return new Response(JSON.stringify(body), {
+            logSearchResponse(errBody);
+            return new Response(JSON.stringify(errBody), {
                 headers: {
                     "Content-Type": "application/json",
                     "Cache-Control": SEARCH_JSON_CACHE,
@@ -299,7 +384,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
 
         const [braveSettled, googleSettled] = await Promise.allSettled([
             fetchBraveImages(searchQuery, page, reqId, requestKey),
-            fetchGoogleImages(searchQuery, page),
+            fetchGoogleImagesViaNode(url.origin, searchQuery, page),
         ]);
         const braveImages =
             braveSettled.status === "fulfilled" ? braveSettled.value : [];

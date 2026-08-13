@@ -13,12 +13,12 @@ A modern, privacy-focused search engine that aggregates results from multiple so
 - **AI Answer**: Groq-powered streaming answers (optional API key)
 - **Infinite Scroll**: Automatic pagination for seamless browsing
 - **Dark Theme**: Modern, minimal dark interface
-- **Fast Performance**: Parallel edge fetches for Google + aggregate; CDN cache headers on `/api/search`
+- **Fast Performance**: Parallel fetches for Google (Node `iad1`) + aggregate (Edge); CDN cache headers on `/api/search`
 
 ## Tech Stack
 
 - **Frontend**: TypeScript (Vite), HTML, CSS — sources in `src/`, bundles in `public/`
-- **Hosting**: [Vercel](https://vercel.com/) — static files plus Edge routes under `api/` (`vercel.json` for build and headers)
+- **Hosting**: [Vercel](https://vercel.com/) — static files plus Edge routes under `api/` and a regional Node function for Google CSE (`vercel.json` for build and headers)
 - **Tests**: Vitest + jsdom (`npm test`)
 - **APIs**:
   - [Brave Search API](https://brave.com/search/api/)
@@ -72,7 +72,7 @@ All search credentials are **server-side** environment variables on Vercel (neve
 | `MARGINALIA_API_KEY` | Marginalia Search API v2 (`API-Key` header; falls back to sample `public`) |
 | `GROQ_API_KEY` | Optional streaming AI answers |
 
-Google web runs as a separate `/api/search?source=google` edge request (parallel with the aggregate). Images use `/api/search?source=images` (Google + Brave interleaved on the edge).
+Google web CSE runs on a **Node** serverless function in region `iad1` (`/api/google`). The client still calls `/api/search?source=google`; Edge proxies to Node. Combined images use `/api/search?source=images` (Edge fetches Brave locally and Google images via Node, then interleaves). No shared token store / Supabase / cron in this setup — Node keeps an in-memory OAuth token cache per instance.
 
 ## Project Structure
 
@@ -83,7 +83,8 @@ Google web runs as a separate `/api/search?source=google` edge request (parallel
 ├── api/
 │   ├── search.ts           # Vercel Edge — GET /api/search
 │   ├── ai.ts               # Vercel Edge — POST /api/ai
-│   └── lib/                # Shared Edge handler logic
+│   ├── google.ts           # Vercel Node (iad1) — Google CSE web + images
+│   └── lib/                # Shared handler logic (Edge + Node)
 ├── src/                    # Client TypeScript + style.css
 ├── scripts/
 │   └── build.ts            # Vite IIFE builds + asset sync → public/
@@ -96,7 +97,7 @@ Google web runs as a separate `/api/search?source=google` edge request (parallel
 
 ### Vercel environment variables
 
-Set these in **Project → Settings → Environment Variables** so `/api/search` and `/api/ai` work:
+Set these in **Project → Settings → Environment Variables** so `/api/search`, `/api/ai`, and `/api/google` work:
 
 | Variable | Purpose |
 | -------- | ------- |
@@ -148,12 +149,12 @@ Use `npm run typecheck` for TypeScript-only checks. Use `npm run watch` to rebui
 ### Code Structure
 
 - **UI** (`src/script.ts` → `public/script.js`): DOM, search state, infinite scroll, image previews
-- **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/lib/search-route.ts`): Vercel Edge handlers for same-origin `/api` paths (including Google CSE via env)
+- **Search + AI** (`api/search.ts`, `api/ai.ts`, `api/google.ts`, `api/lib/`): Edge for aggregate/Brave/etc.; Node `iad1` for Google CSE (Edge proxies `source=google` / Google half of images)
 - **Styles** (`src/style.css` → `public/style.css`)
 
 ## API Endpoints (in-bundle)
 
-The app issues `fetch()` calls to same-origin paths handled by Vercel Edge:
+The app issues `fetch()` calls to same-origin paths. Aggregate / Brave / Marginalia / Wiby / Tavily / infobox / Brave images run on **Edge**. Google CSE (web + images) runs on **Node** (`iad1`); Edge proxies so client URLs stay `/api/search?...`.
 
 ### `/api/search`
 
@@ -181,7 +182,7 @@ GET /api/search?q=javascript&source=images&page=1
 
 - No tracking or analytics
 - No cookies
-- Search queries are sent from the browser to same-origin edge routes, which call third-party search APIs
+- Search queries are sent from the browser to same-origin `/api` routes (Edge + Node Google), which call third-party search APIs
 - Optional CDN/browser cache headers on JSON search responses
 
 ## Third-Party Services

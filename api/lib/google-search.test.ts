@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    dedupeImages,
     fetchGoogle,
     fetchGoogleImages,
-    interleaveImages,
     isGoogleConfigured,
 } from './google-search';
+import { dedupeImages, interleaveImages } from './image-merge';
 
 const originalEnv = { ...process.env };
 

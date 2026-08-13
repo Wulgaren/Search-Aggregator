@@ -3,7 +3,7 @@ import { searchApiFetch } from './search-fetch';
 
 /**
  * Starts `?q=` search fetches ASAP (wired from HTML before deferred `script.js`).
- * Always fires aggregate + google + combined images + infobox (edge no-ops Google if unset).
+ * Always fires aggregate + google + combined images + infobox (Node/Edge quiet no-op Google if unset).
  */
 export function bootstrapEarlyFetch(): void {
     const q = new URLSearchParams(window.location.search).get('q');

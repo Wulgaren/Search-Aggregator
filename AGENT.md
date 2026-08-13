@@ -8,7 +8,11 @@
 
 ### Google Cache Storage in jsdom
 - **Struggle:** (Historical) Client Google CSE used Cache Storage; jsdom has no `caches` API.
-- **Resolution:** Google CSE now runs on Vercel Edge (`api/lib/google-search.ts`); client Cache API path removed. Edge tests mock `fetch` only.
+- **Resolution:** Google CSE runs on Vercel Node `iad1` (`api/google.ts` + `api/lib/google-search.ts`); Edge `/api/search` proxies web/images. Client Cache API path removed. Tests mock `fetch` (`/api/google` from Edge; googleapis from Node lib).
+
+### Edge vs Node Google CSE
+- **Struggle:** Regional Node Google without pulling OAuth into the Edge bundle or changing client URLs.
+- **Resolution:** Edge keeps `/api/search?source=google|images`; Node owns CSE at `/api/google?kind=web|images` with `preferredRegion: 'iad1'`. Image merge helpers live in `api/lib/image-merge.ts` so Edge does not import OAuth.
 
 ### ESLint `assertionStyle: never` + `noPropertyAccessFromIndexSignature`
 - **Struggle:** Replacing `as` casts with `Record<string, unknown>` narrowing still fails `tsc` on `obj.prop` (index signature) and `exactOptionalPropertyTypes` when assigning `T | undefined` into optional fields.
