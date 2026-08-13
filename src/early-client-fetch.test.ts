@@ -82,7 +82,7 @@ describe('bootstrapEarlyFetch', () => {
         );
         expect(paths.some((p) => p.includes('source=images'))).toBe(false);
 
-        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(2000);
         paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
         expect(paths).toContain('/api/search?q=hello%20world&source=images&page=1');
         expect(paths.some((p) => p.includes('imageSource='))).toBe(false);
@@ -117,20 +117,20 @@ describe('bootstrapEarlyFetch', () => {
         void takeEarlyFetchPromise('infobox', 'cats');
         expect(window.__earlyFetch).toBeUndefined();
 
-        await vi.advanceTimersByTimeAsync(1000);
+        await vi.advanceTimersByTimeAsync(2000);
         expect(imagesPromise).toBeInstanceOf(Promise);
         await imagesPromise;
         vi.useRealTimers();
     });
 
-    it('delays images early fetch by 1000ms', async () => {
+    it('delays images early fetch by 2000ms', async () => {
         vi.useFakeTimers();
         window.history.replaceState({}, '', '/?q=delay');
         bootstrapEarlyFetch();
 
         expect(searchApiFetch.mock.calls.some((c) => String(c[0]).includes('source=images'))).toBe(false);
 
-        await vi.advanceTimersByTimeAsync(999);
+        await vi.advanceTimersByTimeAsync(1999);
         expect(searchApiFetch.mock.calls.some((c) => String(c[0]).includes('source=images'))).toBe(false);
 
         await vi.advanceTimersByTimeAsync(1);
