@@ -50,7 +50,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function restGateReady() {
-        return page1Settled.brave && page1Settled.tavily && page1Settled.marginalia && page1Settled.wiby;
+        return (
+            page1Settled.google &&
+            page1Settled.brave &&
+            page1Settled.tavily &&
+            page1Settled.marginalia &&
+            page1Settled.wiby
+        );
     }
 
     function reset() {
@@ -242,14 +248,18 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function updateNoncommercialPage1() {
-        if (!restGateReady()) return;
+        if (!page1Settled.marginalia) return;
+        if (!restGateReady()) {
+            renderNoncommercialMarginaliaPartial();
+            return;
+        }
         renderNoncommercialResults();
     }
 
     function updateMergedPage1() {
-        if (!page1Settled.google) return;
+        if (!page1Settled.google && !page1Settled.marginalia) return;
         if (!restGateReady()) {
-            renderMergedGooglePartial();
+            renderMergedPairPartial();
             return;
         }
         renderMergedResults();
@@ -271,12 +281,29 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         updateCount(elements.commercialCount, googleResults.length, true);
     }
 
-    function renderMergedGooglePartial() {
+    function renderNoncommercialMarginaliaPartial() {
+        const commercialUrls = collectCommercialUrlKeys();
+        const results = deduplicateResults(marginaliaState.results).filter(
+            (result) => !commercialUrls.has(getDedupeKey(result.url))
+        );
+        if (results.length === 0) {
+            showLoading(elements.noncommercialResults);
+            elements.noncommercialCount.textContent = '';
+            return;
+        }
+        elements.noncommercialResults.innerHTML =
+            results
+                .map((result, index) => renderStandardResultArticle(result, index, 'marginalia', 'Marginalia'))
+                .join('') + generateSkeletonHTML(3);
+        applyNoAnimateToRenderedItems(elements.noncommercialResults, renderedNoncommercialUrls);
+        attachPrefetchListeners(elements.noncommercialResults);
+        updateCount(elements.noncommercialCount, results.length, true);
+    }
+
+    function renderMergedPairPartial() {
         const allResults: MergedItem[] = [];
         const seen = new Set<string>();
-        for (const result of googleState.results) {
-            maybePushMerged('commercial', result, seen, allResults);
-        }
+        pushGoogleMarginaliaPair(seen, allResults);
         if (allResults.length === 0) {
             showLoading(elements.mergedResults);
             return;
@@ -284,7 +311,13 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         elements.mergedResults.innerHTML =
             allResults
                 .map((item, index) =>
-                    renderStandardResultArticle(item.result, index, 'commercial', 'Google', 'result-source')
+                    renderStandardResultArticle(
+                        item.result,
+                        index,
+                        item.type === 'commercial' ? 'commercial' : 'noncommercial',
+                        item.type === 'commercial' ? 'Google' : 'Marginalia',
+                        'result-source'
+                    )
                 )
                 .join('') + generateSkeletonHTML(3);
         applyNoAnimateToRenderedItems(elements.mergedResults, renderedMergedUrls);
@@ -331,9 +364,9 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
 
     function forceRenderMergedIfNeeded() {
         if (!deps.isMergedView() || !currentQuery) return;
-        if (!page1Settled.google) return;
+        if (!page1Settled.google && !page1Settled.marginalia) return;
         if (!restGateReady()) {
-            renderMergedGooglePartial();
+            renderMergedPairPartial();
             return;
         }
         renderMergedResults();
@@ -458,11 +491,8 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function renderNoncommercialResults() {
-        const combinedRaw = deduplicateResults(interleaveArrays(marginaliaState.results, wibyState.results));
-        const commercialUrls = new Set<string>();
-        for (const result of googleState.results) commercialUrls.add(getDedupeKey(result.url));
-        for (const result of braveState.results) commercialUrls.add(getDedupeKey(result.url));
-        for (const result of tavilyState.results) commercialUrls.add(getDedupeKey(result.url));
+        const combinedRaw = deduplicateResults([...marginaliaState.results, ...wibyState.results]);
+        const commercialUrls = collectCommercialUrlKeys();
         const results = combinedRaw.filter((result) => !commercialUrls.has(getDedupeKey(result.url)));
         const anyNcLoading = marginaliaState.loading || wibyState.loading;
         const rawCount = marginaliaState.results.length + wibyState.results.length;
@@ -498,18 +528,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     function renderMergedResults() {
         const allResults: MergedItem[] = [];
         const seen = new Set<string>();
-        for (const result of googleState.results) {
-            maybePushMerged('commercial', result, seen, allResults);
-        }
-        const rest = interleaveArrays(
-            braveState.results,
-            tavilyState.results,
-            marginaliaState.results,
-            wibyState.results
-        );
+        pushGoogleMarginaliaPair(seen, allResults);
+        const rest = interleaveArrays(braveState.results, tavilyState.results, wibyState.results);
         for (const result of rest) {
-            const type =
-                result.source === 'marginalia' || result.source === 'wiby' ? 'noncommercial' : 'commercial';
+            const type = result.source === 'wiby' ? 'noncommercial' : 'commercial';
             maybePushMerged(type, result, seen, allResults);
         }
         const anyLoading =
@@ -564,6 +586,30 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
             wibyState.hasMore
         )
             attachSentinel(elements.mergedResults, 'merged');
+    }
+
+    function collectCommercialUrlKeys() {
+        const commercialUrls = new Set<string>();
+        for (const result of googleState.results) commercialUrls.add(getDedupeKey(result.url));
+        for (const result of braveState.results) commercialUrls.add(getDedupeKey(result.url));
+        for (const result of tavilyState.results) commercialUrls.add(getDedupeKey(result.url));
+        return commercialUrls;
+    }
+
+    function pushGoogleMarginaliaPair(seen: Set<string>, allResults: MergedItem[]) {
+        const googleKeys = new Set<string>();
+        for (const result of googleState.results) {
+            googleKeys.add(getDedupeKey(result.url));
+        }
+        const maxLen = Math.max(googleState.results.length, marginaliaState.results.length);
+        for (let i = 0; i < maxLen; i++) {
+            const googleItem = googleState.results[i];
+            if (googleItem !== undefined) maybePushMerged('commercial', googleItem, seen, allResults);
+            const margItem = marginaliaState.results[i];
+            if (margItem === undefined) continue;
+            if (googleKeys.has(getDedupeKey(margItem.url))) continue;
+            maybePushMerged('noncommercial', margItem, seen, allResults);
+        }
     }
 
     function maybePushMerged(type: 'commercial' | 'noncommercial', result: SearchResult, seen: Set<string>, allResults: MergedItem[]) {

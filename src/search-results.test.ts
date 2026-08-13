@@ -45,6 +45,10 @@ function jsonResponse(body: SearchApiResponse, ok = true, status = ok ? 200 : 50
     } as Response;
 }
 
+function resultTitles(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('.result-title')].map((el) => el.textContent ?? '');
+}
+
 function makeElements(): SearchResultsElements {
     return {
         commercialResults: document.createElement('div'),
@@ -277,6 +281,245 @@ describe('createSearchResultsComponent', () => {
         expect(titles[1]).toContain('Brave Hit');
     });
 
+    it('paints Marginalia in the noncommercial column before rest gate', async () => {
+        let resolveBrave!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
+        deps.apiFetch = apiFetchBySource({
+            brave: () => bravePromise,
+            google: () =>
+                jsonResponse({
+                    google: sourcePayload({
+                        results: [makeResult({ title: 'Google Hit', url: 'https://google.example/a', source: 'google' })],
+                    }),
+                }),
+            marginalia: () =>
+                jsonResponse({
+                    marginalia: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Marg Hit', url: 'https://marg.example/a', source: 'marginalia' }),
+                        ],
+                    }),
+                }),
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('gate');
+        component.fetchGoogle('gate');
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Google Hit');
+            expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
+        });
+        expect(elements.noncommercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+        });
+        expect(elements.noncommercialResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
+        expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
+        expect(elements.noncommercialResults.textContent).not.toContain('Brave Hit');
+    });
+
+    it('holds Brave until both Google and Marginalia have settled', async () => {
+        let resolveMarginalia!: (value: Response) => void;
+        const margPromise = new Promise<Response>((resolve) => {
+            resolveMarginalia = resolve;
+        });
+        deps.apiFetch = apiFetchBySource({
+            brave: () =>
+                jsonResponse({
+                    brave: sourcePayload({
+                        results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                    }),
+                }),
+            google: () =>
+                jsonResponse({
+                    google: sourcePayload({
+                        results: [makeResult({ title: 'Google Hit', url: 'https://google.example/a', source: 'google' })],
+                    }),
+                }),
+            marginalia: () => margPromise,
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('hold');
+        component.fetchGoogle('hold');
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Google Hit');
+        });
+        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+        expect(elements.commercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+
+        resolveMarginalia(
+            jsonResponse({
+                marginalia: sourcePayload({
+                    results: [makeResult({ title: 'Marg Hit', url: 'https://marg.example/a', source: 'marginalia' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+            expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
+        });
+        expect(elements.commercialResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
+    });
+
+    it('appends Wiby under Marginalia instead of zipping them', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
+        deps.apiFetch = apiFetchBySource({
+            brave: () => jsonResponse({ brave: sourcePayload() }),
+            marginalia: () =>
+                jsonResponse({
+                    marginalia: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Marg 1', url: 'https://marg.example/1', source: 'marginalia' }),
+                            makeResult({ title: 'Marg 2', url: 'https://marg.example/2', source: 'marginalia' }),
+                        ],
+                    }),
+                }),
+            wiby: () =>
+                jsonResponse({
+                    wiby: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Wiby 1', url: 'https://wiby.example/1', source: 'wiby' }),
+                            makeResult({ title: 'Wiby 2', url: 'https://wiby.example/2', source: 'wiby' }),
+                        ],
+                    }),
+                }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('append');
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.noncommercialResults)).toEqual(['Marg 1', 'Marg 2', 'Wiby 1', 'Wiby 2']);
+        });
+    });
+
+    it('entwines Google and Marginalia on merged view then zips the rest underneath', async () => {
+        deps.isMergedView = vi.fn(() => true);
+        let resolveBrave!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
+        deps.apiFetch = apiFetchBySource({
+            brave: () => bravePromise,
+            google: () =>
+                jsonResponse({
+                    google: sourcePayload({
+                        results: [
+                            makeResult({ title: 'G1', url: 'https://google.example/1', source: 'google' }),
+                            makeResult({ title: 'G2', url: 'https://google.example/2', source: 'google' }),
+                        ],
+                    }),
+                }),
+            marginalia: () =>
+                jsonResponse({
+                    marginalia: sourcePayload({
+                        results: [
+                            makeResult({ title: 'M1', url: 'https://marg.example/1', source: 'marginalia' }),
+                            makeResult({ title: 'M2', url: 'https://marg.example/2', source: 'marginalia' }),
+                        ],
+                    }),
+                }),
+            wiby: () =>
+                jsonResponse({
+                    wiby: sourcePayload({
+                        results: [
+                            makeResult({ title: 'W1', url: 'https://wiby.example/1', source: 'wiby' }),
+                            makeResult({ title: 'W2', url: 'https://wiby.example/2', source: 'wiby' }),
+                        ],
+                    }),
+                }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('braid');
+        component.fetchGoogle('braid');
+
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.mergedResults)).toEqual(['G1', 'M1', 'G2', 'M2']);
+        });
+        expect(elements.mergedResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+        expect(elements.mergedResults.textContent).not.toContain('W1');
+        expect(elements.mergedResults.textContent).not.toContain('B1');
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [
+                        makeResult({ title: 'B1', url: 'https://brave.example/1', source: 'brave' }),
+                        makeResult({ title: 'B2', url: 'https://brave.example/2', source: 'brave' }),
+                    ],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.mergedResults)).toEqual(['G1', 'M1', 'G2', 'M2', 'B1', 'W1', 'B2', 'W2']);
+        });
+        expect(elements.mergedResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
+    });
+
+    it('lets Google win URL duplicates in the merged Google/Marginalia braid', async () => {
+        deps.isMergedView = vi.fn(() => true);
+        deps.apiFetch = apiFetchBySource({
+            brave: () => jsonResponse({ brave: sourcePayload() }),
+            google: () =>
+                jsonResponse({
+                    google: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Google Dup', url: 'https://dup.example/x', source: 'google' }),
+                            makeResult({ title: 'G2', url: 'https://google.example/2', source: 'google' }),
+                        ],
+                    }),
+                }),
+            marginalia: () =>
+                jsonResponse({
+                    marginalia: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Marg Dup', url: 'https://dup.example/x', source: 'marginalia' }),
+                            makeResult({ title: 'M2', url: 'https://marg.example/2', source: 'marginalia' }),
+                        ],
+                    }),
+                }),
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('dup');
+        component.fetchGoogle('dup');
+
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.mergedResults)).toEqual(['Google Dup', 'G2', 'M2']);
+        });
+        expect(elements.mergedResults.textContent).not.toContain('Marg Dup');
+    });
+
     it('fetchGoogle uses apiFetch/takeEarlyFetch for google source', async () => {
         deps.apiFetch = apiFetchBySource({
             brave: () => jsonResponse({ brave: sourcePayload() }),
@@ -341,6 +584,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('shows noncommercial error-state when marginalia and wiby both fail', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         deps.apiFetch = apiFetchBySource({
             brave: () => jsonResponse({ brave: sourcePayload() }),
             marginalia: () => jsonResponse({ marginalia: sourcePayload({ error: 'marg fail', hasMore: false }) }),
@@ -356,6 +600,7 @@ describe('createSearchResultsComponent', () => {
     });
 
     it('shows noncommercial empty-state when both return no results', async () => {
+        deps.hasGoogleSearchConfigured = vi.fn(() => false);
         deps.apiFetch = apiFetchBySource({
             brave: () => jsonResponse({ brave: sourcePayload() }),
             marginalia: () => jsonResponse({ marginalia: sourcePayload() }),
@@ -490,7 +735,7 @@ describe('createSearchResultsComponent', () => {
         await vi.waitFor(() => {
             expect(elements.mergedResults.querySelectorAll('.result-item').length).toBeGreaterThanOrEqual(2);
         });
-        expect(elements.mergedResults.textContent).toMatch(/Brave M|Google M|Marg M/);
+        expect(resultTitles(elements.mergedResults)).toEqual(['Google M', 'Marg M', 'Brave M']);
     });
 
     it('network failure on commercial sources yields error-state after google also fails', async () => {
