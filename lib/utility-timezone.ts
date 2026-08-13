@@ -54,11 +54,11 @@ function formatZoneParts(
     zone: CountryZoneDef,
     now: Date
 ): TimezoneZoneRow {
-    const localTime = new Intl.DateTimeFormat('en-US', {
+    const localTime = new Intl.DateTimeFormat('en-GB', {
         timeZone: zone.id,
-        hour: 'numeric',
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: true,
+        hour12: false,
     }).format(now);
 
     let offset = '';

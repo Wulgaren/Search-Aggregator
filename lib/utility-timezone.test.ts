@@ -17,8 +17,8 @@ describe('handleUtilityTimezone', () => {
         expect(zone.id).toBe('Asia/Tokyo');
         expect(zone.label).toBe('Japan');
         expect(zone.localTime).toMatch(/\d/);
-        // 16:00 UTC → 01:00 next day in Tokyo (JST, UTC+9)
-        expect(zone.localTime).toMatch(/1:00/);
+        // 16:00 UTC → 01:00 next day in Tokyo (JST, UTC+9), 24h
+        expect(zone.localTime).toMatch(/01:00/);
         expect(zone.offset).toMatch(/GMT|\+|-/i);
     });
 

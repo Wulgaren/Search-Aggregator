@@ -220,7 +220,7 @@ describe('createUtilityAnswer', () => {
                     {
                         id: 'Asia/Tokyo',
                         label: 'Japan',
-                        localTime: '1:00 AM',
+                        localTime: '01:00',
                         offset: 'GMT+9',
                     },
                 ],
@@ -243,13 +243,13 @@ describe('createUtilityAnswer', () => {
                     {
                         id: 'America/New_York',
                         label: 'Eastern',
-                        localTime: '12:00 PM',
+                        localTime: '12:00',
                         offset: 'GMT-4',
                     },
                     {
                         id: 'America/Los_Angeles',
                         label: 'Pacific',
-                        localTime: '9:00 AM',
+                        localTime: '09:00',
                         offset: 'GMT-7',
                     },
                 ],
@@ -283,7 +283,7 @@ describe('createUtilityAnswer', () => {
                     {
                         id: 'Asia/Tokyo',
                         label: 'Japan',
-                        localTime: '1:00 AM',
+                        localTime: '01:00',
                         offset: 'GMT+9',
                     },
                 ],
@@ -297,6 +297,8 @@ describe('createUtilityAnswer', () => {
             '/api/search?q=jp&source=utility&kind=timezone&country=jp'
         );
         expect(elements.content.querySelectorAll('.utility-timezone-zone').length).toBe(1);
+        expect(elements.content.querySelector('.utility-timezone-zone-label')).toBeNull();
+        expect(elements.content.querySelector('.utility-timezone-zone--solo')).not.toBeNull();
         const select = elements.content.querySelector('.utility-timezone-country');
         expect(select).toBeInstanceOf(HTMLSelectElement);
         if (!(select instanceof HTMLSelectElement)) {
@@ -317,7 +319,7 @@ describe('createUtilityAnswer', () => {
                         {
                             id: 'Asia/Tokyo',
                             label: 'Japan',
-                            localTime: '1:00 AM',
+                            localTime: '01:00',
                             offset: 'GMT+9',
                         },
                     ],
@@ -333,13 +335,13 @@ describe('createUtilityAnswer', () => {
                         {
                             id: 'America/New_York',
                             label: 'Eastern',
-                            localTime: '12:00 PM',
+                            localTime: '12:00',
                             offset: 'GMT-4',
                         },
                         {
                             id: 'America/Chicago',
                             label: 'Central',
-                            localTime: '11:00 AM',
+                            localTime: '11:00',
                             offset: 'GMT-5',
                         },
                     ],

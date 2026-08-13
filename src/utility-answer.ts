@@ -570,19 +570,28 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         list.className = 'utility-timezone-zones';
         list.setAttribute('aria-label', `Local time in ${answer.countryLabel}`);
 
+        const hideCountryLabel = answer.zones.length === 1;
         for (const zone of answer.zones) {
-            list.appendChild(buildZoneRow(zone));
+            list.appendChild(buildZoneRow(zone, hideCountryLabel));
         }
         return list;
     }
 
-    function buildZoneRow(zone: UtilityTimezoneZoneView): HTMLElement {
+    function buildZoneRow(
+        zone: UtilityTimezoneZoneView,
+        hideLabel: boolean
+    ): HTMLElement {
         const item = document.createElement('li');
-        item.className = 'utility-timezone-zone';
+        item.className = hideLabel
+            ? 'utility-timezone-zone utility-timezone-zone--solo'
+            : 'utility-timezone-zone';
 
-        const label = document.createElement('span');
-        label.className = 'utility-timezone-zone-label';
-        label.textContent = zone.label;
+        if (!hideLabel) {
+            const label = document.createElement('span');
+            label.className = 'utility-timezone-zone-label';
+            label.textContent = zone.label;
+            item.appendChild(label);
+        }
 
         const time = document.createElement('span');
         time.className = 'utility-timezone-zone-time';
@@ -592,7 +601,7 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
         offset.className = 'utility-timezone-zone-offset';
         offset.textContent = zone.offset;
 
-        item.append(label, time, offset);
+        item.append(time, offset);
         return item;
     }
 

@@ -1279,13 +1279,19 @@ a:hover {
   );
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  margin: 0 0 1.5rem;
+  margin: 0 auto 1.5rem;
   width: 100%;
-  max-width: none;
+  max-width: 60%;
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
   animation: fadeSlideIn 0.3s ease-out;
+}
+
+@media (max-width: 640px) {
+  .utility-answer {
+    max-width: 100%;
+  }
 }
 
 .utility-load-search {
@@ -1299,7 +1305,6 @@ a:hover {
 }
 
 .utility-load-search-btn {
-  font-family: var(--font-mono);
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-primary);
@@ -1339,17 +1344,17 @@ a:hover {
 .utility-answer-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
 }
 
 .utility-answer-title {
-  font-family: var(--font-mono);
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: capitalize;
+  text-align: center;
 }
 
 .utility-answer-content {
@@ -1387,7 +1392,6 @@ a:hover {
 }
 
 .utility-answer-example {
-  font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
@@ -1403,7 +1407,6 @@ a:hover {
 }
 
 .utility-translate-label {
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1438,7 +1441,6 @@ a:hover {
 }
 
 .utility-translate-lang-label {
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1482,7 +1484,6 @@ a:hover {
 }
 
 .utility-translate-result-label {
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1518,7 +1519,6 @@ a:hover {
 }
 
 .utility-timezone-field-label {
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1531,7 +1531,8 @@ a:hover {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  padding: 0.8rem 0.9rem;
+  min-height: 2.75rem;
 }
 
 .utility-timezone-refresh {
@@ -1555,47 +1556,50 @@ a:hover {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .utility-timezone-zone {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) auto auto;
-  gap: 0.75rem;
+  gap: 0.5rem;
   align-items: baseline;
-  padding: 0.55rem 0.65rem;
+  padding: 0.35rem 0.5rem;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-tertiary);
+}
+
+.utility-timezone-zone--solo {
+  grid-template-columns: auto auto;
+  justify-content: space-between;
 }
 
 .utility-timezone-zone-label {
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .utility-timezone-zone-time {
-  font-family: var(--font-mono);
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-primary);
   text-align: right;
 }
 
 .utility-timezone-zone-offset {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
-  min-width: 3.5rem;
+  min-width: 3rem;
   text-align: right;
 }
 
 @media (max-width: 520px) {
-  .utility-timezone-zone {
+  .utility-timezone-zone:not(.utility-timezone-zone--solo) {
     grid-template-columns: 1fr auto;
   }
 
-  .utility-timezone-zone-offset {
+  .utility-timezone-zone:not(.utility-timezone-zone--solo) .utility-timezone-zone-offset {
     grid-column: 2;
     grid-row: 2;
   }
@@ -1623,7 +1627,6 @@ a:hover {
 }
 
 .utility-currency-field-label {
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1674,7 +1677,6 @@ a:hover {
 
 .utility-currency-converted {
   margin: 0;
-  font-family: var(--font-mono);
   font-size: 1.35rem;
   font-weight: 600;
   color: var(--text-primary);
@@ -1682,7 +1684,6 @@ a:hover {
 
 .utility-currency-rate {
   margin: 0;
-  font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-secondary);
 }
