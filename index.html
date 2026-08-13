@@ -7,12 +7,12 @@
     <title>Search</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-    <link rel="preload" href="style.css?v=97bf7e62" as="style" />
-    <link rel="stylesheet" href="style.css?v=97bf7e62" />
+    <link rel="preload" href="style.css?v=16720544" as="style" />
+    <link rel="stylesheet" href="style.css?v=16720544" />
 
     <!-- IIFE: runs during parse (before deferred script.js) to start ?q= fetches early -->
-    <script src="early-fetch-entry.js?v=920296af"></script>
-    <script defer src="script.js?v=9880c208"></script>
+    <script src="early-fetch-entry.js?v=5f1f18f5"></script>
+    <script defer src="script.js?v=2717726a"></script>
   </head>
   <body>
     <div class="container">
@@ -138,6 +138,12 @@
         </div>
         <div class="utility-answer-content" id="utility-answer-content"></div>
       </aside>
+
+      <div class="utility-load-search" id="utility-load-search" hidden>
+        <button type="button" class="utility-load-search-btn" id="utility-load-search-btn">
+          Show search results
+        </button>
+      </div>
 
       <!-- Infobox (Knowledge Panel) -->
       <aside class="infobox" id="infobox" style="display: none">

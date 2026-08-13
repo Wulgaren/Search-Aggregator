@@ -164,16 +164,15 @@ describe('bootstrapEarlyFetch', () => {
         bootstrapEarlyFetch();
 
         expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        expect(window.__earlyFetch?.brave).toBeUndefined();
+        expect(window.__earlyFetch?.marginalia).toBeUndefined();
+        expect(window.__earlyFetch?.infobox).toBeUndefined();
         const paths = searchApiFetch.mock.calls.map((c) => String(c[0]));
-        expect(paths).toEqual(
-            expect.arrayContaining([
-                expect.stringContaining('source=utility&kind=currency'),
-            ])
-        );
-        const utilityPath = paths.find((p) => p.includes('source=utility'));
-        expect(utilityPath).toContain('amount=100');
-        expect(utilityPath).toContain('from=USD');
-        expect(utilityPath).toContain('to=EUR');
+        expect(paths).toHaveLength(1);
+        expect(paths[0]).toContain('source=utility&kind=currency');
+        expect(paths[0]).toContain('amount=100');
+        expect(paths[0]).toContain('from=USD');
+        expect(paths[0]).toContain('to=EUR');
     });
 
     it('registers utility early fetch for translate intent', () => {
@@ -181,12 +180,29 @@ describe('bootstrapEarlyFetch', () => {
         bootstrapEarlyFetch();
 
         expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        expect(window.__earlyFetch?.brave).toBeUndefined();
         const utilityPath = searchApiFetch.mock.calls
             .map((c) => String(c[0]))
             .find((p) => p.includes('source=utility'));
         expect(utilityPath).toContain('kind=translate');
         expect(utilityPath).toContain('text=hello');
         expect(utilityPath).toContain('to=fr');
+        expect(searchApiFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers utility early fetch for TEXT in LANG translate', () => {
+        window.history.replaceState({}, '', '/?q=prawns+in+polish');
+        bootstrapEarlyFetch();
+
+        expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        const utilityPath = searchApiFetch.mock.calls
+            .map((c) => String(c[0]))
+            .find((p) => p.includes('source=utility'));
+        expect(utilityPath).toContain('kind=translate');
+        expect(utilityPath).toContain('text=prawns');
+        expect(utilityPath).toContain('to=pl');
+        expect(utilityPath).toContain('from=en');
+        expect(searchApiFetch).toHaveBeenCalledTimes(1);
     });
 
     it('registers utility early fetch for timezone intent', () => {
@@ -194,29 +210,30 @@ describe('bootstrapEarlyFetch', () => {
         bootstrapEarlyFetch();
 
         expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        expect(window.__earlyFetch?.brave).toBeUndefined();
         const utilityPath = searchApiFetch.mock.calls
             .map((c) => String(c[0]))
             .find((p) => p.includes('source=utility'));
         expect(utilityPath).toContain('kind=timezone');
         expect(utilityPath).toContain('country=jp');
+        expect(searchApiFetch).toHaveBeenCalledTimes(1);
     });
 
     it('skips utility network for empty language keyword', () => {
         window.history.replaceState({}, '', '/?q=language');
         bootstrapEarlyFetch();
+        expect(window.__earlyFetch?.query).toBe('language');
         expect(window.__earlyFetch?.utility).toBeUndefined();
-        expect(
-            searchApiFetch.mock.calls.map((c) => String(c[0])).some((p) => p.includes('source=utility'))
-        ).toBe(false);
+        expect(window.__earlyFetch?.brave).toBeUndefined();
+        expect(searchApiFetch).not.toHaveBeenCalled();
     });
 
     it('skips utility network for empty currency keyword', () => {
         window.history.replaceState({}, '', '/?q=currency');
         bootstrapEarlyFetch();
+        expect(window.__earlyFetch?.query).toBe('currency');
         expect(window.__earlyFetch?.utility).toBeUndefined();
-        expect(
-            searchApiFetch.mock.calls.map((c) => String(c[0])).some((p) => p.includes('source=utility'))
-        ).toBe(false);
+        expect(searchApiFetch).not.toHaveBeenCalled();
     });
 
     it('registers utility early fetch for empty timezone keyword (locale default)', () => {
@@ -224,11 +241,13 @@ describe('bootstrapEarlyFetch', () => {
         bootstrapEarlyFetch();
 
         expect(window.__earlyFetch?.utility).toBeInstanceOf(Promise);
+        expect(window.__earlyFetch?.brave).toBeUndefined();
         const utilityPath = searchApiFetch.mock.calls
             .map((c) => String(c[0]))
             .find((p) => p.includes('source=utility'));
         expect(utilityPath).toContain('kind=timezone');
         expect(utilityPath).toContain('country=us');
+        expect(searchApiFetch).toHaveBeenCalledTimes(1);
     });
 
     it('bang redirect does not register __earlyFetch', () => {

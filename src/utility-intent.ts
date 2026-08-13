@@ -611,6 +611,18 @@ function tryParseTranslateQuery(q: string): UtilityIntent | null {
         }
     }
 
+    // TEXT in LANG — LANG must be a known language name/code (not places)
+    {
+        const m = /^(.+?)\s+in\s+(\S+)\s*$/i.exec(trimmed);
+        if (m && m[1] !== undefined && m[2] !== undefined) {
+            const to = normalizeLanguageCode(m[2]);
+            const text = m[1].trim();
+            if (to && text) {
+                return { kind: 'translate', text, to };
+            }
+        }
+    }
+
     return null;
 }
 

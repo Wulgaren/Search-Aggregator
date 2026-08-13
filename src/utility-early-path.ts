@@ -1,4 +1,5 @@
 import { isTimezoneCountry } from '../lib/country-timezones.ts';
+import { guessSourceLanguage } from './guess-source-language';
 import { languageDefaultsFromLocale, type UtilityIntent } from './utility-intent';
 
 /** Locale → ISO alpha-2 country for empty timezone tool / early fetch. */
@@ -31,6 +32,26 @@ export function buildCurrencyUtilityPath(input: {
         to: input.to,
     });
     return `/api/search?${params.toString()}`;
+}
+
+/**
+ * Resolve from/to for a translate intent: explicit langs win; else local text
+ * guess for source; else locale defaults. Avoids from === to when possible.
+ */
+export function resolveTranslateLanguages(
+    text: string,
+    fromRaw: string | undefined,
+    toRaw: string | undefined,
+    locale?: string
+): { from: string; to: string } {
+    const defaults = languageDefaultsFromLocale(locale);
+    let from = fromRaw ?? guessSourceLanguage(text) ?? defaults.from;
+    const to = toRaw ?? (fromRaw === defaults.to ? defaults.from : defaults.to);
+    if (from === to) {
+        if (defaults.from !== to) from = defaults.from;
+        else from = to === 'en' ? 'es' : 'en';
+    }
+    return { from, to };
 }
 
 export function buildTranslateUtilityPath(input: {
@@ -72,11 +93,10 @@ export function buildUtilityEarlyFetchPath(intent: UtilityIntent): string | null
         });
     }
     if (intent.kind === 'translate') {
-        const defaults = languageDefaultsFromLocale();
-        const from = intent.from ?? defaults.from;
-        const to = intent.to ?? (intent.from === defaults.to ? defaults.from : defaults.to);
         const text = intent.text.trim();
-        if (!text || !from || !to || from === to) return null;
+        if (!text) return null;
+        const { from, to } = resolveTranslateLanguages(text, intent.from, intent.to);
+        if (!from || !to || from === to) return null;
         return buildTranslateUtilityPath({ text, from, to });
     }
     if (intent.kind === 'timezone') {

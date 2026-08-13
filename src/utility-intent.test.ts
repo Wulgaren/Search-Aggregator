@@ -111,6 +111,34 @@ describe('detectUtilityIntent — translate', () => {
             to: 'fr',
         });
     });
+
+    it('parses TEXT in LANG when LANG is a known language', () => {
+        expect(detectUtilityIntent('prawns in polish')).toEqual({
+            kind: 'translate',
+            text: 'prawns',
+            to: 'pl',
+        });
+        expect(detectUtilityIntent('prawns in pl')).toEqual({
+            kind: 'translate',
+            text: 'prawns',
+            to: 'pl',
+        });
+        expect(detectUtilityIntent('king prawns in polish')).toEqual({
+            kind: 'translate',
+            text: 'king prawns',
+            to: 'pl',
+        });
+        expect(detectUtilityIntent('good morning in japanese')).toEqual({
+            kind: 'translate',
+            text: 'good morning',
+            to: 'ja',
+        });
+    });
+
+    it('does not treat places as TEXT in LANG', () => {
+        expect(detectUtilityIntent('best coffee in berlin')).toBeNull();
+        expect(detectUtilityIntent('restaurants in london')).toBeNull();
+    });
 });
 
 describe('detectUtilityIntent — timezone', () => {

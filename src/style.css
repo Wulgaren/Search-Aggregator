@@ -1279,12 +1279,45 @@ a:hover {
   );
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  margin: 0 auto 1.5rem;
-  max-width: 800px;
+  margin: 0 0 1.5rem;
+  width: 100%;
+  max-width: none;
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
   animation: fadeSlideIn 0.3s ease-out;
+}
+
+.utility-load-search {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 1.5rem;
+}
+
+.utility-load-search[hidden] {
+  display: none;
+}
+
+.utility-load-search-btn {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.65rem 1.15rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.utility-load-search-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-panel-gradient-end);
+}
+
+.results[hidden] {
+  display: none;
 }
 
 .utility-answer::before {

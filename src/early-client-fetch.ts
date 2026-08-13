@@ -10,6 +10,7 @@ import { buildUtilityEarlyFetchPath } from './utility-early-path';
  * Starts `?q=` search fetches ASAP (wired from HTML before deferred `script.js`).
  * Shares `searchApiFetch` with the main bundle so Google/Tavily caching stays consistent.
  * When a Tavily key is present, primes DNS/TLS even on the homepage (no `?q=`).
+ * Utility intents skip web/infobox/images early fetches (search is opt-in via UI).
  * Utility early fetch only when intent ≠ null and the intent needs a network call.
  */
 export function bootstrapEarlyFetch(): void {
@@ -25,6 +26,18 @@ export function bootstrapEarlyFetch(): void {
     }
     const searchQ = resolved.q;
     if (!searchQ.trim()) return;
+
+    const intent = detectUtilityIntent(searchQ);
+    if (intent) {
+        const early: EarlyFetchState = { query: searchQ };
+        const utilityPath = buildUtilityEarlyFetchPath(intent);
+        if (utilityPath) {
+            early.utility = searchApiFetch(utilityPath);
+        }
+        window.__earlyFetch = early;
+        return;
+    }
+
     const base = `/api/search?q=${encodeURIComponent(searchQ)}&page=1&source=`;
     const hasGoogle = hasGoogleSearchConfigured();
     const enc = encodeURIComponent(searchQ);
@@ -41,12 +54,5 @@ export function bootstrapEarlyFetch(): void {
         wiby: searchApiFetch(base + 'wiby'),
         infobox: searchApiFetch(`/api/search?q=${enc}&source=infobox`),
     };
-    const intent = detectUtilityIntent(searchQ);
-    if (intent) {
-        const utilityPath = buildUtilityEarlyFetchPath(intent);
-        if (utilityPath) {
-            early.utility = searchApiFetch(utilityPath);
-        }
-    }
     window.__earlyFetch = early;
 }

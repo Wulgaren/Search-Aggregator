@@ -20,6 +20,7 @@ import {
     buildTimezoneUtilityPath,
     buildTranslateUtilityPath,
     defaultCountryFromLocale,
+    resolveTranslateLanguages,
 } from './utility-early-path';
 import {
     isTimezoneCountry,
@@ -676,14 +677,15 @@ export function createUtilityAnswer(elements: UtilityAnswerElements, deps: Utili
             return;
         }
         if (intent.kind === 'translate') {
-            const defaults = languageDefaultsFromLocale();
-            const from = intent.from ?? defaults.from;
-            const to = intent.to ?? (intent.from === defaults.to ? defaults.from : defaults.to);
             const text = intent.text.trim();
             if (!text) {
+                const defaults = languageDefaultsFromLocale();
+                const from = intent.from ?? defaults.from;
+                const to = intent.to ?? (intent.from === defaults.to ? defaults.from : defaults.to);
                 renderTranslateForm({ text: '', from, to, translatedText: null });
                 return;
             }
+            const { from, to } = resolveTranslateLanguages(text, intent.from, intent.to);
             await fetchTranslate({ text, from, to }, searchQuery);
             return;
         }

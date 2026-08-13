@@ -147,23 +147,66 @@ const utility = createUtilityAnswer(
     { apiFetch, takeEarlyFetch: (k, q) => takeEarlyFetch(k, q) }
 );
 
-function performSearch(query: string) {
+const resultsEl = byId('results');
+const loadSearchWrap = byId('utility-load-search');
+const loadSearchBtn = byIdOf('utility-load-search-btn', HTMLButtonElement);
+
+/** Query waiting for opt-in web search under a utility card. */
+let gatedSearchQuery: string | null = null;
+
+function setSearchChromeVisible(visible: boolean): void {
+    resultsEl.hidden = !visible;
+}
+
+function setLoadSearchVisible(visible: boolean): void {
+    loadSearchWrap.hidden = !visible;
+}
+
+function runWebSearch(query: string): void {
+    setSearchChromeVisible(true);
     searchResults.startSearch(query);
     images.reset();
     infobox.reset();
-    utility.reset();
-    ai.reset();
     if (hasGoogleSearchConfigured()) searchResults.fetchGoogle(query);
     if (hasTavilySearchConfigured()) searchResults.fetchTavily(query);
     void infobox.fetchInfobox(query);
     void images.fetchImages(query, 1);
+}
+
+function performSearch(query: string) {
+    utility.reset();
+    ai.reset();
+    gatedSearchQuery = null;
+    setLoadSearchVisible(false);
+
     const utilityIntent = detectUtilityIntent(query);
     if (utilityIntent) {
+        searchResults.reset();
+        images.reset();
+        infobox.reset();
+        setSearchChromeVisible(false);
+        gatedSearchQuery = query;
+        setLoadSearchVisible(true);
         void utility.fetchFromIntent(utilityIntent, query);
+        if (shouldAutoOpenAIForQuery(query)) {
+            void ai.fetchAIAnswer(query, { toggleWhenLoading: false });
+        }
+        return;
     }
+
+    setSearchChromeVisible(true);
+    runWebSearch(query);
     if (shouldAutoOpenAIForQuery(query)) {
         void ai.fetchAIAnswer(query, { toggleWhenLoading: false });
     }
+}
+
+function loadGatedSearch(): void {
+    const query = gatedSearchQuery;
+    if (!query) return;
+    gatedSearchQuery = null;
+    setLoadSearchVisible(false);
+    runWebSearch(query);
 }
 
 function renderSpellBanner(original: string, corrected: string | null) {
@@ -244,6 +287,9 @@ function restoreSearchState(options?: { scrollToTop?: boolean }) {
             infobox.reset();
             utility.reset();
             ai.reset();
+            gatedSearchQuery = null;
+            setLoadSearchVisible(false);
+            setSearchChromeVisible(true);
             return;
         }
         setInputValue(q, false);
@@ -262,6 +308,9 @@ function restoreSearchState(options?: { scrollToTop?: boolean }) {
         infobox.reset();
         utility.reset();
         ai.reset();
+        gatedSearchQuery = null;
+        setLoadSearchVisible(false);
+        setSearchChromeVisible(true);
     }
 }
 
@@ -271,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
     searchResults.initInfiniteScroll();
     ai.setupEvents(() => searchInput.value);
     images.setupEvents(() => searchResults.getCurrentQuery());
+    loadSearchBtn.addEventListener('click', () => loadGatedSearch());
     restoreSearchState({ scrollToTop: true });
     let wasMerged = window.innerWidth <= 900;
     window.addEventListener('resize', () => {
