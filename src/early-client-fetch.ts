@@ -2,7 +2,7 @@ import { resolveQueryForBangHandling, redirectForBang } from './query-bangs';
 import { searchApiFetch } from './search-fetch';
 
 /** Stagger images after aggregate so Brave web + Brave images are less likely to race the same rate limit. */
-const IMAGES_EARLY_FETCH_DELAY_MS = 500;
+const IMAGES_EARLY_FETCH_DELAY_MS = 1000;
 
 /**
  * Starts `?q=` search fetches ASAP (wired from HTML before deferred `script.js`).
