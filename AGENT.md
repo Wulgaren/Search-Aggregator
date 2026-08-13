@@ -18,6 +18,18 @@
 - **Struggle:** After `Array.isArray(x)` on `unknown`, TS often narrows to `any[]`, so indexing/assigning trips `@typescript-eslint/no-unsafe-assignment`.
 - **Resolution:** Prefer `asArray()` from `unknown.ts` (returns `unknown[] | undefined`). Same for `JSON.parse` / `response.json()`: bind as `unknown`, then narrow with helpers — never `as T`.
 
-### Edge `api/` + unknown helpers
-- **Struggle:** Vercel edge `includeFiles` is `api/lib/**`; sharing `../../src/unknown.ts` is awkward for deploy tracing.
-- **Resolution:** Keep a small local `api/lib/unknown.ts` mirror of `src/unknown.ts` for edge handlers.
+### Parallel utility vertical slices (currency / timezone / translate)
+- **Struggle:** Three agents edit `search-route.ts` + `utility-answer.ts` at once; full-file Write overwrites sibling kind UI.
+- **Resolution:** Keep provider logic in dedicated modules (`lib/utility-*.ts`). In shared files use clear `kind ===` branches only. Prefer StrReplace / merge over Write for `utility-answer.ts`. Recover sibling UI from agent transcripts if stomped.
+
+### Parallel agents overwrite shared utility client
+- **Struggle:** Issues 3–5 all edit `src/utility-answer.ts` / `search-route.ts`; a later agent can wipe another kind’s UI.
+- **Resolution:** Prefer dedicated `lib/utility-*.ts` handlers; in shared files use clear `--- Issue N ---` section comments and re-merge by kind (`currency` / `translate` / `timezone`) instead of rewriting the whole factory.
+
+### Vercel Hobby “No more than 12 Serverless Functions”
+- **Struggle:** Every `.ts` under `api/` (including helpers + tests in `api/lib`) is counted as a Serverless Function; utility modules pushed past Hobby’s 12.
+- **Resolution:** Keep only route entry files in `api/` (`search.ts`, `ai.ts`). Put shared edge/server code in top-level `lib/` and set `vercel.json` `includeFiles` to `lib/**`.
+
+### `delete window.__earlyFetch` mid-test → `utility` on `never`
+- **Struggle:** After `delete window.__earlyFetch`, CFA keeps the property narrowed; a later `bootstrapEarlyFetch()` side-effect is invisible to `tsc`, so `window.__earlyFetch?.utility` errors (`Property 'utility' does not exist on type 'never'`).
+- **Resolution:** One scenario per `it` (rely on `beforeEach` cleanup) instead of delete + re-bootstrap in the same test.

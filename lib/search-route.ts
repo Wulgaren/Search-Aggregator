@@ -1,6 +1,9 @@
 // Shared handler for Vercel Edge `/api/search` + `/api/ai`.
 
 import { asArray, asRecord, isRecord, readArray, readNumber, readRecord, readString } from "./unknown.ts";
+import { handleUtilityCurrency } from "./utility-currency.ts";
+import { handleUtilityTimezone } from "./utility-timezone.ts";
+import { handleUtilityTranslate } from "./utility-translate.ts";
 
 /** CDN + browser caching for JSON search responses (repeat queries, offline resilience) */
 const SEARCH_JSON_CACHE =
@@ -154,6 +157,16 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     const searchQuery = query.trim();
     const resultsPerPage = 10;
     const requestKey = `q=${searchQuery}&page=${page}&source=${source ?? ""}&imageSource=${imageSource ?? ""}`;
+    const startedAt = Date.now();
+
+    const logSearchResponse = (body: unknown) => {
+        console.log("[edge-search] api/search response", {
+            reqId,
+            requestKey,
+            ms: Date.now() - startedAt,
+            body,
+        });
+    };
 
     // Helps confirm whether multiple Brave requests hit during "first whole site load".
     // Group by `requestKey` and time (deploy logs).
@@ -171,16 +184,88 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
     });
 
     if (source === "google") {
-        return new Response(
-            JSON.stringify({ error: "Google Custom Search runs in the browser (configure cx + service account in the site settings)." }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        const body = {
+            error:
+                "Google Custom Search runs in the browser (configure cx + service account in the site settings).",
+        };
+        logSearchResponse(body);
+        return new Response(JSON.stringify(body), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    // Utility answers: kind branches (timezone = Issue 4; translate = Issue 5; currency = Issue 3)
+    if (source === "utility") {
+        const kindParam = url.searchParams.get("kind");
+
+        if (kindParam === "timezone") {
+            const body = handleUtilityTimezone(url.searchParams.get("country"));
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        if (kindParam === "translate") {
+            const body = await handleUtilityTranslate(url.searchParams, {
+                fetch: globalThis.fetch.bind(globalThis),
+                signal: request.signal,
+            });
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        // --- Issue 3: currency via Frankfurter ---
+        if (kindParam === "currency") {
+            const body = await handleUtilityCurrency(url.searchParams, {
+                fetch: globalThis.fetch.bind(globalThis),
+                signal: request.signal,
+            });
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": SEARCH_JSON_CACHE,
+                },
+            });
+        }
+
+        // Unknown / missing kind — stable stub for other agents / clients
+        const examples = ["100 usd to eur", "translate hello to french", "time in japan"];
+        const body: {
+            ok: false;
+            error: "not_implemented";
+            examples: string[];
+            kind?: string | null;
+        } = {
+            ok: false,
+            error: "not_implemented",
+            examples: examples.slice(0, 2),
+        };
+        logSearchResponse(body);
+        return new Response(JSON.stringify(body), {
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": SEARCH_JSON_CACHE,
+            },
+        });
     }
 
     // Handle infobox request
     if (source === "infobox") {
         const infobox = await fetchWikipediaInfobox(searchQuery);
-        return new Response(JSON.stringify({ infobox }), {
+        const body = { infobox };
+        logSearchResponse(body);
+        return new Response(JSON.stringify(body), {
             headers: {
                 "Content-Type": "application/json",
                 "Cache-Control":
@@ -191,12 +276,14 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
 
     if (source === "images") {
         if (imageSource === "google" || !imageSource) {
-            return new Response(
-                JSON.stringify({
-                    error: "Google and combined image search are handled in the browser",
-                }),
-                { status: 400, headers: { "Content-Type": "application/json" } }
-            );
+            const body = {
+                error: "Google and combined image search are handled in the browser",
+            };
+            logSearchResponse(body);
+            return new Response(JSON.stringify(body), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
         }
 
         const braveImages = await fetchBraveImages(
@@ -205,15 +292,14 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
             reqId,
             requestKey
         );
-        return new Response(
-            JSON.stringify({ images: braveImages, hasMore: page < 3 }),
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "Cache-Control": SEARCH_JSON_CACHE,
-                },
-            }
-        );
+        const body = { images: braveImages, hasMore: page < 3 };
+        logSearchResponse(body);
+        return new Response(JSON.stringify(body), {
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": SEARCH_JSON_CACHE,
+            },
+        });
     }
 
     // Determine which sources to fetch
@@ -276,6 +362,7 @@ export async function aggregateEdgeRequest(request: Request): Promise<Response> 
                 };
     }
 
+    logSearchResponse(response);
     return new Response(JSON.stringify(response), {
         headers: {
             "Content-Type": "application/json",

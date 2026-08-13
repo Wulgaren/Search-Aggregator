@@ -1,5 +1,5 @@
 /** Vercel Edge — serves `/api/search`. */
-import { aggregateEdgeRequest } from "./lib/search-route.js";
+import { aggregateEdgeRequest } from "../lib/search-route.js";
 
 export const runtime = "edge";
 

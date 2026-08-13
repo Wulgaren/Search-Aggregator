@@ -6,10 +6,10 @@
   "outputDirectory": "public",
   "functions": {
     "api/search.ts": {
-      "includeFiles": "api/lib/**"
+      "includeFiles": "lib/**"
     },
     "api/ai.ts": {
-      "includeFiles": "api/lib/**"
+      "includeFiles": "lib/**"
     }
   },
   "headers": [

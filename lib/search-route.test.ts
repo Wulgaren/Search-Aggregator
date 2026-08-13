@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aggregateEdgeRequest } from './search-route';
-import searchHandler, { runtime as searchRuntime } from '../search';
-import aiHandler, { runtime as aiRuntime } from '../ai';
+import searchHandler, { runtime as searchRuntime } from '../api/search';
+import aiHandler, { runtime as aiRuntime } from '../api/ai';
 
 const originalEnv = { ...process.env };
 
@@ -153,6 +153,191 @@ describe('aggregateEdgeRequest', () => {
         expect(res.status).toBe(200);
         await expect(readJson(res)).resolves.toEqual({ infobox: null });
         expect(fetchMock).toHaveBeenCalled();
+    });
+
+    it('source=utility&kind=currency proxies Frankfurter (mocked)', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+            expect(url).toContain('api.frankfurter.dev/v1/latest');
+            return new Response(
+                JSON.stringify({
+                    amount: 100,
+                    base: 'USD',
+                    date: '2026-08-12',
+                    rates: { EUR: 86.62 },
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=100+usd+to+eur&source=utility&kind=currency&amount=100&from=USD&to=EUR'
+            )
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get('Content-Type')).toBe('application/json');
+        await expect(readJson(res)).resolves.toEqual({
+            ok: true,
+            kind: 'currency',
+            amount: 100,
+            from: 'USD',
+            to: 'EUR',
+            converted: 86.62,
+            rate: 0.8662,
+        });
+        expect(fetchMock).toHaveBeenCalled();
+    });
+
+    it('source=utility&kind=currency returns error + examples when provider fails', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response('down', { status: 502 }))
+        );
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=100+usd+to+eur&source=utility&kind=currency&amount=100&from=USD&to=EUR'
+            )
+        );
+        const body = await readJson(res);
+        expect(body).toMatchObject({
+            ok: false,
+            kind: 'currency',
+            examples: ['100 usd to eur', '5 eur to usd'],
+        });
+        expect(String((body as { error: string }).error)).toContain('502');
+    });
+
+    it('source=utility omits kind when kind param is missing or invalid', async () => {
+        vi.stubGlobal('fetch', vi.fn());
+
+        const missing = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=utility&source=utility')
+        );
+        await expect(readJson(missing)).resolves.toEqual({
+            ok: false,
+            error: 'not_implemented',
+            examples: ['100 usd to eur', 'translate hello to french'],
+        });
+
+        const invalid = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=utility&source=utility&kind=crypto')
+        );
+        await expect(readJson(invalid)).resolves.toEqual({
+            ok: false,
+            error: 'not_implemented',
+            examples: ['100 usd to eur', 'translate hello to french'],
+        });
+    });
+
+    it('source=utility&kind=translate proxies MyMemory and returns success JSON', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+            expect(url).toContain('api.mymemory.translated.net/get');
+            expect(url).toContain('q=hello');
+            return new Response(
+                JSON.stringify({
+                    responseData: { translatedText: 'bonjour', match: 1 },
+                    responseStatus: 200,
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=hello&source=utility&kind=translate&text=hello&from=en&to=fr'
+            )
+        );
+        expect(res.status).toBe(200);
+        await expect(readJson(res)).resolves.toEqual({
+            ok: true,
+            kind: 'translate',
+            text: 'hello',
+            from: 'en',
+            to: 'fr',
+            translatedText: 'bonjour',
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('source=utility&kind=translate maps MyMemory failure to error + examples', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response('nope', { status: 503 }))
+        );
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=hello&source=utility&kind=translate&text=hello&from=en&to=fr'
+            )
+        );
+        const body = await readJson(res);
+        expect(body).toMatchObject({
+            ok: false,
+            kind: 'translate',
+        });
+        expect(body.error).toContain('503');
+        expect(body.examples).toEqual([
+            'translate hello to french',
+            'how do you say goodbye in german',
+        ]);
+    });
+
+    it('source=utility&kind=timezone returns local times without upstream fetch', async () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=time+in+japan&source=utility&kind=timezone&country=jp'
+            )
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson(res);
+        expect(body).toMatchObject({
+            ok: true,
+            kind: 'timezone',
+            country: 'jp',
+        });
+        expect(Array.isArray(body.zones)).toBe(true);
+        expect(body.zones).toHaveLength(1);
+        expect(body.zones[0]).toMatchObject({
+            id: 'Asia/Tokyo',
+            label: 'Japan',
+        });
+        expect(typeof body.zones[0].localTime).toBe('string');
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('source=utility&kind=timezone returns multi-zone rows for us', async () => {
+        vi.stubGlobal('fetch', vi.fn());
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest(
+                'https://example.com/api/search?q=usa&source=utility&kind=timezone&country=us'
+            )
+        );
+        const body = await readJson(res);
+        expect(body.ok).toBe(true);
+        expect(body.zones.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('source=utility&kind=timezone errors when country missing', async () => {
+        vi.stubGlobal('fetch', vi.fn());
+
+        const res = await aggregateEdgeRequest(
+            jsonRequest('https://example.com/api/search?q=timezone&source=utility&kind=timezone')
+        );
+        await expect(readJson(res)).resolves.toMatchObject({
+            ok: false,
+            kind: 'timezone',
+            error: 'Country is required.',
+            examples: ['time in japan', 'time in usa'],
+        });
     });
 
     it('source=infobox returns shaped infobox when Wikipedia page is mocked', async () => {

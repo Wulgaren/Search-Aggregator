@@ -33,7 +33,7 @@ export default defineConfig({
         fileParallelism: true,
         maxConcurrency: 4,
         setupFiles: ['./vitest.setup.ts'],
-        include: ['src/**/*.test.ts', 'api/**/*.test.ts'],
+        include: ['src/**/*.test.ts', 'api/**/*.test.ts', 'lib/**/*.test.ts'],
         globals: false,
     },
 });
