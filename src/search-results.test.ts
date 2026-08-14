@@ -334,24 +334,26 @@ describe('createSearchResultsComponent', () => {
         expect(elements.noncommercialResults.textContent).not.toContain('Brave Hit');
     });
 
-    it('holds Brave until both Google and Marginalia have settled', async () => {
+    it('holds Google and Marginalia until both settle, then paints the pair before Brave', async () => {
+        let resolveBrave!: (value: Response) => void;
         let resolveMarginalia!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
         const margPromise = new Promise<Response>((resolve) => {
             resolveMarginalia = resolve;
         });
+        let googleSettled = false;
         deps.apiFetch = apiFetchBySource({
-            brave: () =>
-                jsonResponse({
-                    brave: sourcePayload({
-                        results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
-                    }),
-                }),
-            google: () =>
-                jsonResponse({
+            brave: () => bravePromise,
+            google: () => {
+                googleSettled = true;
+                return jsonResponse({
                     google: sourcePayload({
                         results: [makeResult({ title: 'Google Hit', url: 'https://google.example/a', source: 'google' })],
                     }),
-                }),
+                });
+            },
             marginalia: () => margPromise,
             wiby: () => jsonResponse({ wiby: sourcePayload() }),
         });
@@ -363,10 +365,12 @@ describe('createSearchResultsComponent', () => {
         component.fetchGoogle('hold');
 
         await vi.waitFor(() => {
-            expect(elements.commercialResults.textContent).toContain('Google Hit');
+            expect(googleSettled).toBe(true);
         });
-        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+        expect(elements.commercialResults.textContent).not.toContain('Google Hit');
+        expect(elements.noncommercialResults.textContent).not.toContain('Marg Hit');
         expect(elements.commercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+        expect(elements.noncommercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
 
         resolveMarginalia(
             jsonResponse({
@@ -377,10 +381,154 @@ describe('createSearchResultsComponent', () => {
         );
 
         await vi.waitFor(() => {
-            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+            expect(elements.commercialResults.textContent).toContain('Google Hit');
             expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
         });
+        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+        expect(elements.commercialResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+        });
         expect(elements.commercialResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
+        expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
+    });
+
+    it('holds Marginalia until Google settles before painting the pair', async () => {
+        let resolveBrave!: (value: Response) => void;
+        let resolveGoogle!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
+        const googlePromise = new Promise<Response>((resolve) => {
+            resolveGoogle = resolve;
+        });
+        let marginaliaSettled = false;
+        deps.apiFetch = apiFetchBySource({
+            brave: () => bravePromise,
+            google: () => googlePromise,
+            marginalia: () => {
+                marginaliaSettled = true;
+                return jsonResponse({
+                    marginalia: sourcePayload({
+                        results: [
+                            makeResult({ title: 'Marg Hit', url: 'https://marg.example/a', source: 'marginalia' }),
+                        ],
+                    }),
+                });
+            },
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('hold');
+        component.fetchGoogle('hold');
+
+        await vi.waitFor(() => {
+            expect(marginaliaSettled).toBe(true);
+        });
+        expect(elements.commercialResults.textContent).not.toContain('Google Hit');
+        expect(elements.noncommercialResults.textContent).not.toContain('Marg Hit');
+
+        resolveGoogle(
+            jsonResponse({
+                google: sourcePayload({
+                    results: [makeResult({ title: 'Google Hit', url: 'https://google.example/a', source: 'google' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Google Hit');
+            expect(elements.noncommercialResults.textContent).toContain('Marg Hit');
+        });
+        expect(elements.commercialResults.textContent).not.toContain('Brave Hit');
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [makeResult({ title: 'Brave Hit', url: 'https://brave.example/a', source: 'brave' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(elements.commercialResults.textContent).toContain('Brave Hit');
+        });
+    });
+
+    it('holds the merged Google/Marginalia braid until both settle', async () => {
+        deps.isMergedView = vi.fn(() => true);
+        let resolveBrave!: (value: Response) => void;
+        let resolveMarginalia!: (value: Response) => void;
+        const bravePromise = new Promise<Response>((resolve) => {
+            resolveBrave = resolve;
+        });
+        const margPromise = new Promise<Response>((resolve) => {
+            resolveMarginalia = resolve;
+        });
+        let googleSettled = false;
+        deps.apiFetch = apiFetchBySource({
+            brave: () => bravePromise,
+            google: () => {
+                googleSettled = true;
+                return jsonResponse({
+                    google: sourcePayload({
+                        results: [makeResult({ title: 'G1', url: 'https://google.example/1', source: 'google' })],
+                    }),
+                });
+            },
+            marginalia: () => margPromise,
+            wiby: () => jsonResponse({ wiby: sourcePayload() }),
+        });
+        deps.takeEarlyFetch = vi.fn(async () => null);
+        const component = createSearchResultsComponent(elements, deps);
+        component.initInfiniteScroll();
+
+        component.startSearch('braid-hold');
+        component.fetchGoogle('braid-hold');
+
+        await vi.waitFor(() => {
+            expect(googleSettled).toBe(true);
+        });
+        expect(elements.mergedResults.textContent).not.toContain('G1');
+        expect(elements.mergedResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+
+        resolveMarginalia(
+            jsonResponse({
+                marginalia: sourcePayload({
+                    results: [makeResult({ title: 'M1', url: 'https://marg.example/1', source: 'marginalia' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.mergedResults)).toEqual(['G1', 'M1']);
+        });
+        expect(elements.mergedResults.querySelectorAll('.skeleton-item').length).toBeGreaterThan(0);
+
+        resolveBrave(
+            jsonResponse({
+                brave: sourcePayload({
+                    results: [makeResult({ title: 'B1', url: 'https://brave.example/1', source: 'brave' })],
+                }),
+            })
+        );
+
+        await vi.waitFor(() => {
+            expect(resultTitles(elements.mergedResults)).toEqual(['G1', 'M1', 'B1']);
+        });
+        expect(elements.mergedResults.querySelectorAll('.skeleton-item')).toHaveLength(0);
     });
 
     it('appends Wiby under Marginalia instead of zipping them', async () => {
