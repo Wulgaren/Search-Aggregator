@@ -59,6 +59,10 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
         );
     }
 
+    function googleMarginaliaPairReady() {
+        return page1Settled.google && page1Settled.marginalia;
+    }
+
     function reset() {
         abortActiveSession();
         searchSessionId += 1;
@@ -239,7 +243,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function updateCommercialPage1() {
-        if (!page1Settled.google) return;
+        if (!googleMarginaliaPairReady()) return;
         if (!restGateReady()) {
             renderCommercialGooglePartial();
             return;
@@ -248,7 +252,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function updateNoncommercialPage1() {
-        if (!page1Settled.marginalia) return;
+        if (!googleMarginaliaPairReady()) return;
         if (!restGateReady()) {
             renderNoncommercialMarginaliaPartial();
             return;
@@ -257,7 +261,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
     }
 
     function updateMergedPage1() {
-        if (!page1Settled.google && !page1Settled.marginalia) return;
+        if (!googleMarginaliaPairReady()) return;
         if (!restGateReady()) {
             renderMergedPairPartial();
             return;
@@ -364,7 +368,7 @@ export function createSearchResultsComponent(elements: SearchResultsElements, de
 
     function forceRenderMergedIfNeeded() {
         if (!deps.isMergedView() || !currentQuery) return;
-        if (!page1Settled.google && !page1Settled.marginalia) return;
+        if (!googleMarginaliaPairReady()) return;
         if (!restGateReady()) {
             renderMergedPairPartial();
             return;
